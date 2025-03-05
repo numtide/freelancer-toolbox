@@ -16,6 +16,7 @@ pkgs.mkShell {
     pkgs.python3Packages.rsa
     pkgs.texlive.combined.scheme-small
     pkgs.pandoc
+    pkgs.ruff
   ];
   propagatedBuildInputs = sevdesk-invoicer.propagatedBuildInputs ++ harvest-exporter.propagatedBuildInputs ++ quipu-invoicer.propagatedBuildInputs;
   dontUseSetuptoolsShellHook = 1;

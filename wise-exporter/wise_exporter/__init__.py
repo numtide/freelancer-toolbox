@@ -6,15 +6,18 @@ import base64
 import calendar
 import json
 import os
+import ssl
 import sys
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, NoReturn
 
 import rsa
+from jwcrypto import jwe, jwk
 
-BASE_URL = " https://api.transferwise.com"
+BASE_URL = "https://api.transferwise.com"
 
 
 class Signer:
@@ -39,10 +42,19 @@ class Balance:
         self.currency = currency
 
 
+@dataclass
+class WiseResult:
+    status_code: int
+    data: dict[str, Any] | list[dict[str, Any]]
+
+
 class WiseClient:
-    def __init__(self, api_key: str, private_key: bytes) -> None:
+    def __init__(
+        self, api_key: str, private_key: bytes, pin: str | None = None
+    ) -> None:
         self.api_key = api_key
         self.signer = Signer(private_key)
+        self.pin: str | None = pin  # Store pin if provided
 
     def _http_request(
         self,
@@ -50,16 +62,19 @@ class WiseClient:
         method: str = "GET",
         headers: dict[str, str] | None = None,
         data: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> WiseResult:
         if headers is None:
             headers = {}
         body = None
         if data:
             body = json.dumps(data).encode("ascii")
         headers = headers.copy()
-        req = urllib.request.Request(url, headers=headers, method=method, data=body)
+
+        req = urllib.request.Request(
+            f"{BASE_URL}/{url}", headers=headers, method=method, data=body
+        )
         resp = urllib.request.urlopen(req)
-        return json.load(resp)
+        return WiseResult(status_code=resp.getcode(), data=json.load(resp))
 
     def http_request(
         self,
@@ -74,16 +89,257 @@ class WiseClient:
         headers["Content-Type"] = "application/json"
         headers["User-Agent"] = "Numtide wise importer"
         try:
-            return self._http_request(f"{BASE_URL}/{path}", method, headers, data)
+            return self._http_request(path, method, headers, data).data
         except urllib.error.HTTPError as e:
             if e.code == 403 and "x-2fa-approval" in e.headers:
-                one_time_token = e.headers["x-2fa-approval"]
-                headers["x-2fa-approval"] = one_time_token
-                headers["X-Signature"] = self.signer.sca_challenge(one_time_token)
-                return self._http_request(f"{BASE_URL}/{path}", method, headers, data)
+                # Extract one-time token from the header
+                x_2fa_approval = e.headers["x-2fa-approval"].strip().split(" ")
+                one_time_token = x_2fa_approval[0]
+
+                # If challenge type is specified in header, use it (usually for signature)
+                explicit_challenge_type = None
+                if len(x_2fa_approval) >= 2:
+                    explicit_challenge_type = x_2fa_approval[1]
+
+                # Handle the 2FA challenge
+                self._handle_2fa_challenge(one_time_token, explicit_challenge_type)
+
+                # Retry the original request
+                return self._http_request(path, method, headers, data).data
+            if e.code == 403:
+                print(f"URL: {e.url}", file=sys.stderr)
+                print(f"Headers: {e.headers}", file=sys.stderr)
+                die(
+                    "This API call needs 2FA. For more information, visit: https://docs.wise.com/api-docs/features/strong-customer-authentication-2fa"
+                )
+            elif e.code == 404:
+                msg = f"Not Found URL: {e.url}"
+                raise RuntimeError(msg) from e
+            else:
+                raise
+
+    def _get_token_status(self, one_time_token: str) -> dict[str, Any]:
+        """Get the status of a one-time token."""
+        headers = {"One-Time-Token": one_time_token}
+        result = self._http_request("v1/one-time-token/status", "GET", headers).data
+        assert isinstance(result, dict)
+        return result
+
+    def _find_required_challenge(
+        self, token_status: dict[str, Any]
+    ) -> tuple[str | None, bool]:
+        """Find the required challenge from token status."""
+        challenges = token_status.get("oneTimeTokenProperties", {}).get(
+            "challenges", []
+        )
+
+        for challenge in challenges:
+            if challenge.get("required") and not challenge.get("passed"):
+                return challenge.get("primaryChallenge", {}).get("type"), True
+
+        return None, False
+
+    def _handle_2fa_challenge(
+        self, one_time_token: str, explicit_challenge_type: str | None = None
+    ) -> None:
+        """Handle 2FA challenge based on the token status or explicit type."""
+        try:
+            # If explicit challenge type is provided (like 'signature'), use it directly
+            if (
+                explicit_challenge_type
+                and explicit_challenge_type.upper() == "SIGNATURE"
+            ):
+                self._handle_signature_challenge(one_time_token)
+                return
+
+            # Otherwise, get token status to determine challenge type
+            token_status = self._get_token_status(one_time_token)
+            challenge_type, found = self._find_required_challenge(token_status)
+
+            if not found:
+                die("No pending challenge found for this request")
+
+            breakpoint()
+            if challenge_type == "PIN":
+                self._handle_pin_challenge(one_time_token)
+            elif challenge_type == "SIGNATURE":
+                self._handle_signature_challenge(one_time_token)
+            elif challenge_type in ["SMS", "WHATSAPP", "VOICE"]:
+                self._handle_otp_challenge(one_time_token, challenge_type.lower())
+            else:
+                die(f"Unsupported challenge type: {challenge_type}")
+
+        except urllib.error.HTTPError as e:
+            print(f"Failed to process authentication challenge: {e.code} - {e.reason}")
             raise
 
-    def get_buisness_profile(self) -> int:
+    def _handle_signature_challenge(self, one_time_token: str) -> None:
+        """Handle signature verification challenge."""
+        # Generate signature using the Signer class
+        signature = self.signer.sca_challenge(one_time_token)
+
+        # No need to make an additional request for signature challenge
+        # The signature will be included in the header of the retried request
+        headers = {"One-Time-Token": one_time_token, "X-Signature": signature}
+
+        # Make a status check to verify the signature worked
+        try:
+            self._http_request("v1/one-time-token/status", "GET", headers)
+        except urllib.error.HTTPError as e:
+            die(f"Signature verification failed: {e.code} - {e.reason}")
+
+    def _handle_pin_challenge(self, one_time_token: str) -> None:
+        """Handle PIN verification challenge."""
+        if not self.pin:
+            self.pin = input("Enter your 4-digit PIN: ")
+
+        headers = {"One-Time-Token": one_time_token}
+
+        try:
+            self._http_request(
+                "v1/one-time-token/pin/verify", "POST", headers, {"pin": self.pin}
+            )
+            # Successfully verified
+        except urllib.error.HTTPError as e:
+            print(f"PIN verification failed: {e.code} - {e.reason}")
+            self.pin = None
+            die("PIN verification failed")
+
+    def _handle_otp_challenge(self, one_time_token: str, challenge_type: str) -> None:
+        """Handle OTP-based challenges (SMS, WhatsApp, Voice)."""
+        # Trigger the challenge
+        headers = {"One-Time-Token": one_time_token}
+
+        try:
+            # Trigger the challenge
+            trigger_data = self._http_request(
+                f"v1/one-time-token/{challenge_type}/trigger", "POST", headers
+            ).data
+
+            assert isinstance(trigger_data, dict)
+
+            print(
+                f"Challenge sent to {trigger_data.get('obfuscatedPhoneNo', 'your phone')}"
+            )
+
+            # Get OTP from user
+            otp_code = input(
+                f"Enter the one-time code sent to you via {challenge_type.upper()}: "
+            )
+
+            # Verify the challenge
+            self._http_request(
+                f"v1/one-time-token/{challenge_type}/verify",
+                "POST",
+                headers,
+                {"otpCode": otp_code},
+            )
+
+        except urllib.error.HTTPError as e:
+            print(f"Challenge verification failed: {e.code} - {e.reason}")
+            die(f"{challenge_type.upper()} verification failed")
+
+    def get_jose_signing_key(self) -> str:
+        headers = {
+            "authorization": f"Bearer {self.api_key}",
+            "accept": "*/*",
+            "user-agent": "curl/8.12.1",
+        }
+        url = "v1/auth/jose/response/public-keys?algorithm=RSA_OAEP_256&scope=PAYLOAD_ENCRYPTION"
+        full_url = f"{BASE_URL}/{url}"
+        req = urllib.request.Request(
+            full_url,
+            headers=headers,
+            method="GET",
+        )
+
+        context = ssl._create_unverified_context()
+        # context = ssl.create_default_context()
+        try:
+            res = urllib.request.urlopen(req, context=context)
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8")
+            print(f"Error response body: {error_body}", file=sys.stderr)
+            raise
+        return json.loads(res.read())
+
+    def post_user_pin(self, pin: str) -> dict[str, Any]:
+        """Post user PIN using a JOSE payload.
+        The pin must be a string of exactly 4 digits.
+        """
+        if not (pin.isdigit() and len(pin) == 4):
+            msg = "PIN must be exactly 4 digits"
+            raise ValueError(msg)
+
+        # Get the JWE public key from Wise
+        key_data = self.get_jose_signing_key()
+        public_key = key_data["keyMaterial"]["keyMaterial"]
+
+        print(f"Key data: {key_data}")
+
+        # Prepare the pin payload
+        pin_payload = {"pin": pin}
+        json.dumps(pin_payload)
+
+        from jwskate import JweCompact, Jwk, Jwt
+        from jwcrypto import jwk, jwe
+
+        # https://stackoverflow.com/questions/71928580/decrypting-and-encrypting-java-jweobject-with-algorithm-rsa-oaep-256-on-python
+        lines = [public_key[i:i+64] for i in range(0, len(public_key), 64)]
+        formatted_key = "\n".join(lines)
+        pks8pem = f"-----BEGIN PRIVATE KEY-----\n{formatted_key}\n-----END PRIVATE KEY-----"
+
+        breakpoint()
+        private_key = jwk.JWK.from_pem(pks8pem.encode())
+        breakpoint()
+
+        JweCompact.encrypt(pin_payload, key=jwk, alg="RSA_OAEP_256", enc="A256GCM")
+
+        # Serialize the JWE token using compact representation
+        # encrypted_pin = encrypted_jwe.serialize(compact=True)
+        encrypted_pin = ""
+
+        encrypted_pin = encrypted_pin[:-7]
+        example_encryted = "eyJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAtMjU2In0.W_WPBDXclMryaywqAB-_yC1hUYukKmZxByhE9d1G8hClc2HpewkryILGJW4uVTUeRdo1oVWd68TPIqi7bqMGUsrT-3MI4ggVSjC1rf8Lf1xTZ8-GHjSPso8tFBXnydOKzggi6fnfk98BIW76Rnxkn6sW79LH5NgN1spTOoh8-tI3i_wbHdqJOxTReaUNMYZobm7wxedZcRxhsaSrVqx2qdELeqkfwgvB1DRbHTF_PTe4W0ibMbcJivHjiDf6oAV9vXgVhYb66rhB43pgdFDv4nY1mkQC45R5T6CBdzv80EdAVOj1G4bktHyJWaJzHVsGozpxsNj3bt1AopyvDO8tsw.WLOO5WH4ZpBPi-8B.0g3eUpQPvRIaTbgUi6sH0WejsJ1nLWDGnDKTktZrkquLQlCMmIguj0I5UCyqXEo.URtTniRvfGxrKRLK63trug"
+        url = "v1/auth/jose/playground/jwe"
+        headers = {
+            "authorization": f"Bearer {self.api_key}",
+            "content-type": "application/jose+json",
+            "accept": "application/jose+json",
+            "user-agent": "curl/8.12.1",
+            "x-tw-jose-method": "jwe",
+        }
+        full_url = f"{BASE_URL}/{url}"
+        req = urllib.request.Request(
+            full_url,
+            headers=headers,
+            method="POST",
+            data=example_encryted.encode(),
+        )
+        context = ssl._create_unverified_context()
+
+        if len(encrypted_pin) != len(example_encryted):
+            die(
+                f"Encrypted pin length mismatch: {len(encrypted_pin)} != {len(example_encryted)}"
+            )
+
+        try:
+            res = urllib.request.urlopen(req, context=context)
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8")
+            die(f"Error response body: {error_body}")
+
+        if res.status_code == 409:
+            msg = "PIN is already set. Please use the --wise-pin argument to provide your PIN."
+            raise RuntimeError(msg)
+
+        if res.status_code != 204:
+            die(
+                f"Unexpected response status: {res.data} \nstatus-code: {res.status_code}"
+            )
+        return res.data
+
+    def get_business_profile(self) -> int:
         r = self.http_request("/v2/profiles")
         assert isinstance(r, list)
         profiles = [p["id"] for p in r if p["type"] == "BUSINESS"]
@@ -105,12 +361,14 @@ class WiseClient:
     def get_balance_statements(
         self, profile: int, balance: Balance, start: str, end: str
     ) -> dict[str, Any]:
-        path = f"/v1/profiles/{profile}/balance-statements/{balance.id}/statement.json?currency={balance.currency}&intervalStart={start}T00:00:00.000Z&intervalEnd={end}T23:59:59.999Z&type=COMPACT"
+        path = (
+            f"/v1/profiles/{profile}/balance-statements/{balance.id}/statement.json"
+            f"?currency={balance.currency}&intervalStart={start}T00:00:00.000Z"
+            f"&intervalEnd={end}T23:59:59.999Z&type=COMPACT"
+        )
         r = self.http_request(path)
         assert isinstance(r, dict)
         return r
-
-    # GET
 
 
 def die(msg: str) -> NoReturn:
@@ -127,6 +385,7 @@ def parse_args() -> argparse.Namespace:
         required=api_token is None,
         help="Get one from https://wise.com/settings/",
     )
+
     private_key = os.environ.get("WISE_PRIVATE_KEY")
     parser.add_argument(
         "--wise-private-key",
@@ -145,6 +404,17 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=profile_id,
         help="Profile ID to use",
+    )
+    pin = os.environ.get("WISE_PIN")
+    parser.add_argument(
+        "--wise-pin",
+        default=pin,
+        help="Your 4-digit PIN for Wise, required for some 2FA challenges",
+    )
+    parser.add_argument(
+        "--wise-test",
+        action="store_true",
+        help="Use the test API instead of the production API",
     )
     parser.add_argument(
         "--start",
@@ -210,9 +480,26 @@ ccount settings.
 def main() -> None:
     args = parse_args()
 
-    client = WiseClient(args.wise_api_token, args.wise_private_key.encode("ascii"))
+    wise_api_token = args.wise_api_token
+
+    if args.wise_test:
+        global BASE_URL
+        BASE_URL = "https://api.sandbox.transferwise.tech"
+        wise_api_token = "f17ef8f9-5cbe-4732-b1a1-91aefd08fe91"
+
+    client = WiseClient(
+        wise_api_token, args.wise_private_key.encode("ascii"), pin=args.wise_pin
+    )
+
+    if not args.wise_pin:
+        msg = "You must set WISE_PIN environment variable or use --wise-pin argument"
+        raise ValueError(msg)
+
+    client.post_user_pin(args.wise_pin)
+    client.pin = args.wise_pin
+
     if not args.wise_profile:
-        args.wise_profile = client.get_buisness_profile()
+        args.wise_profile = client.get_business_profile()
     balances = client.get_balances(args.wise_profile)
     statement_per_account = []
     for balance in balances:

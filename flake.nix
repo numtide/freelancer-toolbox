@@ -63,7 +63,7 @@
               ];
               "sevdesk-invoicer" = { };
               "wise-exporter" = {
-                extraPythonPackages = [ pkgs.python3.pkgs.rsa ];
+                extraPythonPackages = [ pkgs.python3.pkgs.rsa pkgs.python3.pkgs.jwcrypto ];
               };
               "quipu-invoicer" = { };
             };

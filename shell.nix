@@ -7,6 +7,7 @@ in
 pkgs.mkShell {
   shellHook = ''
     export PATH=$PATH:$(pwd)/bin
+    export PYTHONPATH=$(pwd)/vendor:$PYTHONPATH
   '';
   packages = sevdesk-invoicer.nativeBuildInputs
     ++ harvest-exporter.nativeBuildInputs
@@ -14,8 +15,11 @@ pkgs.mkShell {
     ++ pkgs.lib.optional (treefmt != null) treefmt
     ++ [
     pkgs.python3Packages.rsa
+    pkgs.python3Packages.jwcrypto
+
     pkgs.texlive.combined.scheme-small
     pkgs.pandoc
+    pkgs.ruff
   ];
   propagatedBuildInputs = sevdesk-invoicer.propagatedBuildInputs ++ harvest-exporter.propagatedBuildInputs ++ quipu-invoicer.propagatedBuildInputs;
   dontUseSetuptoolsShellHook = 1;

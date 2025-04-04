@@ -6,12 +6,15 @@ import base64
 import calendar
 import json
 import os
+import shlex
 import ssl
+import subprocess
 import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any, NoReturn
 
 import rsa
@@ -243,7 +246,7 @@ class WiseClient:
         headers = {
             "authorization": f"Bearer {self.api_key}",
             "accept": "*/*",
-            "user-agent": "curl/8.12.1",
+            "user-agent": "curl/8.12.1",  # no joke, the test-api rejects anything ffs
         }
         url = "v1/auth/jose/response/public-keys?algorithm=RSA_OAEP_256&scope=PAYLOAD_ENCRYPTION"
         full_url = f"{BASE_URL}/{url}"
@@ -253,10 +256,8 @@ class WiseClient:
             method="GET",
         )
 
-        context = ssl._create_unverified_context()
-        # context = ssl.create_default_context()
         try:
-            res = urllib.request.urlopen(req, context=context)
+            res = urllib.request.urlopen(req)
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8")
             print(f"Error response body: {error_body}", file=sys.stderr)
@@ -273,34 +274,25 @@ class WiseClient:
 
         # Get the JWE public key from Wise
         key_data = self.get_jose_signing_key()
-        public_key = key_data["keyMaterial"]["keyMaterial"]
 
-        print(f"Key data: {key_data}")
+        jose_cli = Path(__file__).parent.parent / "jose_cli"
 
-        # Prepare the pin payload
-        pin_payload = {"pin": pin}
-        json.dumps(pin_payload)
+        if not jose_cli.exists():
+            die(f"jose_cli not found at {jose_cli}")
 
-        from jwskate import JweCompact, Jwk, Jwt
-        from jwcrypto import jwk, jwe
+        plaintext = json.dumps(
+            {
+                "message": pin,
+            }
+        )
+        print(f"Plaintext: {plaintext}")
+        cmd = ["bun", "run", "index.ts", json.dumps(key_data), pin]
 
-        # https://stackoverflow.com/questions/71928580/decrypting-and-encrypting-java-jweobject-with-algorithm-rsa-oaep-256-on-python
-        lines = [public_key[i:i+64] for i in range(0, len(public_key), 64)]
-        formatted_key = "\n".join(lines)
-        pks8pem = f"-----BEGIN PRIVATE KEY-----\n{formatted_key}\n-----END PRIVATE KEY-----"
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, check=True, cwd=str(jose_cli))
 
-        breakpoint()
-        private_key = jwk.JWK.from_pem(pks8pem.encode())
-        breakpoint()
+        encrypted_pin = res.stdout.decode("utf-8").strip("\n")
+        print(f"Encrypted pin: {encrypted_pin}")
 
-        JweCompact.encrypt(pin_payload, key=jwk, alg="RSA_OAEP_256", enc="A256GCM")
-
-        # Serialize the JWE token using compact representation
-        # encrypted_pin = encrypted_jwe.serialize(compact=True)
-        encrypted_pin = ""
-
-        encrypted_pin = encrypted_pin[:-7]
-        example_encryted = "eyJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAtMjU2In0.W_WPBDXclMryaywqAB-_yC1hUYukKmZxByhE9d1G8hClc2HpewkryILGJW4uVTUeRdo1oVWd68TPIqi7bqMGUsrT-3MI4ggVSjC1rf8Lf1xTZ8-GHjSPso8tFBXnydOKzggi6fnfk98BIW76Rnxkn6sW79LH5NgN1spTOoh8-tI3i_wbHdqJOxTReaUNMYZobm7wxedZcRxhsaSrVqx2qdELeqkfwgvB1DRbHTF_PTe4W0ibMbcJivHjiDf6oAV9vXgVhYb66rhB43pgdFDv4nY1mkQC45R5T6CBdzv80EdAVOj1G4bktHyJWaJzHVsGozpxsNj3bt1AopyvDO8tsw.WLOO5WH4ZpBPi-8B.0g3eUpQPvRIaTbgUi6sH0WejsJ1nLWDGnDKTktZrkquLQlCMmIguj0I5UCyqXEo.URtTniRvfGxrKRLK63trug"
         url = "v1/auth/jose/playground/jwe"
         headers = {
             "authorization": f"Bearer {self.api_key}",
@@ -314,17 +306,11 @@ class WiseClient:
             full_url,
             headers=headers,
             method="POST",
-            data=example_encryted.encode(),
+            data=encrypted_pin.encode(),
         )
-        context = ssl._create_unverified_context()
-
-        if len(encrypted_pin) != len(example_encryted):
-            die(
-                f"Encrypted pin length mismatch: {len(encrypted_pin)} != {len(example_encryted)}"
-            )
 
         try:
-            res = urllib.request.urlopen(req, context=context)
+            res = urllib.request.urlopen(req)
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8")
             die(f"Error response body: {error_body}")
@@ -483,9 +469,9 @@ def main() -> None:
     wise_api_token = args.wise_api_token
 
     if args.wise_test:
-        global BASE_URL
+        global BASE_URL  # noqa: PLW0603
         BASE_URL = "https://api.sandbox.transferwise.tech"
-        wise_api_token = "f17ef8f9-5cbe-4732-b1a1-91aefd08fe91"
+        wise_api_token = "f17ef8f9-5cbe-4732-b1a1-91aefd08fe91"  # noqa: S105
 
     client = WiseClient(
         wise_api_token, args.wise_private_key.encode("ascii"), pin=args.wise_pin

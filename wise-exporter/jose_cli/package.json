@@ -1,0 +1,14 @@
+{
+  "name": "jose_cli",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "jose": "^6.0.10"
+  }
+}

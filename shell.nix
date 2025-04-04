@@ -7,7 +7,6 @@ in
 pkgs.mkShell {
   shellHook = ''
     export PATH=$PATH:$(pwd)/bin
-    export PYTHONPATH=$(pwd)/vendor:$PYTHONPATH
   '';
   packages = sevdesk-invoicer.nativeBuildInputs
     ++ harvest-exporter.nativeBuildInputs
@@ -16,7 +15,7 @@ pkgs.mkShell {
     ++ [
     pkgs.python3Packages.rsa
     pkgs.python3Packages.jwcrypto
-
+    pkgs.bun
     pkgs.texlive.combined.scheme-small
     pkgs.pandoc
     pkgs.ruff

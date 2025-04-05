@@ -1,92 +1,205 @@
 import * as jose from 'jose';
-import { Buffer } from 'buffer'; // Import Buffer
+import { Buffer } from 'buffer'; // Keep Buffer import, jose might use it internally
 
-// Define an interface for the expected key structure
+// --- Interfaces ---
 interface EncryptionKey {
-  version: number;
-  keyMaterial: {
-    algorithm: 'RSA_OAEP_256'; // Ensure specific algorithm
-    keyMaterial: string; // Base64 encoded SPKI public key (without headers/footers)
-  };
-  scope: 'PAYLOAD_ENCRYPTION';
+    version: number;
+    keyMaterial: {
+        algorithm: 'RSA_OAEP_256';
+        keyMaterial: string; // Base64 encoded SPKI public key body
+    };
+    scope: 'PAYLOAD_ENCRYPTION';
 }
 
+// --- Encryption Function ---
 async function encryptPayload(jsonKeyString: string, plaintext: string): Promise<string> {
-  let keyData: EncryptionKey;
+    let keyData: EncryptionKey;
 
-  // 1. Parse and validate the input JSON key string
-  try {
-    keyData = JSON.parse(jsonKeyString);
-    // Basic validation
-    if (
-      keyData?.version !== 1 ||
-      keyData?.keyMaterial?.algorithm !== 'RSA_OAEP_256' ||
-      !keyData?.keyMaterial?.keyMaterial ||
-      keyData?.scope !== 'PAYLOAD_ENCRYPTION'
-    ) {
-      throw new Error('Invalid key structure or missing required fields.');
+    // 1. Parse and validate the input JSON key string
+    try {
+        keyData = JSON.parse(jsonKeyString);
+        if (
+            keyData?.version !== 1 ||
+            keyData?.keyMaterial?.algorithm !== 'RSA_OAEP_256' ||
+            !keyData?.keyMaterial?.keyMaterial ||
+            keyData?.scope !== 'PAYLOAD_ENCRYPTION'
+        ) {
+            throw new Error('Invalid server public key JSON structure or missing required fields.');
+        }
+    } catch (error) {
+        throw new Error(`Failed to parse server public key JSON: ${error instanceof Error ? error.message : String(error)}`);
     }
-  } catch (error) {
-    throw new Error(`Failed to parse JSON key: ${error instanceof Error ? error.message : String(error)}`);
-  }
 
-  // 2. Format the PEM public key from the keyMaterial
-  // The key material seems to be the base64 part of a SPKI PEM key.
-  // We need to wrap it with the standard PEM headers/footers.
-  const base64Key = keyData.keyMaterial.keyMaterial;
-  const pemKey = `-----BEGIN PUBLIC KEY-----\n${base64Key.match(/.{1,64}/g)?.join('\n')}\n-----END PUBLIC KEY-----`;
+    // 2. Format the PEM public key from the keyMaterial
+    const base64Key = keyData.keyMaterial.keyMaterial;
+    const pemPublicKey = `-----BEGIN PUBLIC KEY-----\n${base64Key.match(/.{1,64}/g)?.join('\n')}\n-----END PUBLIC KEY-----`;
 
-  // 3. Import the public key
-  let publicKey: jose.KeyLike;
-  try {
-    // RSA-OAEP-256 is the JWE algorithm, importSPKI infers the key's algorithm
-    publicKey = await jose.importSPKI(pemKey, 'RSA-OAEP-256');
-    // Note: 'RSA-OAEP-256' is specified here as the *intended usage algorithm* for the key,
-    // matching the JWE 'alg'. `importSPKI` itself will validate the key format (e.g., RSA).
-  } catch (error) {
-    throw new Error(`Failed to import public key: ${error instanceof Error ? error.message : String(error)}`);
-  }
+    // 3. Import the public key
+    let publicKey: jose.KeyLike;
+    try {
+        // 'RSA-OAEP-256' here specifies the *intended algorithm* for use with the key (JWE alg)
+        publicKey = await jose.importSPKI(pemPublicKey, 'RSA-OAEP-256');
+    } catch (error) {
+        throw new Error(`Failed to import server public key (SPKI): ${error instanceof Error ? error.message : String(error)}`);
+    }
 
-  // 4. Encrypt the plaintext using JWE Compact Serialization
-  try {
-    const jwe = await new jose.CompactEncrypt(
-      new TextEncoder().encode(plaintext) // Encode the plaintext payload
-    )
-    .setProtectedHeader({
-      alg: 'RSA-OAEP-256', // Key Encryption Algorithm [1]
-      enc: 'A256GCM'        // Content Encryption Algorithm (AES GCM 256-bit) [1]
-    })
-    .encrypt(publicKey); // Encrypt using the imported public key
-
-    return jwe;
-  } catch (error) {
-    throw new Error(`Failed to encrypt payload: ${error instanceof Error ? error.message : String(error)}`);
-  }
+    // 4. Encrypt the plaintext using JWE Compact Serialization
+    try {
+        console.log("Encrypting payload..."); // Add log
+        const jwe = await new jose.CompactEncrypt(
+            new TextEncoder().encode(plaintext) // Encode the plaintext payload
+        )
+            .setProtectedHeader({
+                alg: 'RSA-OAEP-256', // Key Encryption Algorithm
+                enc: 'A256GCM',       // Content Encryption Algorithm (AES GCM 256-bit)
+            })
+            .encrypt(publicKey); // Encrypt using the imported public key
+        console.log("Encryption successful."); // Add log
+        return jwe;
+    } catch (error) {
+        throw new Error(`Failed to encrypt payload: ${error instanceof Error ? error.message : String(error)}`);
+    }
 }
 
-// --- CLI Execution ---
+// --- Decryption Function ---
+async function decryptPayload(jweString: string, privateKeyPath: string): Promise<string> {
+    let pemPrivateKey: string;
 
-// Bun provides command-line arguments in Bun.argv [2]
-// Bun.argv[0] = bun executable path
-// Bun.argv[1] = script path (encrypt.ts)
-// Bun.argv[2] = first user argument (jsonKeyString)
-// Bun.argv[3] = second user argument (plaintext)
+    // 1. Read the private key file
+    try {
+        console.log(`Reading private key from: ${privateKeyPath}`); // Add log
+        const keyFile = Bun.file(privateKeyPath);
+        if (!(await keyFile.exists())) {
+            throw new Error(`Private key file not found at ${privateKeyPath}`);
+        }
+        pemPrivateKey = await keyFile.text();
+         console.log("Private key file read successfully."); // Add log
+    } catch (error) {
+        throw new Error(`Failed to read private key file: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
-if (Bun.argv.length < 4) {
-  console.error("Usage: bun run encrypt.ts '<json_key_string>' '<plaintext_string>'");
-  console.error("\nExample:");
-  console.error(`  bun run encrypt.ts '{"version": 1, "keyMaterial": {"algorithm": "RSA_OAEP_256", "keyMaterial": "MIIBIjAN...AQAB"}, "scope": "PAYLOAD_ENCRYPTION"}' 'hello world'`);
-  process.exit(1);
+    // 2. Import the private key
+    //    Assumes PKCS#8 PEM format, as generated by the Python script
+    let privateKey: jose.KeyLike;
+    try {
+        // 'RSA-OAEP-256' specifies the algorithm the key *was used for* (JWE alg)
+        privateKey = await jose.importPKCS8(pemPrivateKey, 'RSA-OAEP-256');
+         console.log("Private key imported successfully (PKCS#8 format assumed)."); // Add log
+         // NOTE: If your key is password protected, you'd need jose.importPKCS8(pem, alg, { extractable: true, passphrase: 'your_password' })
+         // and likely decrypt the key first if Bun's crypto support is limited. jose handles passphrase directly for webcrypto.
+    } catch (error) {
+        throw new Error(`Failed to import private key (PKCS#8 PEM format expected): ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // 3. Decrypt the JWE Compact Serialization string
+    try {
+        console.log("Attempting JWE decryption..."); // Add log
+        const { plaintext, protectedHeader } = await jose.compactDecrypt(
+            jweString,
+            privateKey
+        );
+        console.log("Decryption successful."); // Add log
+        console.log("Protected Header:", protectedHeader); // Log header info
+
+        // Decode the plaintext (Uint8Array) into a string
+        const decryptedText = new TextDecoder().decode(plaintext);
+        return decryptedText;
+    } catch (error) {
+         // Provide more context on decryption failure
+         let errMsg = `Failed to decrypt JWE payload: ${error instanceof Error ? error.message : String(error)}`;
+         if (error instanceof jose.errors.JWEDecryptionFailed) {
+             errMsg += "\n(Common reasons: Incorrect private key, corrupted JWE string, algorithm mismatch)";
+         } else if (error instanceof jose.errors.JWEInvalid) {
+              errMsg += "\n(Common reasons: JWE string is malformed)";
+         }
+         // Add more specific jose error checks if needed
+        throw new Error(errMsg);
+    }
 }
 
-const jsonKeyArg = Bun.argv[2];
-const plaintextArg = Bun.argv[3];
 
-encryptPayload(jsonKeyArg, plaintextArg)
-  .then(jweString => {
-    console.log(jweString);
-  })
-  .catch(error => {
-    console.error("Error:", error.message);
+// --- CLI Execution Logic ---
+
+const command = Bun.argv[2]; // encrypt or decrypt
+
+if (!command) {
+    console.error("Error: Missing command. Use 'encrypt' or 'decrypt'.");
+    printUsage();
     process.exit(1);
-  });
+}
+
+// --- Encryption Command Handling ---
+if (command === 'encrypt') {
+    if (Bun.argv.length < 5) {
+        console.error("Error: Missing arguments for 'encrypt' command.");
+        printEncryptUsage();
+        process.exit(1);
+    }
+    const jsonKeyArg = Bun.argv[3];
+    const plaintextArg = Bun.argv[4];
+
+    console.log("\n--- Starting Encryption ---");
+    encryptPayload(jsonKeyArg, plaintextArg)
+        .then(jweString => {
+            console.log("\nEncrypted JWE String:");
+            // Output *only* the JWE string cleanly for piping/capture
+            console.log(jweString);
+        })
+        .catch(error => {
+            console.error("\nEncryption Error:", error.message);
+            process.exit(1);
+        });
+}
+// --- Decryption Command Handling ---
+else if (command === 'decrypt') {
+    if (Bun.argv.length < 5) {
+        console.error("Error: Missing arguments for 'decrypt' command.");
+        printDecryptUsage();
+        process.exit(1);
+    }
+    const jweStringArg = Bun.argv[3];
+    const privateKeyPathArg = Bun.argv[4];
+
+    console.log("\n--- Starting Decryption ---");
+    decryptPayload(jweStringArg, privateKeyPathArg)
+        .then(decryptedText => {
+            console.log("\nDecrypted Plaintext:");
+             // Output *only* the decrypted text cleanly
+            console.log(decryptedText);
+        })
+        .catch(error => {
+            console.error("\nDecryption Error:", error.message);
+            process.exit(1);
+        });
+}
+// --- Invalid Command ---
+else {
+    console.error(`Error: Unknown command '${command}'. Use 'encrypt' or 'decrypt'.`);
+    printUsage();
+    process.exit(1);
+}
+
+
+// --- Usage Instructions ---
+function printUsage() {
+    console.error("\nUsage: bun run encrypt.ts <command> [arguments]");
+    console.error("\nCommands:");
+    console.error("  encrypt   Encrypt a plaintext string using a server's public key JSON.");
+    console.error("  decrypt   Decrypt a JWE string using your private key file.");
+    printEncryptUsage();
+    printDecryptUsage();
+}
+
+function printEncryptUsage() {
+    console.error("\nEncrypt Usage:");
+    console.error("  bun run encrypt.ts encrypt '<server_public_key_json>' '<plaintext_string>'");
+    console.error("\nExample:");
+    console.error(`  bun run encrypt.ts encrypt '{"version": 1, "keyMaterial": {...}, "scope": "PAYLOAD_ENCRYPTION"}' 'my secret data'`);
+}
+
+function printDecryptUsage() {
+    console.error("\nDecrypt Usage:");
+    console.error("  bun run encrypt.ts decrypt '<jwe_string>' <path_to_private_key.pem>");
+    console.error("\nExample:");
+    console.error(`  bun run encrypt.ts decrypt 'eyJh...<snip>...wUQ' ./client_wise_crypto_key.pem`);
+}

@@ -4,11 +4,12 @@
 # we can make it more flexible.
 
 import argparse
+import csv
 import datetime
 import json
 import os
-import pprint
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -53,206 +54,194 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--import-state-file",
         default="import-state.json",
+        type=Path,
         help="Used to memorize already imported transactions",
     )
     parser.add_argument(
-        "json_file",
-        help="JSON file containing wise bank statements (as opposed to stdin)",
+        "--add-account",
+        metavar=("account_number", "currency"),
+        nargs=2,
+        action="append",
+        default=[],
+        help='Add a currency to the bank account number mapping (IBAN or account number) i.e. --add-account "BE00 0000 0000 0000" EUR',
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Do not actually import anything, just print what would be done",
+    )
+    parser.add_argument(
+        "csv_file",
+        help="CSV file containing wise bank statements (as opposed to stdin)",
     )
     return parser.parse_args()
 
 
-def get_or_create_account(client: Client, name: str, currency: str) -> int:
-    res = get_check_accounts.sync(client=client)
-    if res is not None and res.objects is not Unset:
-        for obj in res.objects:
-            # We only want to return accounts that are not registers (German KASSE)
-            if obj.name == name and obj.type != CheckAccountResponseModelType.REGISTER:
-                return obj.id
-    account = CheckAccountModel(
-        name=name,
-        type=CheckAccountModelType.ONLINE,
-        currency=currency,
-        status=CheckAccountModelStatus.VALUE_100,
-        id=UNSET,
-        object_name=UNSET,
-        create=UNSET,
-        update=UNSET,
-        sev_client=UNSET,
-        import_type=CheckAccountModelImportType.CSV,
-        bank_server=UNSET,
-        auto_map_transactions=1,
-    )
+class Accounts:
+    def __init__(self, client: Client) -> None:
+        self.client = client
+        self.accounts: dict[str, str] = {}
+        self.cache: dict[str, int] = {}
 
-    res = create_check_account.sync(client=client, json_body=account)
-    if res is None or res.objects is Unset:
-        die(f"Failed to create account {name}")
-    return res.objects.id
+    def add_account(self, account_id: str, currency: str) -> None:
+        if currency in self.accounts:
+            die(f"Duplicate currency {currency}")
+        self.accounts[currency] = account_id
+
+    def get_or_create_account(self, currency: str) -> int:
+        account_id = self.accounts.get(currency)
+        if account_id is None:
+            die(f"Missing account id for currency {currency}")
+        if currency in self.cache:
+            return self.cache[currency]
+        name = f"Wise ({currency}, {account_id})"
+        res = get_check_accounts.sync(client=self.client)
+        if res is not None and res.objects is not Unset:
+            for obj in res.objects:
+                # We only want to return accounts that are not registers (German KASSE)
+                if (
+                    obj.name == name
+                    and obj.type != CheckAccountResponseModelType.REGISTER
+                ):
+                    return obj.id
+        account = CheckAccountModel(
+            name=name,
+            type=CheckAccountModelType.ONLINE,
+            currency=currency,
+            status=CheckAccountModelStatus.VALUE_100,
+            id=UNSET,
+            object_name=UNSET,
+            create=UNSET,
+            update=UNSET,
+            sev_client=UNSET,
+            import_type=CheckAccountModelImportType.CSV,
+            bank_server=UNSET,
+            auto_map_transactions=1,
+        )
+
+        res = create_check_account.sync(client=self.client, json_body=account)
+        if res is None or res.objects is Unset:
+            die(f"Failed to create account {name}")
+        self.cache[currency] = res.objects.id
+        return res.objects.id
 
 
-def import_statements(
-    api_token: str, statements: dict[str, Any], import_state_file: Path
+# These had to be introduced when switching from the wise API to the CSV export
+ALIASES = {
+    "CARD_TRANSACTION": "CARD",
+    "DIRECT_DEBIT_TRANSACTION": "DIRECT_DEBIT",
+}
+
+
+def import_record(
+    client: Client,
+    accounts: Accounts,
+    record: dict[str, Any],
+    import_state: set[str],
+    dry_run: bool = False,
 ) -> None:
-    client = Client(base_url="https://my.sevdesk.de/api/v1", token=api_token)
-    # Attributes:
-    #     name (str): Name of the check account Example: Iron Bank.
-    #     type (CheckAccountModelType): The type of the check account. Account with a CSV or MT940 import are regarded as
-    #         online.<br>
-    #              Apart from that, created check accounts over the API need to be offline, as online accounts with an active
-    #         connection
-    #              to a bank application can not be managed over the API. Example: online.
-    #     currency (str): The currency of the check account. Example: EUR.
-    #     status (CheckAccountModelStatus): Status of the check account. 0 <-> Archived - 100 <-> Active Default:
-    #         CheckAccountModelStatus.VALUE_100.
-    #     id (Union[Unset, int]): The check account id
-    #     object_name (Union[Unset, str]): The check account object name
-    #     create (Union[Unset, datetime.datetime]): Date of check account creation
-    #     update (Union[Unset, datetime.datetime]): Date of last check account update
-    #     sev_client (Union[Unset, CheckAccountModelSevClient]): Client to which check account belongs. Will be filled
-    #         automatically
-    #     import_type (Union[Unset, None, CheckAccountModelImportType]): Import type. Transactions can be imported by this
-    #         method on the check account. Example: CSV.
-    #     default_account (Union[Unset, CheckAccountModelDefaultAccount]): Defines if this check account is the default
-    #         account. Default: CheckAccountModelDefaultAccount.VALUE_0.
-    #     bank_server (Union[Unset, str]): Bank server of check account
-    #     auto_map_transactions (Union[Unset, None, int]): Defines if transactions on this account are automatically
-    #         mapped to invoice and vouchers when imported if possible. Default: 1.
-    currency = statements["query"]["currency"]
-
-    # It is possible that the bank statement does not contain any bank details and transactions, in that case we skip the statement
-    bank_details = statements["bankDetails"]
-    if len(bank_details) == 0 and len(statements["transactions"]) == 0:
-        print("Expected at least one bank in bank statement found none. Skipping.")
+    if record["Status"] == "REFUNDED":
+        print(f"Skipping refunded transaction {record['ID']}")
+        return
+    direction = record["Direction"]
+    if direction == "IN":
+        currency = record["Target currency"]
+        payee_payer_name = record["Source name"]
+        amount = float(record["Target amount (after fees)"])
+    elif direction == "OUT":
+        currency = record["Source currency"]
+        payee_payer_name = record["Target name"]
+        source_fee_str = record["Source fee amount"]
+        source_fee = float(source_fee_str) if source_fee_str else 0.0
+        amount = -float(record["Source amount (after fees)"]) - source_fee
+    else:
+        assert (
+            direction == "NEUTRAL"
+        ), f"Unknown direction {direction} for {record['ID']}"
+        print(f"Skipping internal transfer {record['ID']}")
         return
 
-    bank = bank_details[0]
-    if len(bank["accountNumbers"]) != 1:
-        die(
-            f"Expected exactly one account number in bank statement found: {statements['bankDetails']['accountNumbers']}"
-        )
-    account_id = bank["accountNumbers"][0]["accountNumber"]
-    currency = statements["query"]["currency"]
-    name = f"Wise ({currency}, {account_id})"
-    account_id = get_or_create_account(client, name, currency)
-    datetime.datetime.strptime(
-        statements["query"]["intervalStart"], "%Y-%m-%dT%H:%M:%SZ"
-    ).replace(tzinfo=datetime.UTC)
-    datetime.datetime.strptime(
-        statements["query"]["intervalEnd"], "%Y-%m-%dT%H:%M:%S.%fZ"
-    ).replace(tzinfo=datetime.UTC)
+    reference = record["Reference"]
 
-    if import_state_file.exists():
-        imported_transactions = set(json.loads(import_state_file.read_text()))
+    account_number = accounts.get_or_create_account(currency)
+    record_id = record["ID"]
+    if "CARD_TRANSACTION" in record_id and reference == "" and direction == "OUT":
+        target_currency = record["Target currency"]
+        target_amount = record["Target amount (after fees)"]
+        reference = f"Card transaction of {target_amount} ({target_currency})"
+    for original_name, replacement in ALIASES.items():
+        record_id = record_id.replace(original_name, replacement)
+
+    transaction_id = f"{currency}-{account_number}-{record_id}"
+
+    if transaction_id in import_state:
+        print(f"Skipping already imported transaction {transaction_id}")
+        return
+
+    import_state.add(transaction_id)
+    # What timezone is this?
+    created_on = datetime.datetime.strptime(record["Created on"], "%Y-%m-%d %H:%M:%S")
+    finished_on = datetime.datetime.strptime(record["Finished on"], "%Y-%m-%d %H:%M:%S")
+    if created_on > finished_on:
+        print(
+            f"WARNING: Transaction {transaction_id} has created_on > finished_on, skipping",
+            file=sys.stderr,
+        )
+    transaction = CheckAccountTransactionModel(
+        check_account=CheckAccountTransactionModelCheckAccount(
+            id=account_number, object_name="CheckAccount"
+        ),
+        status=CheckAccountTransactionModelStatus.VALUE_100,
+        entry_date=created_on,
+        value_date=finished_on,
+        amount=amount,
+        payee_payer_name=payee_payer_name,
+        paymt_purpose=reference,
+    )
+    if dry_run:
+        print(
+            f"id={record_id} currency={currency} entry_date={record['Created on']}, value_date={record['Finished on']}, amount={amount}, payee_payer_name={payee_payer_name}, paymt_purpose={reference}"
+        )
     else:
-        imported_transactions = set()
-    for wise_transaction in statements["transactions"]:
-        transaction_id = (
-            f"{currency}-{account_id}-{wise_transaction['referenceNumber']}"
-        )
-        if transaction_id in imported_transactions:
-            print(f"Skipping already imported transaction {transaction_id}")
-            continue
-        # value_date (datetime.datetime): Date the check account transaction was booked Example: 01.01.2022.
-        # amount (float): Amount of the transaction Example: 100.
-        # payee_payer_name (str): Name of the payee/payer Example: Cercei Lannister.
-        # check_account (CheckAccountTransactionModelCheckAccount): The check account to which the transaction belongs
-        # status (CheckAccountTransactionModelStatus): Status of the check account transaction.<br>
-        #         100 <-> Created<br>
-        #         200 <-> Linked<br>
-        #         300 <-> Private<br>
-        #         400 <-> Booked
-        # id (Union[Unset, int]): The check account transaction id
-        # object_name (Union[Unset, str]): The check account transaction object name
-        # create (Union[Unset, datetime.datetime]): Date of check account transaction creation
-        # update (Union[Unset, datetime.datetime]): Date of last check account transaction update
-        # sev_client (Union[Unset, CheckAccountTransactionModelSevClient]): Client to which check account transaction
-        #    belongs. Will be filled automatically
-        # entry_date (Union[Unset, datetime.datetime]): Date the check account transaction was imported Example:
-        #    01.01.2022.
-        # paymt_purpose (Union[Unset, str]): the purpose of the transaction Example: salary.
-        # enshrined (Union[Unset, None, datetime.datetime]): Defines if the transaction has been enshrined and can not be
-        #    changed any more.
-        # source_transaction (Union[Unset, None, CheckAccountTransactionModelSourceTransaction]): The check account
-        #    transaction serving as the source of the rebooking
-        # target_transaction (Union[Unset, None, CheckAccountTransactionModelTargetTransaction]): The check account
-        #    transaction serving as the target of the rebooking
-
-        t = wise_transaction["details"]["type"]
-        if wise_transaction["type"] == "CREDIT":
-            if t in ("MONEY_ADDED", "UNKNOWN"):
-                payee_payer_name = wise_transaction["details"]["description"]
-            elif t == "CARD":
-                payee_payer_name = wise_transaction["details"]["merchant"]["name"]
-            elif t == "CONVERSION":  # seen if converting currency in account
-                payee_payer_name = "Wise"
-            else:
-                payee_payer_name = wise_transaction["details"].get("senderName")
-                if payee_payer_name is None:
-                    pprint.pprint(wise_transaction)
-                    die(
-                        f"Unknown transaction type {t} in transaction above of type {t}"
-                    )
-        else:
-            t = wise_transaction["details"]["type"]
-            if t == "DIRECT_DEBIT":
-                payee_payer_name = wise_transaction["details"]["originator"]
-            elif t == "TRANSFER":
-                payee_payer_name = wise_transaction["details"]["recipient"]["name"]
-            elif t == "CARD":
-                payee_payer_name = wise_transaction["details"]["merchant"]["name"]
-            elif t in (
-                "CONVERSION",
-                "ACCRUAL_CHARGE",
-            ):  # seen if converting currency in account
-                payee_payer_name = "Wise"
-            elif t == "CARD_ORDER_CHECKOUT":
-                payee_payer_name = "Wise"  # Seen when ordering a credit card
-            elif t == "UNKNOWN":  # seen only for initial account purchase so far
-                payee_payer_name = "Wise"
-            elif (
-                t == "CONVERSION"
-                and wise_transaction["details"]["sourceAmount"]["currency"]
-                == wise_transaction["details"]["targetAmount"]["currency"]
-            ):
-                # this happens when we add money to a jar
-                continue
-            else:
-                pprint.pprint(wise_transaction)
-                die(f"Unknown transaction type {t} in transaction above of type {t}")
-
-        paymt_purpose = wise_transaction["details"].get(
-            "paymentReference", wise_transaction["details"]["description"]
-        )
-        date = datetime.datetime.strptime(
-            wise_transaction["date"], "%Y-%m-%dT%H:%M:%S.%fZ"
-        ).replace(tzinfo=datetime.UTC)
-        transaction = CheckAccountTransactionModel(
-            check_account=CheckAccountTransactionModelCheckAccount(
-                id=account_id, object_name="CheckAccount"
-            ),
-            status=CheckAccountTransactionModelStatus.VALUE_100,
-            value_date=date,
-            entry_date=date,
-            amount=wise_transaction["amount"]["value"],
-            payee_payer_name=payee_payer_name,
-            paymt_purpose=paymt_purpose,
-        )
         create_transaction.sync(client=client, json_body=transaction)
-        imported_transactions.add(transaction_id)
-        import_state_file.write_text(json.dumps(list(imported_transactions), indent=2))
 
 
 def main() -> None:
     args = parse_args()
-    if args.json_file:
-        statements_per_account = json.loads(Path(args.json_file).read_text())
-    else:
-        statements_per_account = json.load(sys.stdin)
-
-    for statements in statements_per_account:
-        import_statements(
-            args.sevdesk_api_token, statements, Path(args.import_state_file)
+    if len(args.add_account) == 0:
+        die("No accounts specifed, use --add-account")
+    with ExitStack() as exit_stack:
+        if args.csv_file:
+            csv_file = exit_stack.enter_context(Path(args.csv_file).open(newline=""))
+            records = csv.DictReader(csv_file)
+        else:
+            records = csv.DictReader(sys.stdin)
+        client = Client(
+            base_url="https://my.sevdesk.de/api/v1", token=args.sevdesk_api_token
         )
+        accounts = Accounts(
+            client=client,
+        )
+
+        for account_number, currency in args.add_account:
+            accounts.add_account(account_number, currency)
+
+        client = Client(
+            base_url="https://my.sevdesk.de/api/v1", token=args.sevdesk_api_token
+        )
+        if args.import_state_file.exists():
+            imported_transactions = set(json.loads(args.import_state_file.read_text()))
+        else:
+            imported_transactions = set()
+
+        for record in records:
+            import_record(
+                client, accounts, record, imported_transactions, dry_run=args.dry_run
+            )
+            if not args.dry_run:
+                args.import_state_file.write_text(
+                    json.dumps(sorted(imported_transactions), indent=2)
+                )
 
 
 if __name__ == "__main__":

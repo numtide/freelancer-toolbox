@@ -14,6 +14,7 @@ pkgs.mkShell {
     ++ pkgs.lib.optional (treefmt != null) treefmt
     ++ [
     pkgs.python3Packages.rsa
+    pkgs.python3Packages.jwcrypto
     pkgs.texlive.combined.scheme-small
     pkgs.pandoc
     pkgs.ruff

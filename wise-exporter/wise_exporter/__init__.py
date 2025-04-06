@@ -9,7 +9,6 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from jwcrypto import jwe, jwk
 from datetime import date, datetime, timedelta
 from typing import Any, NoReturn
 
@@ -18,24 +17,8 @@ import rsa
 BASE_URL = " https://api.transferwise.com"
 
 
-def create_jwk_from_wise_key(key_data: dict[str, dict[str, str]]) -> jwk.JWK:
-    # Extract the key material
-    key_material = key_data["keyMaterial"]["keyMaterial"]
-
-    # Format the key material as a PEM
-    pem_key = "-----BEGIN PUBLIC KEY-----\n"
-    # Add line breaks every 64 characters for proper PEM format
-    for i in range(0, len(key_material), 64):
-        pem_key += key_material[i : i + 64] + "\n"
-    pem_key += "-----END PUBLIC KEY-----"
-
-    # Create the JWK from the PEM key
-    return jwk.JWK.from_pem(pem_key.encode("utf-8"))
-
-
 class Signer:
     def __init__(self, private_key: bytes) -> None:
-        self.raw_private_key = private_key
         self.private_key = rsa.PrivateKey.load_pkcs1(private_key, "PEM")
 
     def sca_challenge(self, one_time_token: str) -> str:
@@ -74,10 +57,6 @@ class WiseClient:
         if data:
             body = json.dumps(data).encode("ascii")
         headers = headers.copy()
-        print()
-        for k, v in headers.items():
-            print(f"{k}: {v}")
-        print()
         req = urllib.request.Request(url, headers=headers, method=method, data=body)
         resp = urllib.request.urlopen(req)
         return json.load(resp)
@@ -91,9 +70,9 @@ class WiseClient:
     ) -> dict[str, Any] | list[dict[str, Any]]:
         if headers is None:
             headers = {}
-        headers["Content-Type"] = headers.get("Content-Type", "application/json")
         headers["Authorization"] = f"Bearer {self.api_key}"
-        headers["User-Agent"] = "Numtide wise exporter"
+        headers["Content-Type"] = "application/json"
+        headers["User-Agent"] = "Numtide wise importer"
         try:
             return self._http_request(f"{BASE_URL}/{path}", method, headers, data)
         except urllib.error.HTTPError as e:
@@ -103,64 +82,6 @@ class WiseClient:
                 headers["X-Signature"] = self.signer.sca_challenge(one_time_token)
                 return self._http_request(f"{BASE_URL}/{path}", method, headers, data)
             raise
-
-    def register_public_key(
-        self,
-
-    # curl --location 'https://api.sandbox.transferwise.tech/v1/auth/jose/request/public-keys' \
-    # --header 'Content-Type: application/json' \
-    # --header 'Authorization: Bearer {{client-credentials-token}}' \
-    # --data '{
-    #    "keyId": "e87da464-8e5e-4380-8f2d-4e4e04052672",
-    #    "scope": "PAYLOAD_SIGNING",
-    #    "validFrom": "2023-04-27 00:00:00",
-    #    "validTill": "2024-04-01 00:00:00",
-    #    "publicKeyMaterial": {
-    #        "algorithm": "ES512",
-    #        "keyMaterial": "MIGbMBAGByqGSM49AgEGBSuBBAAjA4GGAAQBYAwVICxD0Paq7MOuO34omujHxSrQXZtiTQ/VMteqAeUfM4wE+vTSpbYCqb1pNhhcQpF+FJd2H8jB1H1zil7qLLcBw+yl4PrnLza1pmNLr+kqQVoVXVyVx/xxMK2WObLn8tHxXtW4k+bm1/ySF+0RQ265IZcw2i8YYX2FY59JkwE2Fac="
-    #    }
-    # }'
-
-    # curl --location 'https://api.sandbox.transferwise.tech/v1/auth/jose/request/public-keys' \
-    # --header 'Content-Type: application/json' \
-    # --header 'Authorization: Bearer {{client-credentials-token}}' \
-    # --data '{
-    #    "keyId": "9d09e43f-3c16-4683-9c07-db7e992b2050",
-    #    "scope": "PAYLOAD_ENCRYPTION",
-    #    "validFrom": "2023-04-27 00:00:00",
-    #    "validTill": "2024-04-01 00:00:00",
-    #    "publicKeyMaterial": {
-    #        "algorithm": "RSA_OAEP_256",
-    #        "keyMaterial": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwBjfPXePuZJr6jXEPibN8fpgysswqURHJGk5tod+T3SZBgVEXji0cuXF6xCdh7FMwIUROZ3ZsJFxOwyX8dNYzqEiiQy+C/wCr7/OzvRXQsy6qEQyW8fFsuEuqHRwb+ndAtz7HWZhq7P3K8XHCvJ72zeqZySXmxMYZDVwiwp+kMfRofLIivBjkN5DGWfn/7sxDLJr7/DdNgM1lMIHJtc3arffExROOnYkZ+UaUDxPo22Wnrdeb1h5S9s9m8Z46etMVEDbKJ7KEFppcRbMdckLnY3THZm/le5oxjrdVEDyhVioTC01NT0CTiqnNHfzB90ktWLsbKVww+bgDKAgx2x8EQIDAQAB"
-    #    }
-    # }'
-
-    def get_public_key(self) -> dict[str, dict[str, str]]:
-        r = self.http_request(
-            "/v1/auth/jose/response/public-keys?algorithm=RSA_OAEP_256&scope=PAYLOAD_ENCRYPTION"
-        )
-        assert isinstance(r, dict)
-        return r
-
-    def create_pin(self) -> None:
-        wise_key = self.get_public_key()
-        headers = {
-            "Accept": "application/jose+json",
-            "Content-Type": "application/jose+json",
-            "X-TW-JOSE-Method": "jwe",
-        }
-        plain = "1790"
-        protected_header = {"alg": "RSA-OAEP-256", "enc": "A256GCM"}
-        public_key = create_jwk_from_wise_key(wise_key)
-        jwetoken = jwe.JWE(
-            plain.encode("utf-8"), recipient=public_key, protected=protected_header
-        )
-        data = jwetoken.serialize(compact=True)
-
-        try:
-            r = self.http_request("/v1/user/pin", "POST", headers, data=data)
-        except urllib.error.HTTPError as e:
-            print(e)
 
     def get_buisness_profile(self) -> int:
         r = self.http_request("/v2/profiles")
@@ -246,11 +167,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Year to generate report for (conflicts with `--start` and `--end`)",
     )
-    parser.add_argument(
-        "--create-pin",
-        action="store_true",
-        help="Create a pin for the Wise account",
-    )
     args = parser.parse_args()
     if not args.wise_private_key:
         msg = """
@@ -268,9 +184,6 @@ The public keys management page can be accessed via the "Manage public keys" but
 ccount settings.
 """
         die(msg)
-    if args.create_pin:
-        return args
-
     today = datetime.today()
     if args.month and (args.start or args.end):
         print("--month flag conflicts with --start and --end", file=sys.stderr)
@@ -296,10 +209,8 @@ ccount settings.
 
 def main() -> None:
     args = parse_args()
+
     client = WiseClient(args.wise_api_token, args.wise_private_key.encode("ascii"))
-    if args.create_pin:
-        client.create_pin()
-        return
     if not args.wise_profile:
         args.wise_profile = client.get_buisness_profile()
     balances = client.get_balances(args.wise_profile)

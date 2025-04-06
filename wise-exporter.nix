@@ -5,7 +5,6 @@ pkgs.python3.pkgs.buildPythonApplication {
   src = ./wise-exporter;
   propagatedBuildInputs = [
     pkgs.python3.pkgs.rsa
-    pkgs.python3.pkgs.jwcrypto
   ];
 
   doCheck = false;

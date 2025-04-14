@@ -71,11 +71,10 @@ Generate a bill from the harvest exprt for the customer with the ID 1000
 $ sevdesk-invoicer --customer "1000" harvest.json
 ```
 
-* Calculate working days from harvest time report.
+## Calculate working days from harvest time report.
 
-  For income tax in Germany one can claim money back for each day. The time report can be obtained from [here](https://numtide.harvestapp.com/reports) for each user.
-  Than run this script:
-
+For income tax in Germany one can claim money back for each day. The time report can be obtained from [here](https://numtide.harvestapp.com/reports) for each user.
+Than run this script:
 
 ``` console
 $ working-days-calculator report.csv
@@ -89,14 +88,24 @@ Exports the last month timesheets of user Jon for client Bob
 ./bin/kimai-exporter --client Bob --user Jon
 ```
 
-* German income tax estimator
+## German income tax estimator
 
 Calculates how much money still needs to be paid for the current year, given the current revenu, expenses and already payed pre-tax.
 
 ```
-$ nix shell $HOME/git/harvest-invoice-calculator#sevdesk-invoicer -c sevdesk-tax-estimator --tax-office-name 'Finanzamt Berlin Finanzkasse' --harvest-folder 2024 --wise-folder statements/2024
+$ nix shell $HOME/git/freelancer-toolbox#sevdesk-invoicer -c sevdesk-tax-estimator --tax-office-name 'Finanzamt Berlin Finanzkasse' --harvest-folder 2024 --wise-folder statements/2024
 ...
 Taxes left to pay: XXXXX.XX
+```
+
+## Import wise bank statements into sevdesk
+
+1. Get for each currency the account number / IBAN.
+2. Download the bank transactions as CSV from the Transactions tab in Wise
+3. Run the importer command:
+
+```
+nix shell $HOME/git/freelancer-toolbox#sevdesk-invoicer -c sevdesk-wise-importer -add-account "BE00 0000 0000 0000" "EUR" --add-account 8000000000 USD --import-state wise-import-state.json transaction-history.csv
 ```
 
 ## API References

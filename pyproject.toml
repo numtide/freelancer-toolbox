@@ -61,7 +61,9 @@ ignore = [
   "PD901", #  Avoid using the generic variable name `df` for DataFrames"
 
   # gives falls positives and isn't hard to check munually
-  "ERA001"
+  "ERA001",
+
+  "RET505" # superfluous-else-return
 ]
 
 [tool.mypy]

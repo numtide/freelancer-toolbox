@@ -161,9 +161,17 @@ def import_record(
     neutral_currencies: list[NeutralTransactionCurrencies],
     dry_run: bool = False,
 ) -> None:
-    if record["Status"] == "REFUNDED":
+    status = record["Status"]
+    if status == "REFUNDED":
         print(f"Skipping refunded transaction {record['ID']}")
         return
+    elif status == "CANCELLED":
+        print(f"Skipping cancelled transaction {record['ID']}")
+        return
+    elif status == "COMPLETED":
+        pass
+    else:
+        die(f"Unknown status '{status}'")
     direction = record["Direction"]
     if direction == "IN":
         currency = record["Target currency"]

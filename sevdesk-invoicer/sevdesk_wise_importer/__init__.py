@@ -15,14 +15,8 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from sevdesk import Client
-from sevdesk.client.api.check_account import create_check_account, get_check_accounts
+from sevdesk.client.api.check_account import get_check_accounts
 from sevdesk.client.api.check_account_transaction import create_transaction
-from sevdesk.client.models.check_account_model import (
-    CheckAccountModel,
-    CheckAccountModelImportType,
-    CheckAccountModelStatus,
-    CheckAccountModelType,
-)
 from sevdesk.client.models.check_account_response_model import (
     CheckAccountResponseModelType,
 )
@@ -35,7 +29,7 @@ from sevdesk.client.models.check_account_transaction_model_check_account import 
 from sevdesk.client.models.check_account_transaction_model_status import (
     CheckAccountTransactionModelStatus,
 )
-from sevdesk.client.types import UNSET, Unset
+from sevdesk.client.types import Unset
 
 
 def die(msg: str) -> NoReturn:
@@ -128,26 +122,6 @@ class Accounts:
         die(
             f"missing account '{name}', please create the respective account on sevdesk by uploading a dummy CSV"
         )
-        # account = CheckAccountModel(
-        #     name=name,
-        #     type=CheckAccountModelType.ONLINE,
-        #     currency=currency,
-        #     status=CheckAccountModelStatus.VALUE_100,
-        #     id=UNSET,
-        #     object_name=UNSET,
-        #     create=UNSET,
-        #     update=UNSET,
-        #     sev_client=UNSET,
-        #     import_type=CheckAccountModelImportType.CSV,
-        #     bank_server=UNSET,
-        #     auto_map_transactions=1,
-        # )
-
-        # res = create_check_account.sync(client=self.client, json_body=account)
-        # if res is None or res.objects is Unset:
-        #     die(f"Failed to create account {name}")
-        # self.cache[currency] = res.objects.id
-        # return res.objects.id
 
 
 # These had to be introduced when switching from the wise API to the CSV export

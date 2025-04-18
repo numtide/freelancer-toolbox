@@ -12,6 +12,7 @@ import sys
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, NoReturn
+from dataclasses import dataclass
 
 from sevdesk import Client
 from sevdesk.client.api.check_account import create_check_account, get_check_accounts
@@ -41,6 +42,10 @@ def die(msg: str) -> NoReturn:
     print(msg, file=sys.stderr)
     sys.exit(1)
 
+@dataclass
+class NeutralTransactionCurrencies:
+    source_currency: str
+    target_currency: str
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -64,6 +69,14 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         help='Add a currency to the bank account number mapping (IBAN or account number) i.e. --add-account "BE00 0000 0000 0000" EUR',
+    )
+    parser.add_argument(
+        "--import-neutral",
+        metavar=("source_currency", "target_currency"),
+        nargs=2,
+        action="append",
+        default=[],
+        help="Import neutral transactions that match source currency and target currency.",
     )
     parser.add_argument(
         "--ignore-currency",
@@ -145,6 +158,7 @@ def import_record(
     record: dict[str, Any],
     import_state: set[str],
     ignore_currencies: set[str],
+    neutral_currencies: list[NeutralTransactionCurrencies],
     dry_run: bool = False,
 ) -> None:
     if record["Status"] == "REFUNDED":
@@ -161,7 +175,18 @@ def import_record(
         source_fee_str = record["Source fee amount"]
         source_fee = float(source_fee_str) if source_fee_str else 0.0
         amount = -float(record["Source amount (after fees)"]) - source_fee
+    elif direction == "NEUTRAL":
+        currencies = NeutralTransactionCurrencies(record["Source currency"], record["Target currency"])
+        currency = currencies.target_currency
+        exchange_rate = record["Exchange rate"]
+        if currencies not in neutral_currencies:
+            print(f"Skipping neutral transaction with currencies {currencies.source_currency} -> {currencies.target_currency}")
+            return
+        payee_payer_name = record["Source name"]
+        amount = float(record["Target amount (after fees)"])
     else:
+        die(f"Unknown direction {direction} for {record['ID']}")
+
     # Wise exports a list of transaction involving all accounts
     if currency in ignore_currencies and direction in {"IN", "OUT"}:
         print(f"Skipping {direction} transaction {record['ID']} with ignored currency {currency}")
@@ -177,6 +202,9 @@ def import_record(
         reference = f"Card transaction of {target_amount} ({target_currency})"
     for original_name, replacement in ALIASES.items():
         record_id = record_id.replace(original_name, replacement)
+
+    if reference == "" and direction == "NEUTRAL":
+        reference = f"Currency exchange from {currencies.source_currency} to {currencies.target_currency} at exchange rate {exchange_rate}"
 
     transaction_id = f"{currency}-{account_number}-{record_id}"
 
@@ -215,6 +243,7 @@ def import_record(
 def main() -> None:
     args = parse_args()
     ignore_currencies = set(args.ignore_currency)
+    neutral_currencies = [NeutralTransactionCurrencies(source_currency, target_currency) for source_currency, target_currency in args.import_neutral]
     if len(args.add_account) == 0:
         die("No accounts specifed, use --add-account")
     with ExitStack() as exit_stack:
@@ -243,7 +272,7 @@ def main() -> None:
 
         for record in records:
             import_record(
-                client, accounts, record, imported_transactions, ignore_currencies, dry_run=args.dry_run
+                client, accounts, record, imported_transactions, ignore_currencies, neutral_currencies, dry_run=args.dry_run
             )
             if not args.dry_run:
                 args.import_state_file.write_text(

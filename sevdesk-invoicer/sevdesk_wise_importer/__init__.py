@@ -66,6 +66,12 @@ def parse_args() -> argparse.Namespace:
         help='Add a currency to the bank account number mapping (IBAN or account number) i.e. --add-account "BE00 0000 0000 0000" EUR',
     )
     parser.add_argument(
+        "--ignore-currency",
+        action="append",
+        default=[],
+        help="Ignore any transaction involving this currency."
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Do not actually import anything, just print what would be done",
@@ -138,6 +144,7 @@ def import_record(
     accounts: Accounts,
     record: dict[str, Any],
     import_state: set[str],
+    ignore_currencies: set[str],
     dry_run: bool = False,
 ) -> None:
     if record["Status"] == "REFUNDED":
@@ -155,10 +162,9 @@ def import_record(
         source_fee = float(source_fee_str) if source_fee_str else 0.0
         amount = -float(record["Source amount (after fees)"]) - source_fee
     else:
-        assert (
-            direction == "NEUTRAL"
-        ), f"Unknown direction {direction} for {record['ID']}"
-        print(f"Skipping internal transfer {record['ID']}")
+    # Wise exports a list of transaction involving all accounts
+    if currency in ignore_currencies and direction in {"IN", "OUT"}:
+        print(f"Skipping {direction} transaction {record['ID']} with ignored currency {currency}")
         return
 
     reference = record["Reference"]
@@ -208,6 +214,7 @@ def import_record(
 
 def main() -> None:
     args = parse_args()
+    ignore_currencies = set(args.ignore_currency)
     if len(args.add_account) == 0:
         die("No accounts specifed, use --add-account")
     with ExitStack() as exit_stack:
@@ -236,7 +243,7 @@ def main() -> None:
 
         for record in records:
             import_record(
-                client, accounts, record, imported_transactions, dry_run=args.dry_run
+                client, accounts, record, imported_transactions, ignore_currencies, dry_run=args.dry_run
             )
             if not args.dry_run:
                 args.import_state_file.write_text(

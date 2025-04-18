@@ -10,9 +10,9 @@ import json
 import os
 import sys
 from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
-from dataclasses import dataclass
 
 from sevdesk import Client
 from sevdesk.client.api.check_account import create_check_account, get_check_accounts
@@ -42,10 +42,12 @@ def die(msg: str) -> NoReturn:
     print(msg, file=sys.stderr)
     sys.exit(1)
 
+
 @dataclass
 class NeutralTransactionCurrencies:
     source_currency: str
     target_currency: str
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -82,7 +84,7 @@ def parse_args() -> argparse.Namespace:
         "--ignore-currency",
         action="append",
         default=[],
-        help="Ignore any transaction involving this currency."
+        help="Ignore any transaction involving this currency.",
     )
     parser.add_argument(
         "--dry-run",
@@ -123,7 +125,9 @@ class Accounts:
                     and obj.type != CheckAccountResponseModelType.REGISTER
                 ):
                     return obj.id
-        die(f"missing account '{name}', please create the respective account on sevdesk by uploading a dummy CSV")
+        die(
+            f"missing account '{name}', please create the respective account on sevdesk by uploading a dummy CSV"
+        )
         # account = CheckAccountModel(
         #     name=name,
         #     type=CheckAccountModelType.ONLINE,
@@ -185,11 +189,15 @@ def import_record(
         source_fee = float(source_fee_str) if source_fee_str else 0.0
         amount = -float(record["Source amount (after fees)"]) - source_fee
     elif direction == "NEUTRAL":
-        currencies = NeutralTransactionCurrencies(record["Source currency"], record["Target currency"])
+        currencies = NeutralTransactionCurrencies(
+            record["Source currency"], record["Target currency"]
+        )
         currency = currencies.target_currency
         exchange_rate = record["Exchange rate"]
         if currencies not in neutral_currencies:
-            print(f"Skipping neutral transaction with currencies {currencies.source_currency} -> {currencies.target_currency}")
+            print(
+                f"Skipping neutral transaction with currencies {currencies.source_currency} -> {currencies.target_currency}"
+            )
             return
         payee_payer_name = record["Source name"]
         amount = float(record["Target amount (after fees)"])
@@ -198,7 +206,9 @@ def import_record(
 
     # Wise exports a list of transaction involving all accounts
     if currency in ignore_currencies and direction in {"IN", "OUT"}:
-        print(f"Skipping {direction} transaction {record['ID']} with ignored currency {currency}")
+        print(
+            f"Skipping {direction} transaction {record['ID']} with ignored currency {currency}"
+        )
         return
 
     reference = record["Reference"]
@@ -252,7 +262,10 @@ def import_record(
 def main() -> None:
     args = parse_args()
     ignore_currencies = set(args.ignore_currency)
-    neutral_currencies = [NeutralTransactionCurrencies(source_currency, target_currency) for source_currency, target_currency in args.import_neutral]
+    neutral_currencies = [
+        NeutralTransactionCurrencies(source_currency, target_currency)
+        for source_currency, target_currency in args.import_neutral
+    ]
     if len(args.add_account) == 0:
         die("No accounts specifed, use --add-account")
     with ExitStack() as exit_stack:
@@ -281,7 +294,13 @@ def main() -> None:
 
         for record in records:
             import_record(
-                client, accounts, record, imported_transactions, ignore_currencies, neutral_currencies, dry_run=args.dry_run
+                client,
+                accounts,
+                record,
+                imported_transactions,
+                ignore_currencies,
+                neutral_currencies,
+                dry_run=args.dry_run,
             )
             if not args.dry_run:
                 args.import_state_file.write_text(

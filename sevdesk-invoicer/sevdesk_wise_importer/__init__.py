@@ -123,26 +123,27 @@ class Accounts:
                     and obj.type != CheckAccountResponseModelType.REGISTER
                 ):
                     return obj.id
-        account = CheckAccountModel(
-            name=name,
-            type=CheckAccountModelType.ONLINE,
-            currency=currency,
-            status=CheckAccountModelStatus.VALUE_100,
-            id=UNSET,
-            object_name=UNSET,
-            create=UNSET,
-            update=UNSET,
-            sev_client=UNSET,
-            import_type=CheckAccountModelImportType.CSV,
-            bank_server=UNSET,
-            auto_map_transactions=1,
-        )
+        die(f"missing account '{name}', please create the respective account on sevdesk by uploading a dummy CSV")
+        # account = CheckAccountModel(
+        #     name=name,
+        #     type=CheckAccountModelType.ONLINE,
+        #     currency=currency,
+        #     status=CheckAccountModelStatus.VALUE_100,
+        #     id=UNSET,
+        #     object_name=UNSET,
+        #     create=UNSET,
+        #     update=UNSET,
+        #     sev_client=UNSET,
+        #     import_type=CheckAccountModelImportType.CSV,
+        #     bank_server=UNSET,
+        #     auto_map_transactions=1,
+        # )
 
-        res = create_check_account.sync(client=self.client, json_body=account)
-        if res is None or res.objects is Unset:
-            die(f"Failed to create account {name}")
-        self.cache[currency] = res.objects.id
-        return res.objects.id
+        # res = create_check_account.sync(client=self.client, json_body=account)
+        # if res is None or res.objects is Unset:
+        #     die(f"Failed to create account {name}")
+        # self.cache[currency] = res.objects.id
+        # return res.objects.id
 
 
 # These had to be introduced when switching from the wise API to the CSV export

@@ -124,6 +124,12 @@ def create_invoice(
     days_until_payment: int = 30,
 ) -> None:
     api = SevDeskAPI(api_token)
+    
+    # Get the current user for contact person
+    user_resp = api.client.get("SevUser")
+    if not user_resp.get("objects"):
+        raise ValueError("Could not fetch current user")
+    current_user = user_resp["objects"][0]
 
     start = datetime.strptime(str(tasks[0]["start_date"]), "%Y%m%d")
     end = datetime.strptime(str(tasks[0]["end_date"]), "%Y%m%d")
@@ -157,6 +163,7 @@ def create_invoice(
         currency=currency,
         invoice_date=datetime.now(),
         time_to_pay=days_until_payment,
+        contact_person={"id": current_user["id"], "objectName": "SevUser"},
     )
 
     # Create the invoice with positions

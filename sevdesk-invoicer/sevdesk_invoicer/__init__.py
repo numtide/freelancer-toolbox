@@ -73,7 +73,6 @@ def get_contact_by_name(api: SevDeskAPI, name: str) -> Contact:
 def are_floats_similar(a: float, b: float, error_rate: float) -> bool:
     """Compare two floats to see if they are 'similar enough' within the specified error rate."""
     curr_err = abs(a - b)
-    print(f"Current error {curr_err}. Allowed error: {error_rate}", file=sys.stderr)
     return curr_err <= error_rate
 
 

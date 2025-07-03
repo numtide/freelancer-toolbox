@@ -7,8 +7,4 @@ pkgs.python3.pkgs.buildPythonApplication {
   doCheck = false;
 
   propagatedBuildInputs = [ pkgs.python3.pkgs.rich ];
-
-  postPatch = ''
-    sed -i "/harvest-report/d" setup.cfg
-  '';
 }

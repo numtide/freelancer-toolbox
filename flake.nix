@@ -22,7 +22,6 @@
         };
         packages = {
           harvest-exporter = pkgs.callPackage ./harvest-exporter.nix { };
-          harvest-report = pkgs.callPackage ./harvest-report.nix { };
 
           wise-exporter = pkgs.callPackage ./wise-exporter.nix { };
           sevdesk-invoicer = pkgs.callPackage ./sevdesk-invoicer.nix { };

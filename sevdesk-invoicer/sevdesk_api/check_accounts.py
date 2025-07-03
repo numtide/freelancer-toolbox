@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .client import SevDeskClient
+if TYPE_CHECKING:
+    from .client import SevDeskClient
 
 
 class CheckAccountOperations:
@@ -77,13 +78,15 @@ class CheckAccountOperations:
             "name": name,
             "importType": import_type,
         }
-        
+
         if iban:
             data["iban"] = iban
         if accounting_number is not None:
             data["accountingNumber"] = accounting_number
 
-        return self.client.post("CheckAccount/Factory/fileImportAccount", json_data=data)
+        return self.client.post(
+            "CheckAccount/Factory/fileImportAccount", json_data=data
+        )
 
     def create_clearing_account(
         self,
@@ -102,7 +105,7 @@ class CheckAccountOperations:
         data = {
             "name": name,
         }
-        
+
         if accounting_number is not None:
             data["accountingNumber"] = accounting_number
 

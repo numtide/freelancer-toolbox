@@ -100,10 +100,7 @@ class Accounts:
             if res and "objects" in res:
                 for obj in res["objects"]:
                     # We only want to return accounts that are not registers (German KASSE)
-                    if (
-                        obj.get("name") == name
-                        and obj.get("type") != "register"
-                    ):
+                    if obj.get("name") == name and obj.get("type") != "register":
                         return obj["id"]
         except SevDeskError as e:
             die(f"Failed to get check accounts: {e}")

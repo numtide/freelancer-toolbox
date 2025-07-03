@@ -51,7 +51,9 @@ class ContactOperations:
         contacts = []
 
         if "objects" in response:
-            contacts.extend(Contact.from_dict(contact_data) for contact_data in response["objects"])
+            contacts.extend(
+                Contact.from_dict(contact_data) for contact_data in response["objects"]
+            )
 
         return contacts
 

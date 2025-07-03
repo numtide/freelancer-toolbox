@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import mimetypes
-from datetime import datetime
-from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 from .client import SevDeskClient
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class VoucherOperations:
@@ -90,31 +91,35 @@ class VoucherOperations:
             Response with uploaded file info including internal filename
         """
         import uuid
-        
+
         # Prepare multipart/form-data manually
         boundary = f"----WebKitFormBoundary{uuid.uuid4().hex[:16]}"
-        
+
         # Read file content
         file_content = file.read()
-        
+
         # Guess content type
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-        
+
         # Build multipart body as bytes
         body_parts = []
         body_parts.append(f"------{boundary}".encode())
-        body_parts.append(f'Content-Disposition: form-data; name="file"; filename="{filename}"'.encode())
+        body_parts.append(
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"'.encode()
+        )
         body_parts.append(f"Content-Type: {content_type}".encode())
         body_parts.append(b"")
-        body_parts.append(file_content if isinstance(file_content, bytes) else file_content.encode())
+        body_parts.append(
+            file_content if isinstance(file_content, bytes) else file_content.encode()
+        )
         body_parts.append(f"------{boundary}--".encode())
-        
+
         body = b"\r\n".join(body_parts)
-        
+
         # Override headers for multipart
         headers = self.client.headers.copy()
         headers["Content-Type"] = f"multipart/form-data; boundary=----{boundary}"
-        
+
         # Make request with custom headers
         conn = self.client._get_connection()
         try:
@@ -122,11 +127,13 @@ class VoucherOperations:
             conn.request("POST", path, body=body, headers=headers)
             response = conn.getresponse()
             response_body = response.read().decode("utf-8")
-            
+
             if response.status >= 400:
-                raise SevDeskError(f"Upload failed: {response_body}", response.status, response_body)
-            
+                msg = f"Upload failed: {response_body}"
+                raise SevDeskError(msg, response.status, response_body)
+
             import json
+
             return json.loads(response_body)
         finally:
             conn.close()
@@ -182,7 +189,7 @@ class VoucherOperations:
             "status": status,
             "currency": currency,
         }
-        
+
         if voucher_date:
             voucher_data["voucherDate"] = voucher_date.strftime("%d.%m.%Y")
         if supplier_id:
@@ -210,19 +217,18 @@ class VoucherOperations:
             "voucher": voucher_data,
             "voucherPosDelete": None,
         }
-        
+
         # Add voucher positions
         if voucher_positions:
             request_data["voucherPosSave"] = voucher_positions
         else:
             request_data["voucherPosSave"] = []
-        
+
         # Add filename if provided
         if filename:
             request_data["filename"] = filename
 
         return self.client.post("Voucher/Factory/saveVoucher", json_data=request_data)
-
 
     def update_voucher(
         self,
@@ -246,13 +252,13 @@ class VoucherOperations:
         voucher_data["id"] = voucher_id
         voucher_data["objectName"] = "Voucher"
         voucher_data["mapAll"] = True
-        
+
         request_data = {
             "voucher": voucher_data,
             "voucherPosSave": voucher_positions or [],
             "voucherPosDelete": positions_to_delete,
         }
-        
+
         return self.client.post("Voucher/Factory/saveVoucher", json_data=request_data)
 
     def book_voucher(
@@ -277,10 +283,10 @@ class VoucherOperations:
                 "objectName": "CheckAccountTransaction",
             },
         }
-        
+
         if amount is not None:
             data["amount"] = amount
-            
+
         return self.client.post(f"Voucher/{voucher_id}/bookAmount", json_data=data)
 
 

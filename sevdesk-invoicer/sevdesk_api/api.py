@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from .check_accounts import CheckAccountOperations
 from .client import SevDeskClient, SevDeskError
 from .contacts import ContactOperations
 from .invoices import InvoiceOperations
-from .check_accounts import CheckAccountOperations
 from .transactions import TransactionOperations
 from .vouchers import VoucherOperations
 
@@ -13,7 +13,9 @@ from .vouchers import VoucherOperations
 class SevDeskAPI:
     """Main interface for interacting with the SevDesk API."""
 
-    def __init__(self, api_token: str, base_url: str = "https://my.sevdesk.de/api/v1/") -> None:
+    def __init__(
+        self, api_token: str, base_url: str = "https://my.sevdesk.de/api/v1/"
+    ) -> None:
         """Initialize the SevDesk API.
 
         Args:

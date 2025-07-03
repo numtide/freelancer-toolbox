@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .client import SevDeskClient
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from .client import SevDeskClient
 
 
 class TransactionOperations:
@@ -111,7 +113,7 @@ class TransactionOperations:
             "status": status,
             "payeePayerName": payee_payer_name,
         }
-        
+
         if entry_date:
             data["entryDate"] = entry_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
         if paymt_purpose:
@@ -150,7 +152,7 @@ class TransactionOperations:
             Updated transaction data
         """
         data = {}
-        
+
         if value_date:
             data["valueDate"] = value_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
         if entry_date:
@@ -166,7 +168,9 @@ class TransactionOperations:
         if payee_payer_bank_code:
             data["payeePayerBankCode"] = payee_payer_bank_code
 
-        return self.client.put(f"CheckAccountTransaction/{transaction_id}", json_data=data)
+        return self.client.put(
+            f"CheckAccountTransaction/{transaction_id}", json_data=data
+        )
 
     def delete_transaction(self, transaction_id: int) -> dict[str, Any]:
         """Delete a check account transaction.

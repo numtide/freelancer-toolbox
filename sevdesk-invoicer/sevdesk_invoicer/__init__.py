@@ -20,7 +20,7 @@ from sevdesk_api import (
     InvoiceStatus,
     SevDeskAPI,
     TaxRule,
-    Unity,
+    UnityTypes,
 )
 
 
@@ -108,7 +108,7 @@ def line_item(task: dict[str, Any], has_agency: bool) -> InvoicePosition:
     name = f"{task['client']} - {task['task']}" if has_agency else task["task"]
     return InvoicePosition(
         name=name,
-        unity=Unity.HOUR,
+        unity=UnityTypes.HOUR,
         tax_rate=0,
         text=text,
         quantity=task["rounded_hours"],
@@ -124,11 +124,12 @@ def create_invoice(
     days_until_payment: int = 30,
 ) -> None:
     api = SevDeskAPI(api_token)
-    
+
     # Get the current user for contact person
     user_resp = api.client.get("SevUser")
     if not user_resp.get("objects"):
-        raise ValueError("Could not fetch current user")
+        msg = "Could not fetch current user"
+        raise ValueError(msg)
     current_user = user_resp["objects"][0]
 
     start = datetime.strptime(str(tasks[0]["start_date"]), "%Y%m%d")

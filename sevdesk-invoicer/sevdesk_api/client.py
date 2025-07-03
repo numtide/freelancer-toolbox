@@ -25,7 +25,9 @@ class SevDeskError(Exception):
 class SevDeskClient:
     """Client for interacting with the SevDesk API."""
 
-    def __init__(self, api_token: str, base_url: str = "https://my.sevdesk.de/api/v1/") -> None:
+    def __init__(
+        self, api_token: str, base_url: str = "https://my.sevdesk.de/api/v1/"
+    ) -> None:
         """Initialize the SevDesk client.
 
         Args:

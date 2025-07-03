@@ -101,12 +101,36 @@ class Accounts:
                 for obj in res["objects"]:
                     # We only want to return accounts that are not registers (German KASSE)
                     if obj.get("name") == name and obj.get("type") != "register":
+                        self.cache[currency] = obj["id"]
                         return obj["id"]
         except SevDeskError as e:
             die(f"Failed to get check accounts: {e}")
-        die(
-            f"missing account '{name}', please create the respective account on sevdesk by uploading a dummy CSV"
-        )
+
+        # Account doesn't exist, create it
+        print(f"Creating new check account: {name}")
+        try:
+            res = self.api.check_accounts.create_file_import_account(
+                name=name,
+                import_type="CSV",
+                iban=account_id if len(account_id.replace(" ", "")) > 10 else None,
+            )
+            # Based on the debug output, SevDesk returns {"objects": {account_object}}
+            if (
+                res
+                and "objects" in res
+                and isinstance(res["objects"], dict)
+                and "id" in res["objects"]
+            ):
+                new_account_id = int(res["objects"]["id"])
+                self.cache[currency] = new_account_id
+                print(f"Successfully created check account with ID: {new_account_id}")
+                return new_account_id
+            else:
+                die(
+                    f"Failed to create check account: unexpected response format: {res}"
+                )
+        except SevDeskError as e:
+            die(f"Failed to create check account: {e}")
 
 
 # These had to be introduced when switching from the wise API to the CSV export

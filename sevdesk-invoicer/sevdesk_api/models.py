@@ -8,6 +8,14 @@ from enum import Enum
 from typing import Any
 
 
+def parse_iso_date(date_str: str) -> datetime:
+    """Parse ISO format date string from API.
+    
+    The API returns dates in ISO format with timezone like '2025-07-03T00:00:00+02:00'.
+    """
+    return datetime.fromisoformat(date_str)
+
+
 class ContactCategory(Enum):
     """Contact categories."""
 
@@ -293,13 +301,9 @@ class Contact(SevDeskObject):
 
         # Timestamps
         if data.get("create"):
-            contact.create = datetime.fromisoformat(
-                data["create"]
-            )
+            contact.create = parse_iso_date(data["create"])
         if data.get("update"):
-            contact.update = datetime.fromisoformat(
-                data["update"]
-            )
+            contact.update = parse_iso_date(data["update"])
 
         return contact
 
@@ -466,16 +470,13 @@ class Invoice(SevDeskObject):
         if data.get("contact"):
             invoice.contact = Contact.from_dict(data["contact"])
 
-        # Dates
+        # Dates - API returns ISO format with timezone
         if data.get("invoiceDate"):
-            # Handle date string format
-            invoice.invoice_date = datetime.strptime(data["invoiceDate"], "%d.%m.%Y")
+            invoice.invoice_date = parse_iso_date(data["invoiceDate"])
         if data.get("deliveryDate"):
-            invoice.delivery_date = datetime.strptime(data["deliveryDate"], "%d.%m.%Y")
+            invoice.delivery_date = parse_iso_date(data["deliveryDate"])
         if data.get("deliveryDateUntil"):
-            invoice.delivery_date_until = datetime.strptime(
-                data["deliveryDateUntil"], "%d.%m.%Y"
-            )
+            invoice.delivery_date_until = parse_iso_date(data["deliveryDateUntil"])
 
         # Status
         if data.get("status"):
@@ -501,13 +502,9 @@ class Invoice(SevDeskObject):
 
         # Timestamps
         if data.get("create"):
-            invoice.create = datetime.fromisoformat(
-                data["create"]
-            )
+            invoice.create = parse_iso_date(data["create"])
         if data.get("update"):
-            invoice.update = datetime.fromisoformat(
-                data["update"]
-            )
+            invoice.update = parse_iso_date(data["update"])
 
         return invoice
 

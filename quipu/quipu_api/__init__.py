@@ -130,7 +130,7 @@ class QuipuAPI:
                 self.log.exception(f"Request error for {method} {url}")
                 raise
 
-            logging.warning(
+            self.log.warning(
                 f"Retrying {method} request to {endpoint}. Attempt {attempts + 1}/{max_retries}."
             )
             sleep(2**attempts)  # Exponential backoff

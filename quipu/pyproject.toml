@@ -7,12 +7,11 @@ name = "quipu"
 description = "Generate invoices in Quipu"
 version = "0.1.0"
 authors = [{ name = "Aldo Borrero", email = "aldo@aldoborrero.com" }]
-license = { text = "MIT" }
+license = "MIT"
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Topic :: Utilities",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3.8",

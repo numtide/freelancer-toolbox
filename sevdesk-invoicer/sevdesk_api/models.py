@@ -258,7 +258,7 @@ class Contact(SevDeskObject):
         if data.get("category"):
             cat_id = data["category"].get("id")
             if cat_id:
-                contact.category = ContactCategory(cat_id)
+                contact.category = ContactCategory(int(cat_id))
 
         # Common fields
         contact.customer_number = data.get("customerNumber")

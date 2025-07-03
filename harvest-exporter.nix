@@ -4,7 +4,10 @@ pkgs.python3.pkgs.buildPythonApplication {
   version = "0.0.1";
   src = ./.;
 
+  pyproject = true;
+  build-system = [ pkgs.python3.pkgs.setuptools ];
+
   doCheck = false;
 
-  propagatedBuildInputs = [ pkgs.python3.pkgs.rich ];
+  dependencies = [ pkgs.python3.pkgs.rich ];
 }

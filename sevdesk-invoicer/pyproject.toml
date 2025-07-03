@@ -7,12 +7,11 @@ name = "sevdesk-invoicer"
 description = "Generate invoices in sevdesk"
 version = "0.0.1"
 authors = [{ name = "Jörg Thalheim", email = "joerg@thalheim.io" }]
-license = { text = "MIT" }
+license = "MIT"
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Topic :: Utilities",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3.6",

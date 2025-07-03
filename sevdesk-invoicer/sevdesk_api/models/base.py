@@ -26,7 +26,7 @@ class SevDeskObject:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict for API requests."""
-        data = {}
+        data: dict[str, Any] = {}
         if self.id is not None:
             data["id"] = self.id
         if self.object_name:

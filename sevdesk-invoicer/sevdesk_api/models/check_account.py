@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .base import SevDeskObject
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class CheckAccountType(Enum):
@@ -75,7 +77,7 @@ class CheckAccount(SevDeskObject):
 class CheckAccountTransaction(SevDeskObject):
     """Check account transaction model."""
 
-    value_date: datetime = None
+    value_date: datetime | None = None
     entry_date: datetime | None = None
     paymt_purpose: str | None = None
     amount: float = 0.0

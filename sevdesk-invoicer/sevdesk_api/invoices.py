@@ -1,5 +1,7 @@
 """Invoice operations for SevDesk API."""
 
+from typing import Any
+
 from .client import SevDeskClient
 from .models import Invoice, InvoicePosition, InvoiceStatus
 
@@ -72,7 +74,7 @@ class InvoiceOperations:
         Returns:
             List of Invoice objects
         """
-        params = {
+        params: dict[str, Any] = {
             "limit": limit,
             "offset": offset,
         }

@@ -52,8 +52,11 @@ class SevDeskClient:
             "User-Agent": "sevdesk-python-client/1.0",
         }
 
-    def _get_connection(self) -> HTTPSConnection:
+    def get_connection(self) -> HTTPSConnection:
         """Get an HTTPS connection."""
+        if self.host is None:
+            msg = "Host is not set"
+            raise ValueError(msg)
         return HTTPSConnection(self.host, self.port)
 
     def _request(
@@ -99,7 +102,7 @@ class SevDeskClient:
             headers["Content-Type"] = "application/x-www-form-urlencoded"
 
         # Make request
-        conn = self._get_connection()
+        conn = self.get_connection()
         try:
             conn.request(method, path, body=body, headers=headers)
             response = conn.getresponse()

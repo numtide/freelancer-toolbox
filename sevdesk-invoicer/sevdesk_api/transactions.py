@@ -45,7 +45,7 @@ class TransactionOperations:
         Returns:
             Response with transactions
         """
-        params = {}
+        params: dict[str, Any] = {}
         if check_account_id is not None:
             params["checkAccount[id]"] = check_account_id
             params["checkAccount[objectName]"] = "CheckAccount"
@@ -151,7 +151,7 @@ class TransactionOperations:
         Returns:
             Updated transaction data
         """
-        data = {}
+        data: dict[str, Any] = {}
 
         if value_date:
             data["valueDate"] = value_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")

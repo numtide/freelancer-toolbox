@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .base import SevDeskObject, parse_iso_date
 from .contact import Contact
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class InvoiceStatus(Enum):
@@ -164,12 +166,10 @@ class Invoice(SevDeskObject):
     reference: str | None = None
 
     # Related objects
-    positions: list[InvoicePosition] = None
+    positions: list[InvoicePosition] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.object_name = "Invoice"
-        if self.positions is None:
-            self.positions = []
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict for API requests."""

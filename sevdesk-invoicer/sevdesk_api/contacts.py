@@ -1,5 +1,7 @@
 """Contact operations for SevDesk API."""
 
+from typing import Any
+
 from .client import SevDeskClient
 from .models import Contact, ContactCategory
 
@@ -32,7 +34,7 @@ class ContactOperations:
         Returns:
             List of Contact objects
         """
-        params = {
+        params: dict[str, Any] = {
             "limit": limit,
             "offset": offset,
         }
@@ -48,7 +50,7 @@ class ContactOperations:
             params["category[objectName]"] = "Category"
 
         response = self.client.get("Contact", params=params)
-        contacts = []
+        contacts: list[Contact] = []
 
         if "objects" in response:
             contacts.extend(

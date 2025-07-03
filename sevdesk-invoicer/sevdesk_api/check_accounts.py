@@ -35,7 +35,7 @@ class CheckAccountOperations:
         Returns:
             Response with check accounts
         """
-        params = {}
+        params: dict[str, Any] = {}
         if limit is not None:
             params["limit"] = limit
         if offset is not None:
@@ -74,7 +74,7 @@ class CheckAccountOperations:
         Returns:
             Created check account data
         """
-        data = {
+        data: dict[str, Any] = {
             "name": name,
             "importType": import_type,
         }
@@ -102,7 +102,7 @@ class CheckAccountOperations:
         Returns:
             Created check account data
         """
-        data = {
+        data: dict[str, Any] = {
             "name": name,
         }
 

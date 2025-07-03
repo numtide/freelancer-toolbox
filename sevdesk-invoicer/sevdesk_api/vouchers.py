@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import mimetypes
+import uuid
 from typing import TYPE_CHECKING, Any, BinaryIO
 
-from .client import SevDeskClient
+from .client import SevDeskClient, SevDeskError
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -48,7 +50,7 @@ class VoucherOperations:
         Returns:
             Response with vouchers
         """
-        params = {}
+        params: dict[str, Any] = {}
         if status is not None:
             params["status"] = status
         if credit_debit:
@@ -90,8 +92,6 @@ class VoucherOperations:
         Returns:
             Response with uploaded file info including internal filename
         """
-        import uuid
-
         # Prepare multipart/form-data manually
         boundary = f"----WebKitFormBoundary{uuid.uuid4().hex[:16]}"
 
@@ -121,7 +121,7 @@ class VoucherOperations:
         headers["Content-Type"] = f"multipart/form-data; boundary=----{boundary}"
 
         # Make request with custom headers
-        conn = self.client._get_connection()
+        conn = self.client.get_connection()
         try:
             path = f"{self.client.base_path}/Voucher/Factory/uploadTempFile"
             conn.request("POST", path, body=body, headers=headers)
@@ -131,8 +131,6 @@ class VoucherOperations:
             if response.status >= 400:
                 msg = f"Upload failed: {response_body}"
                 raise SevDeskError(msg, response.status, response_body)
-
-            import json
 
             return json.loads(response_body)
         finally:
@@ -213,7 +211,7 @@ class VoucherOperations:
             voucher_data["taxRule"] = tax_rule
 
         # Build request data
-        request_data = {
+        request_data: dict[str, Any] = {
             "voucher": voucher_data,
             "voucherPosDelete": None,
         }
@@ -277,7 +275,7 @@ class VoucherOperations:
         Returns:
             Booking response
         """
-        data = {
+        data: dict[str, Any] = {
             "checkAccountTransaction": {
                 "id": check_account_transaction_id,
                 "objectName": "CheckAccountTransaction",
@@ -288,6 +286,3 @@ class VoucherOperations:
             data["amount"] = amount
 
         return self.client.post(f"Voucher/{voucher_id}/bookAmount", json_data=data)
-
-
-from .client import SevDeskError  # Import at the end to avoid circular import

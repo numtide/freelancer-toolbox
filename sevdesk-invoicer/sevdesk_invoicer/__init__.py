@@ -169,7 +169,9 @@ def create_invoice(
 
     # Create the invoice with positions
     created_invoice = api.invoices.create_invoice(invoice, items)
-    print(f"Invoice created successfully with ID: {created_invoice.id}")
+    print(
+        f"Invoice created successfully: https://my.sevdesk.de/fi/detail/type/RE/id/{created_invoice.id}"
+    )
 
 
 def main() -> None:

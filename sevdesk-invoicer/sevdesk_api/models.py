@@ -423,6 +423,8 @@ class Invoice(SevDeskObject):
 
         if self.contact_person:
             data["contactPerson"] = self.contact_person
+        else:
+            data["contactPerson"] = None
 
         data["taxRate"] = self.tax_rate
         if self.tax_set:

@@ -431,7 +431,7 @@ class Invoice(SevDeskObject):
         if self.tax_type:
             data["taxType"] = self.tax_type
         if self.tax_rule:
-            data["taxRule"] = self.tax_rule.value
+            data["taxRule"] = {"id": self.tax_rule.value, "objectName": "TaxRule"}
 
         data["invoiceType"] = self.invoice_type.value
         data["currency"] = self.currency

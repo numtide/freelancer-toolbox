@@ -272,7 +272,7 @@ class Invoice(SevDeskObject):
 
         # Tax
         if data.get("taxRule"):
-            invoice.tax_rule = TaxRule(data["taxRule"])
+            invoice.tax_rule = TaxRule(int(data["taxRule"]["id"]))
         invoice.tax_type = data.get("taxType")
         invoice.tax_rate = float(data.get("taxRate", 19.0))
 

@@ -13,6 +13,7 @@ class ObjectType(Enum):
     """Supported object types for dynamic resolution."""
 
     UNITY = "Unity"
+    TAX_RULE = "TaxRule"
 
 
 class ObjectResolver:
@@ -22,7 +23,9 @@ class ObjectResolver:
         self.client = client
         self._cache: dict[tuple[ObjectType, str], dict[str, dict[str, Any]]] = {}
 
-    def _fetch_objects(self, object_type: ObjectType, key_field: str = "translationCode") -> dict[str, dict[str, Any]]:
+    def _fetch_objects(
+        self, object_type: ObjectType, key_field: str = "translationCode"
+    ) -> dict[str, dict[str, Any]]:
         """Fetch all objects of a specific type from the API and cache them.
 
         Args:
@@ -52,7 +55,9 @@ class ObjectResolver:
 
         return object_map
 
-    def get_object(self, object_type: ObjectType, key: str, key_field: str = "translationCode") -> dict[str, Any]:
+    def get_object(
+        self, object_type: ObjectType, key: str, key_field: str = "translationCode"
+    ) -> dict[str, Any]:
         """Get object data by key.
 
         Args:
@@ -86,3 +91,16 @@ class ObjectResolver:
     def get_unity_by_translation_code(self, translation_code: str) -> dict[str, Any]:
         """Get Unity data by translation code."""
         return self.get_object(ObjectType.UNITY, translation_code)
+
+    # Convenience methods for TaxRule
+    def get_tax_rule_by_id(self, rule_id: int) -> dict[str, Any]:
+        """Get TaxRule data by ID."""
+        return self.get_object(ObjectType.TAX_RULE, str(rule_id), key_field="id")
+
+    def get_tax_rule_by_name(self, name: str) -> dict[str, Any]:
+        """Get TaxRule data by name."""
+        return self.get_object(ObjectType.TAX_RULE, name, key_field="name")
+
+    def get_tax_rule_by_code(self, code: str) -> dict[str, Any]:
+        """Get TaxRule data by code."""
+        return self.get_object(ObjectType.TAX_RULE, code, key_field="code")

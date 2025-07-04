@@ -19,7 +19,6 @@ from sevdesk_api import (
     InvoicePosition,
     InvoiceStatus,
     SevDeskAPI,
-    TaxRule,
 )
 
 
@@ -158,7 +157,7 @@ def create_invoice(
         head_text=head_text,
         contact=customer,
         reference=None,
-        tax_rule=TaxRule.NOT_TAXABLE_IN_COUNTRY,  # Using tax rule instead of tax type
+        tax_rule=api.tax_rules.not_taxable_in_country,  # Using dynamic tax rule from API
         delivery_date=start,
         delivery_date_until=end,
         currency=currency,

@@ -6,7 +6,7 @@ from .check_accounts import CheckAccountOperations
 from .client import SevDeskClient, SevDeskError
 from .contacts import ContactOperations
 from .invoices import InvoiceOperations
-from .models.invoice import DynamicUnityTypes
+from .models.invoice import DynamicTaxRules, DynamicUnityTypes
 from .object_resolver import ObjectResolver
 from .transactions import TransactionOperations
 from .vouchers import VoucherOperations
@@ -31,9 +31,10 @@ class SevDeskAPI:
         self.transactions = TransactionOperations(self.client)
         self.vouchers = VoucherOperations(self.client)
 
-        # Object resolver and dynamic unity types
+        # Object resolver and dynamic types
         self.object_resolver = ObjectResolver(self.client)
         self.unity_types = DynamicUnityTypes(self.object_resolver)
+        self.tax_rules = DynamicTaxRules(self.object_resolver)
 
     def check_connection(self) -> bool:
         """Check if the API connection is working.

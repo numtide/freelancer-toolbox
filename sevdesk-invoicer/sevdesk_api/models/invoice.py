@@ -31,35 +31,6 @@ class InvoiceType(Enum):
     MA = "MA"  # Dunning
 
 
-class TaxRule(Enum):
-    """Tax rules for sevdesk-Update 2.0."""
-
-    # Revenue tax rules
-    TAXABLE_REVENUE = 1  # Umsatzsteuerpflichtige Umsätze
-    EXPORTS = 2  # Ausfuhren
-    INTRA_COMMUNITY_SUPPLY = 3  # Innergemeinschaftliche Lieferungen
-    TAX_FREE_REVENUE = 4  # Steuerfreie Umsätze §4 UStG
-    REVERSE_CHARGE_13B = 5  # Reverse Charge gem. §13b UStG
-    SMALL_BUSINESS = 11  # Steuer nicht erhoben nach §19UStG
-    NOT_TAXABLE_IN_COUNTRY = 17  # Nicht im Inland steuerbare Leistung
-    OSS_GOODS = 18  # One Stop Shop (goods)
-    OSS_ELECTRONIC_SERVICE = 19  # One Stop Shop (electronic service)
-    OSS_OTHER_SERVICE = 20  # One Stop Shop (other service)
-    REVERSE_CHARGE_18B = 21  # Reverse Charge gem. §18b UStG
-
-    # Expense tax rules
-    INTRA_COMMUNITY_ACQUISITION = 8  # Innergemeinschaftliche Erwerbe
-    DEDUCTIBLE_EXPENSES = 9  # Vorsteuerabziehbare Aufwendungen
-    NON_DEDUCTIBLE_EXPENSES = 10  # Nicht vorsteuerabziehbare Aufwendungen
-    REVERSE_CHARGE_13B_WITH_DEDUCTION = (
-        12  # Reverse Charge gem. §13b Abs. 2 UStG mit Vorsteuerabzug
-    )
-    REVERSE_CHARGE_13B_WITHOUT_DEDUCTION = (
-        13  # Reverse Charge gem. §13b UStG ohne Vorsteuerabzug
-    )
-    REVERSE_CHARGE_13B_EU = 14  # Reverse Charge gem. §13b Abs. 1 EU Umsätze
-
-
 @dataclass
 class Unity:
     """Unity type for invoice positions."""
@@ -73,18 +44,24 @@ class Unity:
         return {"id": self.id, "name": self.name, "objectName": self.object_name}
 
 
-
 class DynamicUnityTypes:
     """Dynamic unity types that fetch IDs from the API."""
 
-    def __init__(self, unity_resolver: Any) -> None:
-        """Initialize with a UnityResolver instance."""
-        self._resolver = unity_resolver
+    def __init__(self, resolver: Any) -> None:
+        """Initialize with an ObjectResolver instance."""
+        self._resolver = resolver
         self._cache: dict[str, Unity] = {}
 
     def _get_unity(self, translation_code: str) -> Unity:
         """Get or create a Unity object for the given translation code."""
-        return self._resolver.get_unity_by_translation_code(translation_code)
+        unity_data = self._resolver.get_unity_by_translation_code(translation_code)
+        if translation_code not in self._cache:
+            self._cache[translation_code] = Unity(
+                id=unity_data["id"],
+                name=unity_data["name"],
+                object_name=unity_data.get("objectName", "Unity"),
+            )
+        return self._cache[translation_code]
 
     @property
     def hour(self) -> Unity:
@@ -145,6 +122,153 @@ class DynamicUnityTypes:
     def parcel(self) -> Unity:
         """Get Unity for flat rate/parcel."""
         return self._get_unity("UNITY_BLANKET")
+
+
+@dataclass
+class TaxRule:
+    """Tax rule object from SevDesk API."""
+
+    id: int
+    name: str
+    code: str
+    object_name: str = "TaxRule"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dict for API requests."""
+        return {"id": self.id, "objectName": self.object_name}
+
+
+class DynamicTaxRules:
+    """Dynamic tax rules that fetch from the API."""
+
+    def __init__(self, resolver: Any) -> None:
+        """Initialize with an ObjectResolver instance."""
+        self._resolver = resolver
+        self._cache: dict[str, TaxRule] = {}
+        self._cache_by_id: dict[int, TaxRule] = {}
+
+    def _get_tax_rule_by_code(self, code: str) -> TaxRule:
+        """Get or create a TaxRule object for the given code."""
+        if code not in self._cache:
+            tax_rule_data = self._resolver.get_tax_rule_by_code(code)
+            tax_rule = TaxRule(
+                id=int(tax_rule_data["id"]),
+                name=tax_rule_data["name"],
+                code=tax_rule_data["code"],
+                object_name=tax_rule_data.get("objectName", "TaxRule"),
+            )
+            self._cache[code] = tax_rule
+            self._cache_by_id[tax_rule.id] = tax_rule
+        return self._cache[code]
+
+    def _get_tax_rule_by_id(self, rule_id: int) -> TaxRule:
+        """Get or create a TaxRule object for the given ID."""
+        if rule_id not in self._cache_by_id:
+            tax_rule_data = self._resolver.get_tax_rule_by_id(rule_id)
+            tax_rule = TaxRule(
+                id=int(tax_rule_data["id"]),
+                name=tax_rule_data["name"],
+                code=tax_rule_data["code"],
+                object_name=tax_rule_data.get("objectName", "TaxRule"),
+            )
+            self._cache[tax_rule.code] = tax_rule
+            self._cache_by_id[rule_id] = tax_rule
+        return self._cache_by_id[rule_id]
+
+    def get_by_id(self, rule_id: int) -> TaxRule:
+        """Get tax rule by ID."""
+        return self._get_tax_rule_by_id(rule_id)
+
+    def get_by_code(self, code: str) -> TaxRule:
+        """Get tax rule by code."""
+        return self._get_tax_rule_by_code(code)
+
+    # Revenue tax rules
+    @property
+    def taxable_revenue(self) -> TaxRule:
+        """Umsatzsteuerpflichtige Umsätze."""
+        return self._get_tax_rule_by_code("USTPFL_UMS_EINN")
+
+    @property
+    def exports(self) -> TaxRule:
+        """Ausfuhren."""
+        return self._get_tax_rule_by_code("AUSFUHREN")
+
+    @property
+    def intra_community_supply(self) -> TaxRule:
+        """Innergemeinschaftliche Lieferungen."""
+        return self._get_tax_rule_by_code("INNERGEM_LIEF")
+
+    @property
+    def tax_free_revenue(self) -> TaxRule:
+        """Steuerfreie Umsätze §4 UStG."""
+        return self._get_tax_rule_by_code("STFREIE_UMS_P4")
+
+    @property
+    def reverse_charge_13b(self) -> TaxRule:
+        """Reverse Charge gem. §13b UStG."""
+        return self._get_tax_rule_by_code("REV_CHARGE_13B_1")
+
+    @property
+    def small_business(self) -> TaxRule:
+        """Steuer nicht erhoben nach §19UStG."""
+        return self._get_tax_rule_by_code("KLEINUNTERNEHMER_P19")
+
+    @property
+    def not_taxable_in_country(self) -> TaxRule:
+        """Nicht im Inland steuerbare Leistung."""
+        return self._get_tax_rule_by_code("NICHT_IM_INLAND_STEUERBAR")
+
+    @property
+    def oss_goods(self) -> TaxRule:
+        """One Stop Shop (goods)."""
+        return self._get_tax_rule_by_code("OSS_GOODS")
+
+    @property
+    def oss_electronic_service(self) -> TaxRule:
+        """One Stop Shop (electronic service)."""
+        return self._get_tax_rule_by_code("OSS_SERVICES")
+
+    @property
+    def oss_other_service(self) -> TaxRule:
+        """One Stop Shop (other service)."""
+        return self._get_tax_rule_by_code("OSS_OTHER")
+
+    @property
+    def reverse_charge_18b(self) -> TaxRule:
+        """Reverse Charge gem. §18b UStG."""
+        return self._get_tax_rule_by_code("REV_CHARGE_13B_1_USTG")
+
+    # Expense tax rules
+    @property
+    def intra_community_acquisition(self) -> TaxRule:
+        """Innergemeinschaftliche Erwerbe."""
+        return self._get_tax_rule_by_code("INNERGEM_ERWERB")
+
+    @property
+    def deductible_expenses(self) -> TaxRule:
+        """Vorsteuerabziehbare Aufwendungen."""
+        return self._get_tax_rule_by_code("VORST_ABZUGSF_AUFW")
+
+    @property
+    def non_deductible_expenses(self) -> TaxRule:
+        """Nicht vorsteuerabziehbare Aufwendungen."""
+        return self._get_tax_rule_by_code("NICHT_VORST_ABZUGSF_AUFW")
+
+    @property
+    def reverse_charge_13b_with_deduction(self) -> TaxRule:
+        """Reverse Charge gem. §13b Abs. 2 UStG mit Vorsteuerabzug."""
+        return self._get_tax_rule_by_code("REV_CHARGE_13B_MIT_VORST_ABZUG_0")
+
+    @property
+    def reverse_charge_13b_without_deduction(self) -> TaxRule:
+        """Reverse Charge gem. §13b UStG ohne Vorsteuerabzug."""
+        return self._get_tax_rule_by_code("REV_CHARGE_13B_OHNE_VORST_ABZUG_0")
+
+    @property
+    def reverse_charge_13b_eu(self) -> TaxRule:
+        """Reverse Charge gem. §13b Abs. 1 EU Umsätze."""
+        return self._get_tax_rule_by_code("REV_CHARGE_13B_EU_0")
 
 
 @dataclass
@@ -278,7 +402,7 @@ class Invoice(SevDeskObject):
         if self.tax_type:
             data["taxType"] = self.tax_type
         if self.tax_rule:
-            data["taxRule"] = {"id": self.tax_rule.value, "objectName": "TaxRule"}
+            data["taxRule"] = self.tax_rule.to_dict()
 
         data["invoiceType"] = self.invoice_type.value
         data["currency"] = self.currency
@@ -333,7 +457,15 @@ class Invoice(SevDeskObject):
 
         # Tax
         if data.get("taxRule"):
-            invoice.tax_rule = TaxRule(int(data["taxRule"]["id"]))
+            # Create a minimal TaxRule object from the response
+            # In practice, this would be fetched via the dynamic tax rules
+            tax_rule_data = data["taxRule"]
+            invoice.tax_rule = TaxRule(
+                id=int(tax_rule_data["id"]),
+                name=tax_rule_data.get("name", ""),
+                code=tax_rule_data.get("code", ""),
+                object_name=tax_rule_data.get("objectName", "TaxRule"),
+            )
         invoice.tax_type = data.get("taxType")
         invoice.tax_rate = float(data.get("taxRate", 19.0))
 

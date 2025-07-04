@@ -73,21 +73,78 @@ class Unity:
         return {"id": self.id, "name": self.name, "objectName": self.object_name}
 
 
-class UnityTypes:
-    """Standard unity types for invoice positions."""
 
-    PIECE = Unity(1, "Stück")
-    HOUR = Unity(2, "Stunde")
-    DAY = Unity(3, "Tag")
-    KILOGRAM = Unity(4, "Kilogramm")
-    CUBIC_METER = Unity(5, "Kubikmeter")
-    METER = Unity(6, "Meter")
-    SQUARE_METER = Unity(7, "Quadratmeter")
-    KILOMETER = Unity(8, "Kilometer")
-    MONTH = Unity(9, "Monat")
-    MINUTE = Unity(10, "Minute")
-    LITER = Unity(11, "Liter")
-    PARCEL = Unity(12, "Pauschal")
+class DynamicUnityTypes:
+    """Dynamic unity types that fetch IDs from the API."""
+
+    def __init__(self, unity_resolver: Any) -> None:
+        """Initialize with a UnityResolver instance."""
+        self._resolver = unity_resolver
+        self._cache: dict[str, Unity] = {}
+
+    def _get_unity(self, translation_code: str) -> Unity:
+        """Get or create a Unity object for the given translation code."""
+        return self._resolver.get_unity_by_translation_code(translation_code)
+
+    @property
+    def hour(self) -> Unity:
+        """Get Unity for hours."""
+        return self._get_unity("UNITY_HOUR")
+
+    @property
+    def piece(self) -> Unity:
+        """Get Unity for pieces."""
+        return self._get_unity("UNITY_PIECE")
+
+    @property
+    def day(self) -> Unity:
+        """Get Unity for days."""
+        return self._get_unity("UNITY_DAYS")
+
+    @property
+    def kilogram(self) -> Unity:
+        """Get Unity for kilograms."""
+        return self._get_unity("UNITY_KILOGRAM")
+
+    @property
+    def cubic_meter(self) -> Unity:
+        """Get Unity for cubic meters."""
+        return self._get_unity("UNITY_CUBIC_METER")
+
+    @property
+    def meter(self) -> Unity:
+        """Get Unity for meters."""
+        return self._get_unity("UNITY_METER")
+
+    @property
+    def square_meter(self) -> Unity:
+        """Get Unity for square meters."""
+        return self._get_unity("UNITY_SQUARE_METER")
+
+    @property
+    def kilometer(self) -> Unity:
+        """Get Unity for kilometers."""
+        return self._get_unity("UNITY_KILOMETER")
+
+    @property
+    def month(self) -> Unity:
+        """Get Unity for months."""
+        return self._get_unity("UNITY_MONTH")
+
+    @property
+    def minute(self) -> Unity:
+        """Get Unity for minutes."""
+        return self._get_unity("UNITY_MINUTE")
+
+    @property
+    def liter(self) -> Unity:
+        """Get Unity for liters."""
+        return self._get_unity("UNITY_L")
+
+    @property
+    def parcel(self) -> Unity:
+        """Get Unity for flat rate/parcel."""
+        return self._get_unity("UNITY_BLANKET")
 
 
 @dataclass
@@ -99,7 +156,7 @@ class InvoicePosition:
     quantity: float = 1.0
     price: float = 0.0
     name: str = ""
-    unity: Unity = field(default_factory=lambda: UnityTypes.PIECE)
+    unity: Unity | None = None
     position_number: int | None = None
     text: str | None = None
     discount: float | None = None
@@ -108,6 +165,10 @@ class InvoicePosition:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict for API requests."""
+        if self.unity is None:
+            msg = "Unity must be set before converting to dict"
+            raise ValueError(msg)
+
         data = {
             "objectName": self.object_name,
             "quantity": self.quantity,

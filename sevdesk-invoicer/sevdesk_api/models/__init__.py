@@ -16,7 +16,6 @@ from .invoice import (
     InvoiceType,
     TaxRule,
     Unity,
-    UnityTypes,
 )
 
 __all__ = [
@@ -34,6 +33,5 @@ __all__ = [
     "TaxRule",
     "TransactionStatus",
     "Unity",
-    "UnityTypes",
     "parse_iso_date",
 ]

@@ -16,7 +16,6 @@ from .models import (
     InvoiceType,
     TaxRule,
     Unity,
-    UnityTypes,
 )
 from .transactions import TransactionOperations
 from .vouchers import VoucherOperations
@@ -39,6 +38,5 @@ __all__ = [
     "TaxRule",
     "TransactionOperations",
     "Unity",
-    "UnityTypes",
     "VoucherOperations",
 ]

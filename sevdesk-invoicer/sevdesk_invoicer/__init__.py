@@ -20,7 +20,6 @@ from sevdesk_api import (
     InvoiceStatus,
     SevDeskAPI,
     TaxRule,
-    UnityTypes,
 )
 
 
@@ -76,7 +75,9 @@ def are_floats_similar(a: float, b: float, error_rate: float) -> bool:
     return curr_err <= error_rate
 
 
-def line_item(task: dict[str, Any], has_agency: bool) -> InvoicePosition:
+def line_item(
+    task: dict[str, Any], has_agency: bool, unity_types: Any
+) -> InvoicePosition:
     price = float(
         round(
             (Fraction(task["target_cost"]) / Fraction(task["rounded_hours"])),
@@ -107,7 +108,7 @@ def line_item(task: dict[str, Any], has_agency: bool) -> InvoicePosition:
     name = f"{task['client']} - {task['task']}" if has_agency else task["task"]
     return InvoicePosition(
         name=name,
-        unity=UnityTypes.HOUR,
+        unity=unity_types.hour,
         tax_rate=0,
         text=text,
         quantity=task["rounded_hours"],
@@ -143,7 +144,7 @@ def create_invoice(
         billing_target = agency
     else:
         billing_target = tasks[0]["client"]
-    items = [line_item(task, has_agency) for task in tasks]
+    items = [line_item(task, has_agency, api.unity_types) for task in tasks]
 
     customer = get_contact_by_name(api, billing_target)
 

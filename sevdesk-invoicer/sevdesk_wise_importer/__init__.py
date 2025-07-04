@@ -14,22 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
 
-from sevdesk import Client
-from sevdesk.client.api.check_account import get_check_accounts
-from sevdesk.client.api.check_account_transaction import create_transaction
-from sevdesk.client.models.check_account_response_model import (
-    CheckAccountResponseModelType,
-)
-from sevdesk.client.models.check_account_transaction_model import (
-    CheckAccountTransactionModel,
-)
-from sevdesk.client.models.check_account_transaction_model_check_account import (
-    CheckAccountTransactionModelCheckAccount,
-)
-from sevdesk.client.models.check_account_transaction_model_status import (
-    CheckAccountTransactionModelStatus,
-)
-from sevdesk.client.types import Unset
+from sevdesk_api import SevDeskAPI, SevDeskError
 
 
 def die(msg: str) -> NoReturn:
@@ -93,8 +78,8 @@ def parse_args() -> argparse.Namespace:
 
 
 class Accounts:
-    def __init__(self, client: Client) -> None:
-        self.client = client
+    def __init__(self, api: SevDeskAPI) -> None:
+        self.api = api
         self.accounts: dict[str, str] = {}
         self.cache: dict[str, int] = {}
 
@@ -110,18 +95,42 @@ class Accounts:
         if currency in self.cache:
             return self.cache[currency]
         name = f"Wise ({currency}, {account_id})"
-        res = get_check_accounts.sync(client=self.client)
-        if res is not None and res.objects is not Unset:
-            for obj in res.objects:
-                # We only want to return accounts that are not registers (German KASSE)
-                if (
-                    obj.name == name
-                    and obj.type != CheckAccountResponseModelType.REGISTER
-                ):
-                    return obj.id
-        die(
-            f"missing account '{name}', please create the respective account on sevdesk by uploading a dummy CSV"
-        )
+        try:
+            res = self.api.check_accounts.get_check_accounts()
+            if res and "objects" in res:
+                for obj in res["objects"]:
+                    # We only want to return accounts that are not registers (German KASSE)
+                    if obj.get("name") == name and obj.get("type") != "register":
+                        self.cache[currency] = obj["id"]
+                        return obj["id"]
+        except SevDeskError as e:
+            die(f"Failed to get check accounts: {e}")
+
+        # Account doesn't exist, create it
+        print(f"Creating new check account: {name}")
+        try:
+            res = self.api.check_accounts.create_file_import_account(
+                name=name,
+                import_type="CSV",
+                iban=account_id if len(account_id.replace(" ", "")) > 10 else None,
+            )
+            # Based on the debug output, SevDesk returns {"objects": {account_object}}
+            if (
+                res
+                and "objects" in res
+                and isinstance(res["objects"], dict)
+                and "id" in res["objects"]
+            ):
+                new_account_id = int(res["objects"]["id"])
+                self.cache[currency] = new_account_id
+                print(f"Successfully created check account with ID: {new_account_id}")
+                return new_account_id
+            else:
+                die(
+                    f"Failed to create check account: unexpected response format: {res}"
+                )
+        except SevDeskError as e:
+            die(f"Failed to create check account: {e}")
 
 
 # These had to be introduced when switching from the wise API to the CSV export
@@ -132,7 +141,7 @@ ALIASES = {
 
 
 def import_record(
-    client: Client,
+    api: SevDeskAPI,
     accounts: Accounts,
     record: dict[str, Any],
     import_state: set[str],
@@ -214,23 +223,23 @@ def import_record(
             f"WARNING: Transaction {transaction_id} has created_on > finished_on, skipping",
             file=sys.stderr,
         )
-    transaction = CheckAccountTransactionModel(
-        check_account=CheckAccountTransactionModelCheckAccount(
-            id=account_number, object_name="CheckAccount"
-        ),
-        status=CheckAccountTransactionModelStatus.VALUE_100,
-        entry_date=created_on,
-        value_date=finished_on,
-        amount=amount,
-        payee_payer_name=payee_payer_name,
-        paymt_purpose=reference,
-    )
     if dry_run:
         print(
             f"id={record_id} currency={currency} entry_date={record['Created on']}, value_date={record['Finished on']}, amount={amount}, payee_payer_name={payee_payer_name}, paymt_purpose={reference}"
         )
     else:
-        create_transaction.sync(client=client, json_body=transaction)
+        try:
+            api.transactions.create_transaction(
+                check_account_id=account_number,
+                value_date=finished_on,
+                amount=amount,
+                status=100,  # Created status
+                payee_payer_name=payee_payer_name,
+                entry_date=created_on,
+                paymt_purpose=reference,
+            )
+        except SevDeskError as e:
+            die(f"Failed to create transaction: {e}")
 
 
 def main() -> None:
@@ -248,19 +257,11 @@ def main() -> None:
             records = csv.DictReader(csv_file)
         else:
             records = csv.DictReader(sys.stdin)
-        client = Client(
-            base_url="https://my.sevdesk.de/api/v1", token=args.sevdesk_api_token
-        )
-        accounts = Accounts(
-            client=client,
-        )
+        api = SevDeskAPI(api_token=args.sevdesk_api_token)
+        accounts = Accounts(api=api)
 
         for account_number, currency in args.add_account:
             accounts.add_account(account_number, currency)
-
-        client = Client(
-            base_url="https://my.sevdesk.de/api/v1", token=args.sevdesk_api_token
-        )
         if args.import_state_file.exists():
             imported_transactions = set(json.loads(args.import_state_file.read_text()))
         else:
@@ -268,7 +269,7 @@ def main() -> None:
 
         for record in records:
             import_record(
-                client,
+                api,
                 accounts,
                 record,
                 imported_transactions,

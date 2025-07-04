@@ -25,7 +25,6 @@
 
           wise-exporter = pkgs.callPackage ./wise-exporter.nix { };
           sevdesk-invoicer = pkgs.callPackage ./sevdesk-invoicer.nix { };
-          sevdesk = pkgs.python3.pkgs.callPackage ./sevdesk.nix { };
           quipu-invoicer = pkgs.python3.pkgs.callPackage ./quipu-invoicer.nix { };
 
           working-days-calculator = pkgs.writers.writePython3Bin "working-days-calculator"
@@ -60,7 +59,9 @@
                 "kimai"
                 "kimai_exporter"
               ];
-              "sevdesk-invoicer" = { };
+              "sevdesk-invoicer" = {
+                modules = [ "sevdesk_api" ];
+              };
               "wise-exporter" = {
                 extraPythonPackages = [ pkgs.python3.pkgs.rsa ];
               };

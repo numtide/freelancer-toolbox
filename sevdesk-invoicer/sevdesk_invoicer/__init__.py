@@ -13,12 +13,13 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
-from sevdesk import Client
-from sevdesk.accounting import Invoice, InvoiceStatus, LineItem, Unity
-from sevdesk.client.api.contact import get_contacts
-from sevdesk.client.models import DocumentModelTaxType
-from sevdesk.common import SevDesk
-from sevdesk.contact import Contact
+from sevdesk_api import (
+    Contact,
+    Invoice,
+    InvoicePosition,
+    InvoiceStatus,
+    SevDeskAPI,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,30 +56,27 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def get_contact_by_name(client: Client, name: str) -> Contact:
-    response = get_contacts.sync_detailed(client=client, name=name)
-    SevDesk.raise_for_status(response, f"Failed to find customer with name {name}")
-    assert response.parsed is not None
-    contacts = response.parsed.objects
-    assert isinstance(contacts, list)
+def get_contact_by_name(api: SevDeskAPI, name: str) -> Contact:
+    contacts = api.contacts.search_by_name(name)
     if len(contacts) == 0:
         msg = f"Could not find customer with name {name}. Please create it first in contacts."
         raise ValueError(msg)
     if len(contacts) > 1:
-        ids = " ".join(c.customer_number for c in contacts)
+        ids = " ".join(c.customer_number or "N/A" for c in contacts)
         msg = f"Found multiple customers with name: {ids}"
         raise ValueError(msg)
-    return Contact._from_contact_model(client, contacts[0])  # noqa: SLF001
+    return contacts[0]
 
 
 def are_floats_similar(a: float, b: float, error_rate: float) -> bool:
     """Compare two floats to see if they are 'similar enough' within the specified error rate."""
     curr_err = abs(a - b)
-    print(f"Current error {curr_err}. Allowed error: {error_rate}", file=sys.stderr)
     return curr_err <= error_rate
 
 
-def line_item(task: dict[str, Any], has_agency: bool) -> LineItem:
+def line_item(
+    task: dict[str, Any], has_agency: bool, unity_types: Any
+) -> InvoicePosition:
     price = float(
         round(
             (Fraction(task["target_cost"]) / Fraction(task["rounded_hours"])),
@@ -107,10 +105,10 @@ def line_item(task: dict[str, Any], has_agency: bool) -> LineItem:
     if task["source_currency"] != task["target_currency"]:
         text = f"{task['source_currency']} {original_price} x {float(task['exchange_rate'])} = {task['target_currency']} {price}"
     name = f"{task['client']} - {task['task']}" if has_agency else task["task"]
-    return LineItem(
+    return InvoicePosition(
         name=name,
-        unity=Unity.HOUR,
-        tax=0,
+        unity=unity_types.hour,
+        tax_rate=0,
         text=text,
         quantity=task["rounded_hours"],
         price=price,
@@ -124,44 +122,55 @@ def create_invoice(
     tasks: list[dict[str, Any]],
     days_until_payment: int = 30,
 ) -> None:
-    client = Client(base_url="https://my.sevdesk.de/api/v1", token=api_token)
+    api = SevDeskAPI(api_token)
+
+    # Get the current user for contact person
+    user_resp = api.client.get("SevUser")
+    if not user_resp.get("objects"):
+        msg = "Could not fetch current user"
+        raise ValueError(msg)
+    current_user = user_resp["objects"][0]
 
     start = datetime.strptime(str(tasks[0]["start_date"]), "%Y%m%d")
     end = datetime.strptime(str(tasks[0]["end_date"]), "%Y%m%d")
     currency = tasks[0]["target_currency"]
     agency = tasks[0]["agency"]
     # agency == "-" is legacy
-    has_agency = agency != "-" or agency != "none"
+    has_agency = agency not in {"-", "none"}
     if customer_name:
         billing_target = customer_name
     elif has_agency:
         billing_target = agency
     else:
         billing_target = tasks[0]["client"]
-    items = [line_item(task, has_agency) for task in tasks]
+    items = [line_item(task, has_agency, api.unity_types) for task in tasks]
 
-    customer = get_contact_by_name(client, billing_target)
+    customer = get_contact_by_name(api, billing_target)
 
-    head_text = f"""
-    Terms of payment: Payment within {days_until_payment} days from receipt of invoice without deductions.
-    """
+    head_text = f"""Terms of payment: Payment within {days_until_payment} days from receipt of invoice without deductions."""
     time = start.strftime("%Y-%m")
+
+    # Create invoice object
     invoice = Invoice(
         status=InvoiceStatus.DRAFT,
         header=f"Bill for {time}",
         head_text=head_text,
-        customer=customer,
+        contact=customer,
         reference=None,
-        tax_type=DocumentModelTaxType.NOTEU,
+        tax_rule=api.tax_rules.not_taxable_in_country,  # Using dynamic tax rule from API
         delivery_date=start,
         delivery_date_until=end,
         currency=currency,
-        items=items,
+        invoice_date=datetime.now(),
+        time_to_pay=days_until_payment,
+        contact_person={"id": current_user["id"], "objectName": "SevUser"},
     )
-    if payment_method:
-        invoice.payment_method = payment_method
 
-    invoice.create(client)
+    # Create the invoice with positions
+    created_invoice = api.invoices.create_invoice(invoice, items)
+    print(
+        f"Invoice created successfully: https://my.sevdesk.de/fi/detail/type/RE/id/{created_invoice.id}"
+    )
 
 
 def main() -> None:

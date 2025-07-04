@@ -24,7 +24,6 @@ Homepage = "https://github.com/numtide/numtide-invoice-generator"
 [project.scripts]
 sevdesk-invoicer = "sevdesk_invoicer:main"
 sevdesk-wise-importer = "sevdesk_wise_importer:main"
-sevdesk-upload = "sevdesk_upload:main"
 sevdesk-tax-estimator = "sevdesk_tax_estimator:main"
 
 [tool.setuptools.packages]
@@ -39,8 +38,4 @@ no_implicit_optional = true
 
 [[tool.mypy.overrides]]
 module = "setuptools.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "sevdesk.*"
 ignore_missing_imports = true

@@ -108,6 +108,33 @@ Taxes left to pay: XXXXX.XX
 nix shell $HOME/git/freelancer-toolbox#sevdesk-invoicer -c sevdesk-wise-importer -add-account "BE00 0000 0000 0000" "EUR" --add-account 8000000000 USD --import-state wise-import-state.json transaction-history.csv
 ```
 
+## Paperless-ngx CLI
+
+A command-line interface for managing [Paperless-ngx](https://docs.paperless-ngx.com/) documents, mail accounts, mail rules, and tags. This tool allows you to interact with your Paperless-ngx instance from the command line.
+
+### Key features:
+- Search, upload, download, and delete documents
+- Manage tags and organize documents
+- Configure mail accounts and mail rules for automatic document import
+- Secure API token management through password managers
+
+### Usage example:
+
+```console
+# Search for invoices
+paperless-cli documents search "invoice"
+
+# Upload a document with tags
+paperless-cli documents upload /path/to/document.pdf --title "Invoice 2024" --tags "1,2,3"
+
+# Create mail rules for automatic processing
+paperless-cli mail-rules create "Invoice Rule" \
+  --filter-from "invoices@company.com" \
+  --assign-tags "1,2,3"
+```
+
+See the [paperless-cli README](./paperless-cli/README.md) for detailed configuration and usage instructions.
+
 ## API References
 
 * [Harvest](https://help.getharvest.com/api-v2)

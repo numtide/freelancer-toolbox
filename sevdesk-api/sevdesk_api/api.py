@@ -16,13 +16,16 @@ class SevDeskAPI:
     """Main interface for interacting with the SevDesk API."""
 
     def __init__(
-        self, api_token: str, base_url: str = "https://my.sevdesk.de/api/v1/"
+        self,
+        api_token: str,
+        base_url: str = "https://my.sevdesk.de/api/v1/",
     ) -> None:
         """Initialize the SevDesk API.
 
         Args:
             api_token: The API token for authentication
             base_url: The base URL for the API
+
         """
         self.client = SevDeskClient(api_token, base_url)
         self.contacts = ContactOperations(self.client)
@@ -41,6 +44,7 @@ class SevDeskAPI:
 
         Returns:
             True if connection is successful
+
         """
         try:
             # Try to get user info

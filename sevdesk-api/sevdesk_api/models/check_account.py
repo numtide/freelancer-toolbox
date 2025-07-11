@@ -52,6 +52,7 @@ class CheckAccount(SevDeskObject):
     iban: str | None = None
 
     def __post_init__(self) -> None:
+        """Set object name after initialization."""
         self.object_name = "CheckAccount"
 
     def to_dict(self) -> dict[str, Any]:
@@ -98,39 +99,48 @@ class CheckAccountTransaction(SevDeskObject):
     target_transaction: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        """Set object name after initialization."""
         self.object_name = "CheckAccountTransaction"
+
+    def _add_optional_fields(self, data: dict[str, Any]) -> None:
+        """Add optional fields to the data dict."""
+        field_mapping = {
+            "paymt_purpose": "paymtPurpose",
+            "payee_payer_name": "payeePayerName",
+            "payee_payer_acct_no": "payeePayerAcctNo",
+            "payee_payer_bank_code": "payeePayerBankCode",
+            "gv_code": "gvCode",
+            "entry_text": "entryText",
+            "prima_nota_no": "primaNotaNo",
+            "source_transaction": "sourceTransaction",
+            "target_transaction": "targetTransaction",
+        }
+
+        for attr, key in field_mapping.items():
+            value = getattr(self, attr, None)
+            if value is not None:
+                data[key] = value
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict for API requests."""
         data = super().to_dict()
 
+        # Handle date fields
         if self.value_date:
             data["valueDate"] = self.value_date.strftime("%Y-%m-%d %H:%M:%S")
         if self.entry_date:
             data["entryDate"] = self.entry_date.strftime("%Y-%m-%d %H:%M:%S")
-        if self.paymt_purpose:
-            data["paymtPurpose"] = self.paymt_purpose
+
+        # Required fields
         data["amount"] = self.amount
-        if self.payee_payer_name:
-            data["payeePayerName"] = self.payee_payer_name
-        if self.payee_payer_acct_no:
-            data["payeePayerAcctNo"] = self.payee_payer_acct_no
-        if self.payee_payer_bank_code:
-            data["payeePayerBankCode"] = self.payee_payer_bank_code
-        if self.gv_code:
-            data["gvCode"] = self.gv_code
-        if self.entry_text:
-            data["entryText"] = self.entry_text
-        if self.prima_nota_no:
-            data["primaNotaNo"] = self.prima_nota_no
-        if self.check_account:
-            data["checkAccount"] = self.check_account.to_dict()
         data["status"] = self.status.value
         data["enshrined"] = self.enshrined
 
-        if self.source_transaction:
-            data["sourceTransaction"] = self.source_transaction
-        if self.target_transaction:
-            data["targetTransaction"] = self.target_transaction
+        # Handle nested object
+        if self.check_account:
+            data["checkAccount"] = self.check_account.to_dict()
+
+        # Add optional fields
+        self._add_optional_fields(data)
 
         return data

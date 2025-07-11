@@ -18,6 +18,7 @@ class TransactionOperations:
 
         Args:
             client: The SevDesk client instance
+
         """
         self.client = client
 
@@ -44,6 +45,7 @@ class TransactionOperations:
 
         Returns:
             Response with transactions
+
         """
         params: dict[str, Any] = {}
         if check_account_id is not None:
@@ -72,6 +74,7 @@ class TransactionOperations:
 
         Returns:
             Transaction data
+
         """
         return self.client.get(f"CheckAccountTransaction/{transaction_id}")
 
@@ -102,6 +105,7 @@ class TransactionOperations:
 
         Returns:
             Created transaction data
+
         """
         data = {
             "checkAccount": {
@@ -150,6 +154,7 @@ class TransactionOperations:
 
         Returns:
             Updated transaction data
+
         """
         data: dict[str, Any] = {}
 
@@ -169,7 +174,8 @@ class TransactionOperations:
             data["payeePayerBankCode"] = payee_payer_bank_code
 
         return self.client.put(
-            f"CheckAccountTransaction/{transaction_id}", json_data=data
+            f"CheckAccountTransaction/{transaction_id}",
+            json_data=data,
         )
 
     def delete_transaction(self, transaction_id: int) -> dict[str, Any]:
@@ -180,5 +186,6 @@ class TransactionOperations:
 
         Returns:
             Response data
+
         """
         return self.client.delete(f"CheckAccountTransaction/{transaction_id}")

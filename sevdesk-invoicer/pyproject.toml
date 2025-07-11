@@ -8,6 +8,9 @@ description = "Generate invoices in sevdesk"
 version = "0.0.1"
 authors = [{ name = "Jörg Thalheim", email = "joerg@thalheim.io" }]
 license = "MIT"
+dependencies = [
+  "sevdesk-api",
+]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Environment :: Console",

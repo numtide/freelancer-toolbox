@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 from http.client import HTTPSConnection
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode, urlparse
+
+# HTTP status codes
+HTTP_BAD_REQUEST = 400
 
 
 class SevDeskError(Exception):
@@ -17,6 +20,14 @@ class SevDeskError(Exception):
         status_code: int | None = None,
         response_body: str | None = None,
     ) -> None:
+        """Initialize SevDeskError.
+
+        Args:
+            message: Error message
+            status_code: HTTP status code
+            response_body: Response body from API
+
+        """
         super().__init__(message)
         self.status_code = status_code
         self.response_body = response_body
@@ -26,13 +37,16 @@ class SevDeskClient:
     """Client for interacting with the SevDesk API."""
 
     def __init__(
-        self, api_token: str, base_url: str = "https://my.sevdesk.de/api/v1/"
+        self,
+        api_token: str,
+        base_url: str = "https://my.sevdesk.de/api/v1/",
     ) -> None:
         """Initialize the SevDesk client.
 
         Args:
             api_token: The API token for authentication
             base_url: The base URL for the API
+
         """
         self.api_token = api_token
         self.base_url = base_url.rstrip("/") + "/"
@@ -81,6 +95,7 @@ class SevDeskClient:
 
         Raises:
             SevDeskError: If the request fails
+
         """
         # Build URL path
         path = f"{self.base_path}/{endpoint.lstrip('/')}"
@@ -109,27 +124,33 @@ class SevDeskClient:
             response_body = response.read().decode("utf-8")
 
             # Check status
-            if response.status >= 400:
+            if response.status >= HTTP_BAD_REQUEST:
                 error_msg = f"API request failed with status {response.status}"
                 if response_body:
                     try:
                         error_data = json.loads(response_body)
-                        error_msg = f"API request failed: {error_data.get('error', {}).get('message', error_msg)}"
+                        error_detail = error_data.get("error", {}).get(
+                            "message",
+                            error_msg,
+                        )
+                        error_msg = f"API request failed: {error_detail}"
                     except json.JSONDecodeError:
                         error_msg = f"API request failed: {response_body}"
                 raise SevDeskError(error_msg, response.status, response_body)
 
             # Parse response
             if response_body:
-                return json.loads(response_body)
-            else:
-                return {}
+                result = json.loads(response_body)
+                return cast("dict[str, Any]", result)
+            return {}
 
         finally:
             conn.close()
 
     def get(
-        self, endpoint: str, params: dict[str, Any] | None = None
+        self,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Make a GET request."""
         return self._request("GET", endpoint, params=params)
@@ -143,7 +164,11 @@ class SevDeskClient:
     ) -> dict[str, Any]:
         """Make a POST request."""
         return self._request(
-            "POST", endpoint, params=params, json_data=json_data, data=data
+            "POST",
+            endpoint,
+            params=params,
+            json_data=json_data,
+            data=data,
         )
 
     def put(
@@ -155,11 +180,17 @@ class SevDeskClient:
     ) -> dict[str, Any]:
         """Make a PUT request."""
         return self._request(
-            "PUT", endpoint, params=params, json_data=json_data, data=data
+            "PUT",
+            endpoint,
+            params=params,
+            json_data=json_data,
+            data=data,
         )
 
     def delete(
-        self, endpoint: str, params: dict[str, Any] | None = None
+        self,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Make a DELETE request."""
         return self._request("DELETE", endpoint, params=params)

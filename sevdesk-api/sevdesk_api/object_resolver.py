@@ -20,11 +20,19 @@ class ObjectResolver:
     """Resolves object IDs dynamically from the SevDesk API."""
 
     def __init__(self, client: SevDeskClient) -> None:
+        """Initialize ObjectResolver.
+
+        Args:
+            client: SevDeskClient instance
+
+        """
         self.client = client
         self._cache: dict[tuple[ObjectType, str], dict[str, dict[str, Any]]] = {}
 
     def _fetch_objects(
-        self, object_type: ObjectType, key_field: str = "translationCode"
+        self,
+        object_type: ObjectType,
+        key_field: str = "translationCode",
     ) -> dict[str, dict[str, Any]]:
         """Fetch all objects of a specific type from the API and cache them.
 
@@ -34,6 +42,7 @@ class ObjectResolver:
 
         Returns:
             Dict mapping key_field values to object data
+
         """
         params = {"limit": 1000}
         response = self.client.get(object_type.value, params=params)
@@ -56,7 +65,10 @@ class ObjectResolver:
         return object_map
 
     def get_object(
-        self, object_type: ObjectType, key: str, key_field: str = "translationCode"
+        self,
+        object_type: ObjectType,
+        key: str,
+        key_field: str = "translationCode",
     ) -> dict[str, Any]:
         """Get object data by key.
 
@@ -70,6 +82,7 @@ class ObjectResolver:
 
         Raises:
             ValueError: If key not found
+
         """
         cache_key = (object_type, key_field)
 
@@ -82,7 +95,10 @@ class ObjectResolver:
 
             if key not in self._cache[cache_key]:
                 available = ", ".join(sorted(self._cache[cache_key].keys()))
-                msg = f"{object_type.value} with {key_field}='{key}' not found. Available: {available}"
+                msg = (
+                    f"{object_type.value} with {key_field}='{key}' not found. "
+                    f"Available: {available}"
+                )
                 raise ValueError(msg)
 
         return self._cache[cache_key][key]

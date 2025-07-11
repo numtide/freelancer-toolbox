@@ -12,6 +12,8 @@ from .contact import Contact
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from sevdesk_api.object_resolver import ObjectResolver
+
 
 class InvoiceStatus(Enum):
     """Invoice status values."""
@@ -47,7 +49,7 @@ class Unity:
 class DynamicUnityTypes:
     """Dynamic unity types that fetch IDs from the API."""
 
-    def __init__(self, resolver: Any) -> None:
+    def __init__(self, resolver: ObjectResolver) -> None:
         """Initialize with an ObjectResolver instance."""
         self._resolver = resolver
         self._cache: dict[str, Unity] = {}
@@ -141,7 +143,7 @@ class TaxRule:
 class DynamicTaxRules:
     """Dynamic tax rules that fetch from the API."""
 
-    def __init__(self, resolver: Any) -> None:
+    def __init__(self, resolver: ObjectResolver) -> None:
         """Initialize with an ObjectResolver instance."""
         self._resolver = resolver
         self._cache: dict[str, TaxRule] = {}
@@ -354,46 +356,44 @@ class Invoice(SevDeskObject):
     positions: list[InvoicePosition] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        """Set object name after initialization."""
         self.object_name = "Invoice"
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dict for API requests."""
-        data = super().to_dict()
-
+    def _add_basic_invoice_fields(self, data: dict[str, Any]) -> None:
+        """Add basic invoice fields."""
         if self.invoice_number:
             data["invoiceNumber"] = self.invoice_number
         if self.contact:
             data["contact"] = self.contact.to_dict()
-        if self.invoice_date:
-            data["invoiceDate"] = self.invoice_date.strftime("%d.%m.%Y")
         if self.header:
             data["header"] = self.header
         if self.head_text:
             data["headText"] = self.head_text
         if self.foot_text:
             data["footText"] = self.foot_text
+
+    def _add_date_fields(self, data: dict[str, Any]) -> None:
+        """Add date-related fields."""
+        date_format = "%d.%m.%Y"
+        date_fields = [
+            ("invoice_date", "invoiceDate"),
+            ("pay_date", "payDate"),
+            ("delivery_date", "deliveryDate"),
+            ("delivery_date_until", "deliveryDateUntil"),
+            ("send_date", "sendDate"),
+        ]
+        for attr, key in date_fields:
+            value = getattr(self, attr, None)
+            if value:
+                data[key] = value.strftime(date_format)
+
+    def _add_financial_fields(self, data: dict[str, Any]) -> None:
+        """Add financial and tax fields."""
         if self.time_to_pay is not None:
             data["timeToPay"] = self.time_to_pay
         if self.discount_time is not None:
             data["discountTime"] = self.discount_time
         data["discount"] = self.discount
-
-        if self.address_country:
-            data["addressCountry"] = self.address_country
-        if self.pay_date:
-            data["payDate"] = self.pay_date.strftime("%d.%m.%Y")
-        if self.delivery_date:
-            data["deliveryDate"] = self.delivery_date.strftime("%d.%m.%Y")
-        if self.delivery_date_until:
-            data["deliveryDateUntil"] = self.delivery_date_until.strftime("%d.%m.%Y")
-
-        data["status"] = str(self.status.value)
-        data["smallSettlement"] = self.small_settlement
-
-        if self.contact_person:
-            data["contactPerson"] = self.contact_person
-        else:
-            data["contactPerson"] = None
 
         data["taxRate"] = self.tax_rate
         if self.tax_set:
@@ -404,20 +404,37 @@ class Invoice(SevDeskObject):
         if self.tax_rule:
             data["taxRule"] = self.tax_rule.to_dict()
 
-        data["invoiceType"] = self.invoice_type.value
-        data["currency"] = self.currency
-
+    def _add_misc_fields(self, data: dict[str, Any]) -> None:
+        """Add miscellaneous fields."""
+        if self.address_country:
+            data["addressCountry"] = self.address_country
         if self.origin:
             data["origin"] = self.origin
         if self.customer_internal_note:
             data["customerInternalNote"] = self.customer_internal_note
-        data["showNet"] = self.show_net
-        if self.send_date:
-            data["sendDate"] = self.send_date.strftime("%d.%m.%Y")
         if self.reference:
             data["reference"] = self.reference
+        data["showNet"] = self.show_net
 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dict for API requests."""
+        data = super().to_dict()
+
+        # Add field groups
+        self._add_basic_invoice_fields(data)
+        self._add_date_fields(data)
+        self._add_financial_fields(data)
+        self._add_misc_fields(data)
+
+        # Required fields
+        data["status"] = str(self.status.value)
+        data["smallSettlement"] = self.small_settlement
+        data["invoiceType"] = self.invoice_type.value
+        data["currency"] = self.currency
         data["mapAll"] = True
+
+        # Contact person special handling
+        data["contactPerson"] = self.contact_person if self.contact_person else None
 
         return data
 

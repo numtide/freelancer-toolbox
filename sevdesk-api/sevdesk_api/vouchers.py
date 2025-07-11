@@ -7,9 +7,9 @@ import json
 import mimetypes
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
-from .client import SevDeskClient, SevDeskError
+from .client import HTTP_BAD_REQUEST, SevDeskClient, SevDeskError
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -43,6 +43,7 @@ class VoucherOperations:
 
         Args:
             client: The SevDesk client instance
+
         """
         self.client = client
 
@@ -71,6 +72,7 @@ class VoucherOperations:
 
         Returns:
             Response with vouchers
+
         """
         params: dict[str, Any] = {}
         if status is not None:
@@ -101,6 +103,7 @@ class VoucherOperations:
 
         Returns:
             Voucher data
+
         """
         return self.client.get(f"Voucher/{voucher_id}")
 
@@ -113,6 +116,7 @@ class VoucherOperations:
 
         Returns:
             Response with uploaded file info including internal filename
+
         """
         # Prepare multipart/form-data manually
         boundary = f"----WebKitFormBoundary{uuid.uuid4().hex[:16]}"
@@ -127,12 +131,13 @@ class VoucherOperations:
         body_parts = []
         body_parts.append(f"------{boundary}".encode())
         body_parts.append(
-            f'Content-Disposition: form-data; name="file"; filename="{filename}"'.encode()
+            f'Content-Disposition: form-data; name="file"; '
+            f'filename="{filename}"'.encode(),
         )
         body_parts.append(f"Content-Type: {content_type}".encode())
         body_parts.append(b"")
         body_parts.append(
-            file_content if isinstance(file_content, bytes) else file_content.encode()
+            file_content if isinstance(file_content, bytes) else file_content.encode(),
         )
         body_parts.append(f"------{boundary}--".encode())
 
@@ -150,13 +155,74 @@ class VoucherOperations:
             response = conn.getresponse()
             response_body = response.read().decode("utf-8")
 
-            if response.status >= 400:
+            if response.status >= HTTP_BAD_REQUEST:
                 msg = f"Upload failed: {response_body}"
                 raise SevDeskError(msg, response.status, response_body)
 
-            return json.loads(response_body)
+            result = json.loads(response_body)
+            return cast("dict[str, Any]", result)
         finally:
             conn.close()
+
+    def _build_voucher_data(
+        self,
+        credit_debit: str,
+        tax_type: str,
+        voucher_type: str,
+        status: int,
+        currency: str,
+        voucher_date: datetime | None = None,
+        supplier_id: int | None = None,
+        supplier_name: str | None = None,
+        description: str | None = None,
+        pay_date: datetime | None = None,
+        sum_net: float | None = None,
+        sum_tax: float | None = None,
+        sum_gross: float | None = None,
+        tax_rule: int | None = None,
+    ) -> dict[str, Any]:
+        """Build voucher data dictionary."""
+        voucher_data = {
+            "objectName": "Voucher",
+            "mapAll": True,
+            "creditDebit": credit_debit,
+            "taxType": tax_type,
+            "voucherType": voucher_type,
+            "status": status,
+            "currency": currency,
+        }
+
+        # Add optional fields
+        if voucher_date:
+            voucher_data["voucherDate"] = voucher_date.strftime("%d.%m.%Y")
+        if supplier_id:
+            voucher_data["supplier"] = {
+                "id": supplier_id,
+                "objectName": "Contact",
+            }
+        if supplier_name:
+            voucher_data["supplierName"] = supplier_name
+        if description:
+            voucher_data["description"] = description
+        if pay_date:
+            voucher_data["payDate"] = pay_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+        # Add financial fields
+        financial_fields = {
+            "sumNet": sum_net,
+            "sumTax": sum_tax,
+            "sumGross": sum_gross,
+            "taxRule": tax_rule,
+        }
+        voucher_data.update(
+            {
+                key: value
+                for key, value in financial_fields.items()
+                if value is not None
+            },
+        )
+
+        return voucher_data
 
     def create_voucher(
         self,
@@ -199,50 +265,32 @@ class VoucherOperations:
 
         Returns:
             Created voucher data
-        """
-        voucher_data = {
-            "objectName": "Voucher",
-            "mapAll": True,
-            "creditDebit": credit_debit,
-            "taxType": tax_type,
-            "voucherType": voucher_type,
-            "status": status,
-            "currency": currency,
-        }
 
-        if voucher_date:
-            voucher_data["voucherDate"] = voucher_date.strftime("%d.%m.%Y")
-        if supplier_id:
-            voucher_data["supplier"] = {
-                "id": supplier_id,
-                "objectName": "Contact",
-            }
-        if supplier_name:
-            voucher_data["supplierName"] = supplier_name
-        if description:
-            voucher_data["description"] = description
-        if pay_date:
-            voucher_data["payDate"] = pay_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-        if sum_net is not None:
-            voucher_data["sumNet"] = sum_net
-        if sum_tax is not None:
-            voucher_data["sumTax"] = sum_tax
-        if sum_gross is not None:
-            voucher_data["sumGross"] = sum_gross
-        if tax_rule is not None:
-            voucher_data["taxRule"] = tax_rule
+        """
+        # Build voucher data
+        voucher_data = self._build_voucher_data(
+            credit_debit,
+            tax_type,
+            voucher_type,
+            status,
+            currency,
+            voucher_date,
+            supplier_id,
+            supplier_name,
+            description,
+            pay_date,
+            sum_net,
+            sum_tax,
+            sum_gross,
+            tax_rule,
+        )
 
         # Build request data
         request_data: dict[str, Any] = {
             "voucher": voucher_data,
             "voucherPosDelete": None,
+            "voucherPosSave": voucher_positions or [],
         }
-
-        # Add voucher positions
-        if voucher_positions:
-            request_data["voucherPosSave"] = voucher_positions
-        else:
-            request_data["voucherPosSave"] = []
 
         # Add filename if provided
         if filename:
@@ -267,6 +315,7 @@ class VoucherOperations:
 
         Returns:
             Updated voucher data
+
         """
         # Ensure required fields
         voucher_data["id"] = voucher_id
@@ -296,6 +345,7 @@ class VoucherOperations:
 
         Returns:
             Booking response
+
         """
         data: dict[str, Any] = {
             "checkAccountTransaction": {
@@ -320,8 +370,8 @@ class VoucherOperations:
 
         Raises:
             SevDeskError: If the download fails
-        """
 
+        """
         # First get document info to get the filename and extension
         doc_info = self.client.get(f"Document/{document_id}")
         if doc_info.get("objects"):

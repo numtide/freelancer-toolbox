@@ -10,10 +10,17 @@ class ContactOperations:
     """Operations for managing contacts."""
 
     def __init__(self, client: SevDeskClient) -> None:
+        """Initialize ContactOperations.
+
+        Args:
+            client: SevDeskClient instance
+
+        """
         self.client = client
 
     def get_contacts(
         self,
+        *,
         limit: int = 100,
         offset: int = 0,
         depth: bool = True,
@@ -33,6 +40,7 @@ class ContactOperations:
 
         Returns:
             List of Contact objects
+
         """
         params: dict[str, Any] = {
             "limit": limit,
@@ -67,14 +75,14 @@ class ContactOperations:
 
         Returns:
             Contact object
+
         """
         response = self.client.get(f"Contact/{contact_id}")
 
         if response.get("objects"):
             return Contact.from_dict(response["objects"][0])
-        else:
-            msg = f"Contact with ID {contact_id} not found"
-            raise ValueError(msg)
+        msg = f"Contact with ID {contact_id} not found"
+        raise ValueError(msg)
 
     def search_by_name(self, name: str) -> list[Contact]:
         """Search for contacts by name.
@@ -84,6 +92,7 @@ class ContactOperations:
 
         Returns:
             List of matching contacts
+
         """
         return self.get_contacts(name=name)
 
@@ -95,15 +104,15 @@ class ContactOperations:
 
         Returns:
             Created contact with ID
+
         """
         data = contact.to_dict()
         response = self.client.post("Contact", json_data=data)
 
         if "objects" in response:
             return Contact.from_dict(response["objects"])
-        else:
-            msg = "Failed to create contact"
-            raise ValueError(msg)
+        msg = "Failed to create contact"
+        raise ValueError(msg)
 
     def update_contact(self, contact: Contact) -> Contact:
         """Update an existing contact.
@@ -113,6 +122,7 @@ class ContactOperations:
 
         Returns:
             Updated contact
+
         """
         if not contact.id:
             msg = "Contact must have an ID to update"
@@ -123,9 +133,8 @@ class ContactOperations:
 
         if "objects" in response:
             return Contact.from_dict(response["objects"])
-        else:
-            msg = "Failed to update contact"
-            raise ValueError(msg)
+        msg = "Failed to update contact"
+        raise ValueError(msg)
 
     def check_customer_number_availability(self, customer_number: str) -> bool:
         """Check if a customer number is available.
@@ -135,18 +144,20 @@ class ContactOperations:
 
         Returns:
             True if available, False otherwise
+
         """
         response = self.client.get(
             "Contact/Mapper/checkCustomerNumberAvailability",
             params={"customerNumber": customer_number},
         )
-        return response.get("objects", False)
+        return bool(response.get("objects", False))
 
     def get_next_customer_number(self) -> str:
         """Get the next available customer number.
 
         Returns:
             Next customer number
+
         """
         response = self.client.get("Contact/Factory/getNextCustomerNumber")
-        return response.get("objects", "")
+        return str(response.get("objects", ""))

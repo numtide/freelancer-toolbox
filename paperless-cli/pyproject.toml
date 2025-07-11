@@ -13,7 +13,7 @@ requires-python = ">=3.12"
 paperless-cli = "paperless_cli:main"
 
 [tool.setuptools]
-packages = ["paperless_cli", "paperless_cli.cli"]
+packages = ["paperless_cli", "paperless_cli.cli", "paperless_cli.models"]
 
 [tool.ruff]
 line-length = 100

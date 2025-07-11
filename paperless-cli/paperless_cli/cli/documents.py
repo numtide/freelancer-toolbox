@@ -7,6 +7,11 @@ import time
 from paperless_cli.api import PaperlessAPIError, PaperlessClient
 from paperless_cli.cli.formatter import print_table
 from paperless_cli.cli.tags import resolve_tag_names_to_ids
+from paperless_cli.models import (
+    BulkEditRequest,
+    DocumentSearchParams,
+    DocumentUpdateRequest,
+)
 
 
 @dataclass
@@ -14,6 +19,7 @@ class DocumentsSearchCommand:
     """Documents search command."""
 
     query: str | None = None
+    tags: str | None = None
     page: int = 1
     page_size: int = 25
 
@@ -46,41 +52,68 @@ class DocumentsDeleteCommand:
     force: bool = False
 
 
+@dataclass
+class DocumentsUpdateCommand:
+    """Documents update command."""
+
+    document_id: int
+    add_tags: str | None = None
+    remove_tags: str | None = None
+    set_tags: str | None = None
+
+
+@dataclass
+class DocumentsBulkCommand:
+    """Documents bulk command."""
+
+    document_ids: list[int]
+    add_tags: str | None = None
+    remove_tags: str | None = None
+
+
 def search_documents(client: PaperlessClient, cmd: DocumentsSearchCommand) -> None:
     """Search for documents."""
-    result = client.search_documents(cmd.query, cmd.page, cmd.page_size)
+    # Build search parameters
+    search_params = DocumentSearchParams(
+        query=cmd.query,
+        page=cmd.page,
+        page_size=cmd.page_size,
+    )
 
-    documents = result.get("results", [])
-    if not documents:
+    # Add tag filtering if specified
+    if cmd.tags:
+        tag_ids = resolve_tag_names_to_ids(client, cmd.tags)
+        search_params.tags__id__in = tag_ids
+
+    result = client.search_documents(search_params)
+
+    if not result.results:
         print("No documents found.")
         return
 
     headers = ["ID", "Title", "Correspondent", "Created", "Tags"]
     rows = []
 
-    for doc in documents:
+    # Cache tags and correspondents for efficiency
+    all_tags = client.get_tags()
+    tag_dict = {t.id: t.name for t in all_tags}
+
+    correspondents = client.get_correspondents()
+    corr_dict = {c.id: c.name for c in correspondents}
+
+    for doc in result.results:
         # Get tag names
-        tags = doc.get("tags", [])
-        tag_names = []
-        if tags:
-            all_tags = client.get_tags()
-            tag_dict = {t["id"]: t["name"] for t in all_tags}
-            tag_names = [tag_dict.get(tag_id, str(tag_id)) for tag_id in tags]
+        tag_names = [tag_dict.get(tag_id, str(tag_id)) for tag_id in doc.tags]
 
         # Get correspondent name
-        correspondent = ""
-        if doc.get("correspondent"):
-            correspondents = client.get_correspondents()
-            corr = next((c for c in correspondents if c["id"] == doc["correspondent"]), None)
-            if corr:
-                correspondent = corr["name"]
+        correspondent = corr_dict.get(doc.correspondent, "") if doc.correspondent else ""
 
         rows.append(
             [
-                doc["id"],
-                doc.get("title", "Untitled"),
+                doc.id,
+                doc.title or "Untitled",
                 correspondent or "-",
-                doc.get("created", "-")[:10],  # Just date part
+                doc.created.strftime("%Y-%m-%d"),
                 ", ".join(tag_names) if tag_names else "-",
             ]
         )
@@ -88,10 +121,9 @@ def search_documents(client: PaperlessClient, cmd: DocumentsSearchCommand) -> No
     print_table(headers, rows)
 
     # Print pagination info
-    count = result.get("count", 0)
-    if count > cmd.page_size:
-        print(f"\nShowing page {cmd.page} of {(count + cmd.page_size - 1) // cmd.page_size}")
-        print(f"Total documents: {count}")
+    if result.count > cmd.page_size:
+        print(f"\nShowing page {cmd.page} of {(result.count + cmd.page_size - 1) // cmd.page_size}")
+        print(f"Total documents: {result.count}")
 
 
 def get_document(client: PaperlessClient, cmd: DocumentsGetCommand) -> None:
@@ -105,7 +137,7 @@ def get_document(client: PaperlessClient, cmd: DocumentsGetCommand) -> None:
         else:
             # Get document info to determine filename
             doc = client.get_document(cmd.document_id)
-            filename = doc.get("original_file_name", f"document_{cmd.document_id}.pdf")
+            filename = doc.original_file_name or f"document_{cmd.document_id}.pdf"
             output_path = filename
 
         with Path(output_path).open("wb") as f:
@@ -124,42 +156,42 @@ def get_document(client: PaperlessClient, cmd: DocumentsGetCommand) -> None:
         # Show document details
         doc = client.get_document(cmd.document_id)
 
-        print(f"\nDocument Details (ID: {doc['id']})")
+        print(f"\nDocument Details (ID: {doc.id})")
         print("=" * 50)
-        print(f"Title: {doc.get('title', 'Untitled')}")
-        print(f"ASN: {doc.get('archive_serial_number', '-')}")
-        print(f"Created: {doc.get('created', '-')}")
-        print(f"Added: {doc.get('added', '-')}")
-        print(f"Modified: {doc.get('modified', '-')}")
-        print(f"Original filename: {doc.get('original_file_name', '-')}")
+        print(f"Title: {doc.title or 'Untitled'}")
+        print(f"ASN: {doc.archive_serial_number or '-'}")
+        print(f"Created: {doc.created.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Added: {doc.added.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Modified: {doc.modified.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Original filename: {doc.original_file_name or '-'}")
 
         # Correspondent
-        if doc.get("correspondent"):
+        if doc.correspondent:
             correspondents = client.get_correspondents()
-            corr = next((c for c in correspondents if c["id"] == doc["correspondent"]), None)
+            corr = next((c for c in correspondents if c.id == doc.correspondent), None)
             if corr:
-                print(f"Correspondent: {corr['name']}")
+                print(f"Correspondent: {corr.name}")
 
         # Document type
-        if doc.get("document_type"):
+        if doc.document_type:
             doc_types = client.get_document_types()
-            doc_type = next((dt for dt in doc_types if dt["id"] == doc["document_type"]), None)
+            doc_type = next((dt for dt in doc_types if dt.id == doc.document_type), None)
             if doc_type:
-                print(f"Document type: {doc_type['name']}")
+                print(f"Document type: {doc_type.name}")
 
         # Tags
-        if doc.get("tags"):
+        if doc.tags:
             tags = client.get_tags()
-            tag_names = [tag["name"] for tag in tags if tag["id"] in doc["tags"]]
+            tag_names = [tag.name for tag in tags if tag.id in doc.tags]
             print(f"Tags: {', '.join(tag_names)}")
 
         # Content
-        if doc.get("content"):
+        if doc.content:
             print("\nContent preview:")
             print("-" * 20)
             # Show first 500 characters
-            content_str = str(doc["content"])[:500]
-            if len(str(doc["content"])) > 500:
+            content_str = doc.content[:500]
+            if len(doc.content) > 500:
                 content_str += "..."
             print(content_str)
 
@@ -198,7 +230,7 @@ def upload_document(client: PaperlessClient, cmd: DocumentsUploadCommand) -> Non
                 print("\nError: Could not find task status")
                 return
 
-            status = task.get("status", "UNKNOWN")
+            status = task.status
 
             if status not in ["PENDING", "STARTED"]:
                 # Task completed (success or failure)
@@ -209,19 +241,18 @@ def upload_document(client: PaperlessClient, cmd: DocumentsUploadCommand) -> Non
                     print("✓ Document processed successfully!")
 
                     # Extract document ID from result message
-                    result_msg = task.get("result", "")
+                    result_msg = task.result or ""
                     print(f"  Result: {result_msg}")
                     print(f"  Processing time: {processing_time:.1f} seconds")
 
                     # Try to extract document ID from result
-                    doc_id = task.get("related_document")
-                    if doc_id:
+                    if task.related_document:
                         # Construct URL based on the known pattern
                         base_url = client.url.replace("-api", "")  # Remove -api from URL
-                        print(f"  View at: {base_url}/documents/{doc_id}")
+                        print(f"  View at: {base_url}/documents/{task.related_document}")
                 else:
                     print("✗ Document processing failed!")
-                    result_msg = task.get("result", "Unknown error")
+                    result_msg = task.result or "Unknown error"
                     print(f"  Result: {result_msg}")
                     print(f"  Processing time: {processing_time:.1f} seconds")
 
@@ -241,7 +272,7 @@ def delete_document(client: PaperlessClient, document_id: int, force: bool) -> N
     if not force:
         doc = client.get_document(document_id)
         confirm = input(
-            f"Are you sure you want to delete document '{doc.get('title', 'Untitled')}' (ID: {document_id})? [y/N]: "
+            f"Are you sure you want to delete document '{doc.title or 'Untitled'}' (ID: {document_id})? [y/N]: "
         )
         if confirm.lower() != "y":
             print("Cancelled.")
@@ -249,3 +280,105 @@ def delete_document(client: PaperlessClient, document_id: int, force: bool) -> N
 
     client.delete_document(document_id)
     print(f"Deleted document with ID {document_id}")
+
+
+def update_document(client: PaperlessClient, cmd: DocumentsUpdateCommand) -> None:
+    """Update a document's tags."""
+    # Get current document to show what we're updating
+    doc = client.get_document(cmd.document_id)
+
+    # Get current tags
+    all_tags = client.get_tags()
+    tag_dict = {t.id: t.name for t in all_tags}
+    current_tag_names = [tag_dict.get(tag_id, str(tag_id)) for tag_id in doc.tags]
+
+    print(f"Updating document: {doc.title}")
+    print(f"Current tags: {', '.join(current_tag_names) if current_tag_names else 'None'}")
+
+    # Build update request
+    update_request = DocumentUpdateRequest()
+
+    if cmd.set_tags is not None:
+        # Replace all tags
+        tag_ids = resolve_tag_names_to_ids(client, cmd.set_tags) if cmd.set_tags else []
+        update_request.tags = tag_ids
+        action = f"Setting tags to: {cmd.set_tags if cmd.set_tags else 'None'}"
+    else:
+        # Add/remove tags incrementally
+        new_tag_ids = set(doc.tags)
+        actions = []
+
+        if cmd.add_tags:
+            add_ids = resolve_tag_names_to_ids(client, cmd.add_tags)
+            new_tag_ids.update(add_ids)
+            actions.append(f"Adding: {cmd.add_tags}")
+
+        if cmd.remove_tags:
+            remove_ids = resolve_tag_names_to_ids(client, cmd.remove_tags)
+            new_tag_ids.difference_update(remove_ids)
+            actions.append(f"Removing: {cmd.remove_tags}")
+
+        update_request.tags = list(new_tag_ids)
+        action = "; ".join(actions)
+
+    print(action)
+
+    # Update the document
+    updated_doc = client.update_document(cmd.document_id, update_request)
+
+    # Show new tags
+    new_tag_names = [tag_dict.get(tag_id, str(tag_id)) for tag_id in updated_doc.tags]
+    print(f"Updated tags: {', '.join(new_tag_names) if new_tag_names else 'None'}")
+
+
+def bulk_edit_documents(client: PaperlessClient, cmd: DocumentsBulkCommand) -> None:
+    """Perform bulk tag operations on multiple documents."""
+    # Validate document IDs exist
+    print(f"Validating {len(cmd.document_ids)} documents...")
+    valid_docs = []
+    for doc_id in cmd.document_ids:
+        try:
+            doc = client.get_document(doc_id)
+            valid_docs.append(doc)
+        except PaperlessAPIError:
+            print(f"Warning: Document {doc_id} not found, skipping")
+
+    if not valid_docs:
+        print("No valid documents found.")
+        return
+
+    print(f"Found {len(valid_docs)} valid documents")
+
+    # Determine operation
+    if cmd.add_tags:
+        tag_ids = resolve_tag_names_to_ids(client, cmd.add_tags)
+        if len(tag_ids) > 1:
+            print("Error: Bulk add operation only supports one tag at a time")
+            return
+
+        bulk_request = BulkEditRequest(
+            documents=[doc.id for doc in valid_docs],
+            method="add_tag",
+            parameters={"tag": tag_ids[0]},
+        )
+        print(f"Adding tag '{cmd.add_tags}' to {len(valid_docs)} documents...")
+
+    elif cmd.remove_tags:
+        tag_ids = resolve_tag_names_to_ids(client, cmd.remove_tags)
+        if len(tag_ids) > 1:
+            print("Error: Bulk remove operation only supports one tag at a time")
+            return
+
+        bulk_request = BulkEditRequest(
+            documents=[doc.id for doc in valid_docs],
+            method="remove_tag",
+            parameters={"tag": tag_ids[0]},
+        )
+        print(f"Removing tag '{cmd.remove_tags}' from {len(valid_docs)} documents...")
+    else:
+        print("Error: No operation specified (use --add-tags or --remove-tags)")
+        return
+
+    # Execute bulk operation
+    result = client.bulk_edit_documents(bulk_request)
+    print(f"✓ Updated {len(result.affected_documents)} documents")

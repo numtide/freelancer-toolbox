@@ -15,13 +15,17 @@ from typing import Any, cast
 from paperless_cli.api import PaperlessAPIError, PaperlessClient
 from paperless_cli.errors import PaperlessCliError
 from paperless_cli.cli.documents import (
+    DocumentsBulkCommand,
     DocumentsDeleteCommand,
     DocumentsGetCommand,
     DocumentsSearchCommand,
+    DocumentsUpdateCommand,
     DocumentsUploadCommand,
+    bulk_edit_documents,
     delete_document,
     get_document,
     search_documents,
+    update_document,
     upload_document,
 )
 from paperless_cli.cli.mail_accounts import (
@@ -67,7 +71,9 @@ Command = (
     | DocumentsSearchCommand
     | DocumentsGetCommand
     | DocumentsUploadCommand
+    | DocumentsUpdateCommand
     | DocumentsDeleteCommand
+    | DocumentsBulkCommand
 )
 
 
@@ -262,6 +268,7 @@ def parse_args() -> Options:
     # Search documents
     search_parser = docs_subparsers.add_parser("search", help="Search documents")
     search_parser.add_argument("query", nargs="?", help="Search query")
+    search_parser.add_argument("--tags", help="Filter by tag names (comma-separated)")
     search_parser.add_argument("--page", type=int, default=1, help="Page number")
     search_parser.add_argument("--page-size", type=int, default=25, help="Results per page")
 
@@ -281,10 +288,25 @@ def parse_args() -> Options:
     upload_parser.add_argument("--title", help="Document title")
     upload_parser.add_argument("--tags", help="Comma-separated list of tag names")
 
+    # Update document
+    update_parser = docs_subparsers.add_parser("update", help="Update a document's tags")
+    update_parser.add_argument("document_id", type=int, help="Document ID")
+    update_parser.add_argument("--add-tags", help="Tags to add (comma-separated)")
+    update_parser.add_argument("--remove-tags", help="Tags to remove (comma-separated)")
+    update_parser.add_argument(
+        "--set-tags", help="Replace all tags (comma-separated, or empty to clear)"
+    )
+
     # Delete document
     delete_doc_parser = docs_subparsers.add_parser("delete", help="Delete a document")
     delete_doc_parser.add_argument("document_id", type=int, help="Document ID")
     delete_doc_parser.add_argument("-f", "--force", action="store_true", help="Skip confirmation")
+
+    # Bulk edit documents
+    bulk_parser = docs_subparsers.add_parser("bulk", help="Bulk edit multiple documents")
+    bulk_parser.add_argument("document_ids", type=int, nargs="+", help="Document IDs")
+    bulk_parser.add_argument("--add-tags", help="Tag to add (single tag name)")
+    bulk_parser.add_argument("--remove-tags", help="Tag to remove (single tag name)")
 
     # Parse arguments
     args = parser.parse_args()
@@ -359,7 +381,10 @@ def parse_args() -> Options:
         action = getattr(args, "action", None)
         if action == "search":
             options.command = DocumentsSearchCommand(
-                query=getattr(args, "query", None), page=args.page, page_size=args.page_size
+                query=getattr(args, "query", None),
+                tags=getattr(args, "tags", None),
+                page=args.page,
+                page_size=args.page_size,
             )
         elif action == "get":
             options.command = DocumentsGetCommand(
@@ -375,8 +400,21 @@ def parse_args() -> Options:
                 title=getattr(args, "title", None),
                 tags=getattr(args, "tags", None),
             )
+        elif action == "update":
+            options.command = DocumentsUpdateCommand(
+                document_id=args.document_id,
+                add_tags=getattr(args, "add_tags", None),
+                remove_tags=getattr(args, "remove_tags", None),
+                set_tags=getattr(args, "set_tags", None),
+            )
         elif action == "delete":
             options.command = DocumentsDeleteCommand(document_id=args.document_id, force=args.force)
+        elif action == "bulk":
+            options.command = DocumentsBulkCommand(
+                document_ids=args.document_ids,
+                add_tags=getattr(args, "add_tags", None),
+                remove_tags=getattr(args, "remove_tags", None),
+            )
 
     return options
 
@@ -447,8 +485,12 @@ def main() -> None:
                 get_document(client, cmd)
             case DocumentsUploadCommand() as cmd:
                 upload_document(client, cmd)
+            case DocumentsUpdateCommand() as cmd:
+                update_document(client, cmd)
             case DocumentsDeleteCommand() as cmd:
                 delete_document(client, cmd.document_id, cmd.force)
+            case DocumentsBulkCommand() as cmd:
+                bulk_edit_documents(client, cmd)
             case _:
                 print("Unknown command")
                 sys.exit(1)

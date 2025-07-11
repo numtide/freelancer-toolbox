@@ -6,6 +6,7 @@ import time
 
 from paperless_cli.api import PaperlessAPIError, PaperlessClient
 from paperless_cli.cli.formatter import print_table
+from paperless_cli.cli.tags import resolve_tag_names_to_ids
 
 
 @dataclass
@@ -173,7 +174,7 @@ def upload_document(client: PaperlessClient, cmd: DocumentsUploadCommand) -> Non
     # Parse tags if provided
     tag_ids = None
     if cmd.tags:
-        tag_ids = [int(tag_id.strip()) for tag_id in cmd.tags.split(",")]
+        tag_ids = resolve_tag_names_to_ids(client, cmd.tags)
 
     try:
         print(f"Uploading '{Path(cmd.file_path).name}'...")

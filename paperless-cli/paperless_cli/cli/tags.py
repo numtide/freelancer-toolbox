@@ -4,6 +4,43 @@ from dataclasses import dataclass
 
 from paperless_cli.api import PaperlessClient
 from paperless_cli.cli.formatter import print_table
+from paperless_cli.errors import TagNotFoundError
+
+
+def resolve_tag_names_to_ids(client: PaperlessClient, tag_names_str: str) -> list[int]:
+    """Convert comma-separated tag names to tag IDs.
+
+    Args:
+        client: PaperlessClient instance
+        tag_names_str: Comma-separated string of tag names
+
+    Returns:
+        List of tag IDs
+
+    Raises:
+        TagNotFoundError: If any tags are not found
+    """
+    # Get all existing tags
+    all_tags = client.get_tags()
+    tag_dict = {tag["name"].lower(): tag["id"] for tag in all_tags}
+
+    # Parse tag names
+    tag_names = [name.strip() for name in tag_names_str.split(",")]
+    tag_ids = []
+    invalid_tags = []
+
+    for tag_name in tag_names:
+        tag_name_lower = tag_name.lower()
+        if tag_name_lower in tag_dict:
+            tag_ids.append(tag_dict[tag_name_lower])
+        else:
+            invalid_tags.append(tag_name)
+
+    if invalid_tags:
+        available_tag_names = sorted(tag["name"] for tag in all_tags)
+        raise TagNotFoundError(invalid_tags, available_tag_names)
+
+    return tag_ids
 
 
 @dataclass

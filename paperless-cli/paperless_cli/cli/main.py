@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from paperless_cli.api import PaperlessAPIError, PaperlessClient
+from paperless_cli.errors import PaperlessCliError
 from paperless_cli.cli.documents import (
     DocumentsDeleteCommand,
     DocumentsGetCommand,
@@ -278,7 +279,7 @@ def parse_args() -> Options:
     upload_parser = docs_subparsers.add_parser("upload", help="Upload a document")
     upload_parser.add_argument("file_path", help="Path to the document file")
     upload_parser.add_argument("--title", help="Document title")
-    upload_parser.add_argument("--tags", help="Comma-separated list of tag IDs")
+    upload_parser.add_argument("--tags", help="Comma-separated list of tag names")
 
     # Delete document
     delete_doc_parser = docs_subparsers.add_parser("delete", help="Delete a document")
@@ -451,6 +452,9 @@ def main() -> None:
             case _:
                 print("Unknown command")
                 sys.exit(1)
+    except PaperlessCliError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
     except PaperlessAPIError as e:
         print(f"API Error: {e}")
         sys.exit(1)

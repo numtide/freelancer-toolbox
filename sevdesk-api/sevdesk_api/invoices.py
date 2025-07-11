@@ -10,10 +10,18 @@ class InvoiceOperations:
     """Operations for managing invoices."""
 
     def __init__(self, client: SevDeskClient) -> None:
+        """Initialize InvoiceOperations.
+
+        Args:
+            client: SevDeskClient instance
+
+        """
         self.client = client
 
     def create_invoice(
-        self, invoice: Invoice, positions: list[InvoicePosition] | None = None
+        self,
+        invoice: Invoice,
+        positions: list[InvoicePosition] | None = None,
     ) -> Invoice:
         """Create a new invoice with positions.
 
@@ -23,6 +31,7 @@ class InvoiceOperations:
 
         Returns:
             Created invoice with ID
+
         """
         # Use provided positions or invoice's positions
         if positions is None:
@@ -43,14 +52,14 @@ class InvoiceOperations:
         request_data = {"invoice": invoice_data, "invoicePosSave": invoice_pos_save}
 
         response = self.client.post(
-            "Invoice/Factory/saveInvoice", json_data=request_data
+            "Invoice/Factory/saveInvoice",
+            json_data=request_data,
         )
 
         if "objects" in response and "invoice" in response["objects"]:
             return Invoice.from_dict(response["objects"]["invoice"])
-        else:
-            msg = "Failed to create invoice"
-            raise ValueError(msg)
+        msg = "Failed to create invoice"
+        raise ValueError(msg)
 
     def get_invoices(
         self,
@@ -73,6 +82,7 @@ class InvoiceOperations:
 
         Returns:
             List of Invoice objects
+
         """
         params: dict[str, Any] = {
             "limit": limit,
@@ -116,6 +126,7 @@ class InvoiceOperations:
 
         Returns:
             Invoice object with positions
+
         """
         response = self.client.get(f"Invoice/{invoice_id}")
 
@@ -148,9 +159,8 @@ class InvoiceOperations:
                     invoice.positions.append(position)
 
             return invoice
-        else:
-            msg = f"Invoice with ID {invoice_id} not found"
-            raise ValueError(msg)
+        msg = f"Invoice with ID {invoice_id} not found"
+        raise ValueError(msg)
 
     def send_invoice_by_email(
         self,
@@ -173,6 +183,7 @@ class InvoiceOperations:
 
         Returns:
             Response from API
+
         """
         data = {
             "toEmail": email,
@@ -206,6 +217,7 @@ class InvoiceOperations:
 
         Returns:
             Response from API
+
         """
         data = {
             "amount": amount,
@@ -223,7 +235,9 @@ class InvoiceOperations:
         return self.client.put(f"Invoice/{invoice_id}/bookAmount", json_data=data)
 
     def create_invoice_from_order(
-        self, order_id: int, invoice_data: dict | None = None
+        self,
+        order_id: int,
+        invoice_data: dict | None = None,
     ) -> Invoice:
         """Create an invoice from an order.
 
@@ -233,6 +247,7 @@ class InvoiceOperations:
 
         Returns:
             Created invoice
+
         """
         data = {"order": {"id": order_id, "objectName": "Order"}}
 
@@ -240,7 +255,8 @@ class InvoiceOperations:
             data["invoice"] = invoice_data
 
         response = self.client.post(
-            "Invoice/Factory/createInvoiceFromOrder", json_data=data
+            "Invoice/Factory/createInvoiceFromOrder",
+            json_data=data,
         )
 
         if response.get("objects"):
@@ -248,6 +264,5 @@ class InvoiceOperations:
             invoice = Invoice()
             invoice.id = response["objects"].get("id")
             return invoice
-        else:
-            msg = "Failed to create invoice from order"
-            raise ValueError(msg)
+        msg = "Failed to create invoice from order"
+        raise ValueError(msg)

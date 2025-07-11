@@ -16,6 +16,7 @@ class CheckAccountOperations:
 
         Args:
             client: The SevDesk client instance
+
         """
         self.client = client
 
@@ -34,6 +35,7 @@ class CheckAccountOperations:
 
         Returns:
             Response with check accounts
+
         """
         params: dict[str, Any] = {}
         if limit is not None:
@@ -53,6 +55,7 @@ class CheckAccountOperations:
 
         Returns:
             Check account data
+
         """
         return self.client.get(f"CheckAccount/{check_account_id}")
 
@@ -73,6 +76,7 @@ class CheckAccountOperations:
 
         Returns:
             Created check account data
+
         """
         data: dict[str, Any] = {
             "name": name,
@@ -85,7 +89,8 @@ class CheckAccountOperations:
             data["accountingNumber"] = accounting_number
 
         return self.client.post(
-            "CheckAccount/Factory/fileImportAccount", json_data=data
+            "CheckAccount/Factory/fileImportAccount",
+            json_data=data,
         )
 
     def create_clearing_account(
@@ -101,6 +106,7 @@ class CheckAccountOperations:
 
         Returns:
             Created check account data
+
         """
         data: dict[str, Any] = {
             "name": name,

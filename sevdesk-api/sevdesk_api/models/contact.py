@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -60,62 +60,73 @@ class Contact(SevDeskObject):
     parent: Contact | None = None
 
     def __post_init__(self) -> None:
+        """Set object name after initialization."""
         self.object_name = "Contact"
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dict for API requests."""
-        data = super().to_dict()
+    def _add_basic_fields(self, data: dict[str, Any]) -> None:
+        """Add basic name and description fields."""
+        field_mapping = {
+            "name": "name",
+            "surename": "surename",
+            "familyname": "familyname",
+            "name2": "name2",
+            "customer_number": "customerNumber",
+            "description": "description",
+        }
+        for attr, key in field_mapping.items():
+            value = getattr(self, attr, None)
+            if value:
+                data[key] = value
 
-        # Add fields
-        if self.name:
-            data["name"] = self.name
-        if self.surename:
-            data["surename"] = self.surename
-        if self.familyname:
-            data["familyname"] = self.familyname
-        if self.name2:
-            data["name2"] = self.name2
-
-        if self.category:
-            data["category"] = {"id": self.category.value, "objectName": "Category"}
-
-        if self.customer_number:
-            data["customerNumber"] = self.customer_number
-        if self.description:
-            data["description"] = self.description
-
-        # Financial fields
+    def _add_financial_fields(self, data: dict[str, Any]) -> None:
+        """Add financial and tax fields."""
         if self.tax_number:
             data["taxNumber"] = self.tax_number
         if self.vat_number:
             data["vatNumber"] = self.vat_number
         data["exemptVat"] = self.exempt_vat
 
-        if self.default_time_to_pay is not None:
-            data["defaultTimeToPay"] = self.default_time_to_pay
-        if self.default_cashback_time is not None:
-            data["defaultCashbackTime"] = self.default_cashback_time
-        if self.default_cashback_percent is not None:
-            data["defaultCashbackPercent"] = self.default_cashback_percent
-        if self.default_discount_amount is not None:
-            data["defaultDiscountAmount"] = self.default_discount_amount
+        # Default payment terms
+        field_mapping = {
+            "default_time_to_pay": "defaultTimeToPay",
+            "default_cashback_time": "defaultCashbackTime",
+            "default_cashback_percent": "defaultCashbackPercent",
+            "default_discount_amount": "defaultDiscountAmount",
+        }
+        for attr, key in field_mapping.items():
+            value = getattr(self, attr, None)
+            if value is not None:
+                data[key] = value
         data["defaultDiscountPercentage"] = self.default_discount_percentage
 
-        # Banking
-        if self.bank_account:
-            data["bankAccount"] = self.bank_account
-        if self.bank_number:
-            data["bankNumber"] = self.bank_number
-
-        # Individual specific
+    def _add_personal_fields(self, data: dict[str, Any]) -> None:
+        """Add individual-specific fields."""
         if self.birthday:
             data["birthday"] = int(self.birthday.timestamp())
-        if self.gender:
-            data["gender"] = self.gender
-        if self.academic_title:
-            data["academicTitle"] = self.academic_title
-        if self.titel:
-            data["titel"] = self.titel
+        field_mapping = {
+            "gender": "gender",
+            "academic_title": "academicTitle",
+            "titel": "titel",
+            "bank_account": "bankAccount",
+            "bank_number": "bankNumber",
+        }
+        for attr, key in field_mapping.items():
+            value = getattr(self, attr, None)
+            if value:
+                data[key] = value
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dict for API requests."""
+        data = super().to_dict()
+
+        # Add all field groups
+        self._add_basic_fields(data)
+        self._add_financial_fields(data)
+        self._add_personal_fields(data)
+
+        # Special handling for category
+        if self.category:
+            data["category"] = {"id": self.category.value, "objectName": "Category"}
 
         # Parent organization
         if self.parent:
@@ -157,7 +168,8 @@ class Contact(SevDeskObject):
         contact.default_cashback_percent = data.get("defaultCashbackPercent")
         contact.default_discount_amount = data.get("defaultDiscountAmount")
         contact.default_discount_percentage = data.get(
-            "defaultDiscountPercentage", False
+            "defaultDiscountPercentage",
+            False,
         )
 
         # Banking
@@ -166,7 +178,7 @@ class Contact(SevDeskObject):
 
         # Individual
         if data.get("birthday"):
-            contact.birthday = datetime.fromtimestamp(data["birthday"])
+            contact.birthday = datetime.fromtimestamp(data["birthday"], tz=UTC)
         contact.gender = data.get("gender")
         contact.academic_title = data.get("academicTitle")
         contact.titel = data.get("titel")

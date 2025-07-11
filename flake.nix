@@ -75,7 +75,11 @@
                   modules = [ "sevdesk_api" ];
                 };
                 "sevdesk-invoicer" = {
-                  modules = [ "sevdesk_invoicer" "sevdesk_wise_importer" "sevdesk_tax_estimator" ];
+                  modules = [
+                    "sevdesk_invoicer"
+                    "sevdesk_wise_importer"
+                    "sevdesk_tax_estimator"
+                  ];
                   extraPythonPackages = [ self'.packages.sevdesk-api ];
                 };
                 "wise-exporter" = {

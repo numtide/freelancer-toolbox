@@ -1,15 +1,16 @@
-{ lib
-, python3
+{
+  lib,
+  python,
 }:
 
-python3.pkgs.buildPythonPackage {
+python.pkgs.buildPythonPackage {
   pname = "sevdesk-api";
   version = "0.1.0";
   pyproject = true;
 
   src = ./.;
 
-  nativeBuildInputs = with python3.pkgs; [
+  nativeBuildInputs = with python.pkgs; [
     setuptools
     wheel
   ];
@@ -18,7 +19,7 @@ python3.pkgs.buildPythonPackage {
   propagatedBuildInputs = [ ];
 
   # Optional development dependencies
-  passthru.optional-dependencies = with python3.pkgs; {
+  passthru.optional-dependencies = with python.pkgs; {
     dev = [
       black
       ruff

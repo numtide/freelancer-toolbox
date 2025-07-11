@@ -27,7 +27,15 @@ disallow_untyped_defs = true
 [tool.ruff]
 target-version = "py313"
 line-length = 88
+
+[tool.ruff.lint]
 select = ["ALL"]
+ignore = [
+    "TD002",  # Missing author in TODO
+    "TD003",  # Missing issue link for TODO
+    "FIX002", # Line contains TODO
+    "PLR0913", # Too many arguments in function definition
+]
 
 [tool.black]
 line-length = 88

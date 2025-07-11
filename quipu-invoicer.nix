@@ -1,4 +1,6 @@
-{ pkgs ? import <nixpkgs> { } }:
+{
+  pkgs ? import <nixpkgs> { },
+}:
 pkgs.python3.pkgs.buildPythonApplication rec {
   pname = "quipu-invoicer";
   inherit ((builtins.fromTOML (builtins.readFile ./quipu/pyproject.toml)).project) version;

@@ -283,4 +283,8 @@ class PaperlessClient:
         """Perform bulk operations on multiple documents."""
         data = bulk_request.to_dict()
         response = self._request("POST", "/api/documents/bulk_edit/", data=data)
+        # The API returns {"result": "OK"} on success
+        # Return the document IDs that were requested as affected
+        if response.get("result") == "OK":
+            return BulkEditResponse(affected_documents=bulk_request.documents)
         return BulkEditResponse(affected_documents=response.get("affected_documents", []))

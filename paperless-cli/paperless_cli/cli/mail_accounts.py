@@ -20,14 +20,13 @@ def list_mail_accounts(client: PaperlessClient) -> None:
         print("No mail accounts found.")
         return
 
-    headers = ["ID", "Name", "IMAP Server", "Username", "Folder"]
+    headers = ["ID", "Name", "IMAP Server", "Username"]
     rows = [
         [
-            account["id"],
-            account["name"],
-            account["imap_server"],
-            account["username"],
-            account.get("folder", "INBOX"),
+            account.id,
+            account.name,
+            account.imap_server,
+            account.username,
         ]
         for account in accounts
     ]

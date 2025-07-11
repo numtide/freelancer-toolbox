@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from paperless_cli.api import PaperlessClient
 from paperless_cli.cli.formatter import print_table
 from paperless_cli.errors import TagNotFoundError
+from paperless_cli.models import TagCreateRequest
 
 
 def resolve_tag_names_to_ids(client: PaperlessClient, tag_names_str: str) -> list[int]:
@@ -22,7 +23,7 @@ def resolve_tag_names_to_ids(client: PaperlessClient, tag_names_str: str) -> lis
     """
     # Get all existing tags
     all_tags = client.get_tags()
-    tag_dict = {tag["name"].lower(): tag["id"] for tag in all_tags}
+    tag_dict = {tag.name.lower(): tag.id for tag in all_tags}
 
     # Parse tag names
     tag_names = [name.strip() for name in tag_names_str.split(",")]
@@ -37,7 +38,7 @@ def resolve_tag_names_to_ids(client: PaperlessClient, tag_names_str: str) -> lis
             invalid_tags.append(tag_name)
 
     if invalid_tags:
-        available_tag_names = sorted(tag["name"] for tag in all_tags)
+        available_tag_names = sorted(tag.name for tag in all_tags)
         raise TagNotFoundError(invalid_tags, available_tag_names)
 
     return tag_ids
@@ -74,10 +75,10 @@ def list_tags(client: PaperlessClient) -> None:
     headers = ["ID", "Name", "Color", "Documents"]
     rows = [
         [
-            tag["id"],
-            tag["name"],
-            tag.get("color", "-"),
-            tag.get("document_count", 0),
+            tag.id,
+            tag.name,
+            tag.color or "-",
+            tag.document_count,
         ]
         for tag in tags
     ]
@@ -86,26 +87,21 @@ def list_tags(client: PaperlessClient) -> None:
 
 def create_tag(client: PaperlessClient, name: str, color: str | None) -> None:
     """Create a new tag."""
-    data = {"name": name}
-    if color:
-        data["color"] = color
-
-    tag = client.create_tag(data)
-    print(f"Created tag '{tag['name']}' with ID {tag['id']}")
+    tag_request = TagCreateRequest(name=name, color=color)
+    tag = client.create_tag(tag_request)
+    print(f"Created tag '{tag.name}' with ID {tag.id}")
 
 
 def delete_tag(client: PaperlessClient, tag_id: int, force: bool) -> None:
     """Delete a tag."""
     if not force:
         tags = client.get_tags()
-        tag = next((t for t in tags if t["id"] == tag_id), None)
+        tag = next((t for t in tags if t.id == tag_id), None)
         if not tag:
             print(f"Tag with ID {tag_id} not found.")
             return
 
-        confirm = input(
-            f"Are you sure you want to delete tag '{tag['name']}' (ID: {tag_id})? [y/N]: "
-        )
+        confirm = input(f"Are you sure you want to delete tag '{tag.name}' (ID: {tag_id})? [y/N]: ")
         if confirm.lower() != "y":
             print("Cancelled.")
             return

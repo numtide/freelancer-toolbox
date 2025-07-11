@@ -8,9 +8,29 @@ import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeVar, cast
+
+from paperless_cli.models import (
+    BulkEditRequest,
+    BulkEditResponse,
+    Correspondent,
+    Document,
+    DocumentListResponse,
+    DocumentSearchParams,
+    DocumentType,
+    DocumentUpdateRequest,
+    MailAccount,
+    MailRule,
+    MailRuleCreateRequest,
+    MailRuleUpdateRequest,
+    Tag,
+    TagCreateRequest,
+    Task,
+)
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class PaperlessAPIError(Exception):
@@ -84,67 +104,75 @@ class PaperlessClient:
             error_msg = f"HTTP {e.code}: {error_body}"
             raise PaperlessAPIError(error_msg) from e
 
-    def get_mail_accounts(self) -> list[dict[str, Any]]:
+    def get_mail_accounts(self) -> list[MailAccount]:
         """Get all mail accounts."""
         response = self._request("GET", "/api/mail_accounts/")
-        return cast("list[dict[str, Any]]", response["results"])
+        return [MailAccount.from_api(account) for account in response["results"]]
 
-    def get_mail_rules(self) -> list[dict[str, Any]]:
+    def get_mail_rules(self) -> list[MailRule]:
         """Get all mail rules."""
         response = self._request("GET", "/api/mail_rules/")
-        return cast("list[dict[str, Any]]", response["results"])
+        return [MailRule.from_api(rule) for rule in response["results"]]
 
-    def get_mail_rule(self, rule_id: int) -> dict[str, Any]:
+    def get_mail_rule(self, rule_id: int) -> MailRule:
         """Get a specific mail rule."""
-        return self._request("GET", f"/api/mail_rules/{rule_id}/")
+        response = self._request("GET", f"/api/mail_rules/{rule_id}/")
+        return MailRule.from_api(response)
 
-    def create_mail_rule(self, data: dict[str, Any]) -> dict[str, Any]:
+    def create_mail_rule(self, create_request: MailRuleCreateRequest) -> MailRule:
         """Create a new mail rule."""
-        return self._request("POST", "/api/mail_rules/", data=data)
+        data = create_request.to_dict()
+        response = self._request("POST", "/api/mail_rules/", data=data)
+        return MailRule.from_api(response)
 
-    def update_mail_rule(self, rule_id: int, data: dict[str, Any]) -> dict[str, Any]:
+    def update_mail_rule(
+        self, rule_id: int, update_request: MailRuleUpdateRequest, current_rule: MailRule
+    ) -> MailRule:
         """Update an existing mail rule."""
-        return self._request("PUT", f"/api/mail_rules/{rule_id}/", data=data)
+        data = update_request.apply_to_rule(current_rule)
+        response = self._request("PUT", f"/api/mail_rules/{rule_id}/", data=data)
+        return MailRule.from_api(response)
 
     def delete_mail_rule(self, rule_id: int) -> None:
         """Delete a mail rule."""
         self._request("DELETE", f"/api/mail_rules/{rule_id}/")
 
-    def get_tags(self) -> list[dict[str, Any]]:
+    def get_tags(self) -> list[Tag]:
         """Get all tags."""
         response = self._request("GET", "/api/tags/")
-        return cast("list[dict[str, Any]]", response["results"])
+        return [Tag.from_api(tag_data) for tag_data in response["results"]]
 
-    def create_tag(self, data: dict[str, Any]) -> dict[str, Any]:
+    def create_tag(self, tag_request: TagCreateRequest) -> Tag:
         """Create a new tag."""
-        return self._request("POST", "/api/tags/", data=data)
+        data = tag_request.to_dict()
+        response = self._request("POST", "/api/tags/", data=data)
+        return Tag.from_api(response)
 
     def delete_tag(self, tag_id: int) -> None:
         """Delete a tag."""
         self._request("DELETE", f"/api/tags/{tag_id}/")
 
-    def get_correspondents(self) -> list[dict[str, Any]]:
+    def get_correspondents(self) -> list[Correspondent]:
         """Get all correspondents."""
         response = self._request("GET", "/api/correspondents/")
-        return cast("list[dict[str, Any]]", response["results"])
+        return [Correspondent.from_api(corr) for corr in response["results"]]
 
-    def get_document_types(self) -> list[dict[str, Any]]:
+    def get_document_types(self) -> list[DocumentType]:
         """Get all document types."""
         response = self._request("GET", "/api/document_types/")
-        return cast("list[dict[str, Any]]", response["results"])
+        return [DocumentType.from_api(dt) for dt in response["results"]]
 
-    def search_documents(
-        self, query: str | None = None, page: int = 1, page_size: int = 25
-    ) -> dict[str, Any]:
+    def search_documents(self, search_params: DocumentSearchParams) -> DocumentListResponse:
         """Search documents."""
-        params: dict[str, Any] = {"page": page, "page_size": page_size}
-        if query:
-            params["query"] = query
-        return self._request("GET", "/api/documents/", params=params)
+        params = search_params.to_params()
+        response = self._request("GET", "/api/documents/", params=params)
+        documents = [Document.from_api(doc) for doc in response["results"]]
+        return DocumentListResponse.from_api(response, documents)
 
-    def get_document(self, document_id: int) -> dict[str, Any]:
+    def get_document(self, document_id: int) -> Document:
         """Get a specific document."""
-        return self._request("GET", f"/api/documents/{document_id}/")
+        response = self._request("GET", f"/api/documents/{document_id}/")
+        return Document.from_api(response)
 
     def get_document_metadata(self, document_id: int) -> dict[str, Any]:
         """Get document metadata."""
@@ -235,9 +263,24 @@ class PaperlessClient:
         """Delete a document."""
         self._request("DELETE", f"/api/documents/{document_id}/")
 
-    def get_task_status(self, task_id: str) -> dict[str, Any] | None:
+    def get_task_status(self, task_id: str) -> Task | None:
         """Get task status by task_id."""
         response = self._request("GET", "/api/tasks/", params={"task_id": task_id})
         # The tasks endpoint returns an array, not a paginated response
         tasks = cast("list[dict[str, Any]]", response)
-        return tasks[0] if tasks else None
+        if not tasks:
+            return None
+
+        return Task.from_api(tasks[0])
+
+    def update_document(self, document_id: int, update_request: DocumentUpdateRequest) -> Document:
+        """Update a document's metadata including tags."""
+        data = update_request.to_dict()
+        response = self._request("PATCH", f"/api/documents/{document_id}/", data=data)
+        return Document.from_api(response)
+
+    def bulk_edit_documents(self, bulk_request: BulkEditRequest) -> BulkEditResponse:
+        """Perform bulk operations on multiple documents."""
+        data = bulk_request.to_dict()
+        response = self._request("POST", "/api/documents/bulk_edit/", data=data)
+        return BulkEditResponse(affected_documents=response.get("affected_documents", []))

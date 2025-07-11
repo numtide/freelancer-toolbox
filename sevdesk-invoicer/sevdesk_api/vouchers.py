@@ -2,15 +2,37 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import mimetypes
 import uuid
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 from .client import SevDeskClient, SevDeskError
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+
+@dataclass
+class DocumentDownload:
+    """Downloaded document data."""
+
+    content: bytes
+    """Binary content of the document."""
+
+    filename: str
+    """Suggested filename with extension."""
+
+    document_id: int
+    """ID of the document in sevdesk."""
+
+    extension: str
+    """File extension (e.g., 'pdf')."""
+
+    filesize: int
+    """Size of the file in bytes."""
 
 
 class VoucherOperations:
@@ -286,3 +308,72 @@ class VoucherOperations:
             data["amount"] = amount
 
         return self.client.post(f"Voucher/{voucher_id}/bookAmount", json_data=data)
+
+    def download_voucher_document(self, document_id: int) -> DocumentDownload:
+        """Download a voucher document.
+
+        Args:
+            document_id: ID of the document to download
+
+        Returns:
+            DocumentDownload object containing the document content and metadata
+
+        Raises:
+            SevDeskError: If the download fails
+        """
+
+        # First get document info to get the filename and extension
+        doc_info = self.client.get(f"Document/{document_id}")
+        if doc_info.get("objects"):
+            doc_obj = (
+                doc_info["objects"][0]
+                if isinstance(doc_info["objects"], list)
+                else doc_info["objects"]
+            )
+            extension = doc_obj.get("extension", "pdf")
+            original_filename = doc_obj.get("filename", f"document_{document_id}")
+            filesize = doc_obj.get("filesize", 0)
+
+            # Create a meaningful filename
+            if original_filename and not original_filename.endswith(f".{extension}"):
+                filename = f"{original_filename}.{extension}"
+            else:
+                filename = original_filename or f"document_{document_id}.{extension}"
+        else:
+            extension = "pdf"
+            filename = f"document_{document_id}.pdf"
+            filesize = 0
+
+        # Download the document content
+        response = self.client.get(f"Document/{document_id}/download")
+
+        if "objects" not in response:
+            msg = f"No document content returned for document {document_id}"
+            raise SevDeskError(msg)
+
+        obj = response["objects"]
+        if isinstance(obj, list) and obj:
+            obj = obj[0]
+
+        if not isinstance(obj, dict) or "content" not in obj:
+            msg = f"Invalid document response format for document {document_id}"
+            raise SevDeskError(msg)
+
+        # Decode base64 content
+        content = obj["content"]
+        if obj.get("base64Encoded", True):
+            file_content = base64.b64decode(content)
+        else:
+            file_content = content.encode() if isinstance(content, str) else content
+
+        # Update filesize if not set
+        if not filesize:
+            filesize = len(file_content)
+
+        return DocumentDownload(
+            content=file_content,
+            filename=filename,
+            document_id=document_id,
+            extension=extension,
+            filesize=filesize,
+        )

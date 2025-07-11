@@ -18,7 +18,7 @@ from .models import (
     Unity,
 )
 from .transactions import TransactionOperations
-from .vouchers import VoucherOperations
+from .vouchers import DocumentDownload, VoucherOperations
 
 __all__ = [
     "CheckAccount",
@@ -27,6 +27,7 @@ __all__ = [
     "Contact",
     "ContactCategory",
     "ContactOperations",
+    "DocumentDownload",
     "Invoice",
     "InvoiceOperations",
     "InvoicePosition",

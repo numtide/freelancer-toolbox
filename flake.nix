@@ -33,7 +33,10 @@
             harvest-exporter = pkgs.callPackage ./harvest-exporter.nix { };
 
             wise-exporter = pkgs.callPackage ./wise-exporter.nix { };
-            sevdesk-invoicer = pkgs.callPackage ./sevdesk-invoicer.nix { };
+            sevdesk-api = pkgs.python3.pkgs.callPackage ./sevdesk-api { };
+            sevdesk-invoicer = pkgs.python3.pkgs.callPackage ./sevdesk-invoicer.nix {
+              inherit (self'.packages) sevdesk-api;
+            };
             quipu-invoicer = pkgs.python3.pkgs.callPackage ./quipu-invoicer.nix { };
 
             paperless-cli = pkgs.callPackage ./paperless-cli { };
@@ -68,8 +71,12 @@
                   "kimai"
                   "kimai_exporter"
                 ];
-                "sevdesk-invoicer" = {
+                "sevdesk-api" = {
                   modules = [ "sevdesk_api" ];
+                };
+                "sevdesk-invoicer" = {
+                  modules = [ "sevdesk_invoicer" "sevdesk_wise_importer" "sevdesk_tax_estimator" ];
+                  extraPythonPackages = [ self'.packages.sevdesk-api ];
                 };
                 "wise-exporter" = {
                   extraPythonPackages = [ pkgs.python3.pkgs.rsa ];

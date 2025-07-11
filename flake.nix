@@ -27,6 +27,8 @@
           sevdesk-invoicer = pkgs.callPackage ./sevdesk-invoicer.nix { };
           quipu-invoicer = pkgs.python3.pkgs.callPackage ./quipu-invoicer.nix { };
 
+          paperless-cli = pkgs.callPackage ./paperless-cli { };
+
           working-days-calculator = pkgs.writers.writePython3Bin "working-days-calculator"
             {
               libraries = [ pkgs.python3Packages.pandas ];
@@ -66,6 +68,7 @@
                 extraPythonPackages = [ pkgs.python3.pkgs.rsa ];
               };
               "quipu-invoicer" = { };
+              "paperless-cli" = { };
             };
           };
 

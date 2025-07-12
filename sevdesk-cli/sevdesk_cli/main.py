@@ -14,6 +14,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sevdesk_api import SevDeskAPI, SevDeskError
 
+from sevdesk_cli.cli.accounting_types import (
+    AccountingTypesListCommand,
+    add_accounting_type_subparser,
+    list_accounting_types,
+    parse_accounting_type_command,
+)
 from sevdesk_cli.cli.check_accounts import (
     CheckAccountsBalanceCommand,
     CheckAccountsCreateClearingCommand,
@@ -70,7 +76,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 Command = (
-    VouchersListCommand
+    AccountingTypesListCommand
+    | VouchersListCommand
     | VouchersGetCommand
     | VouchersCreateCommand
     | VouchersUpdateCommand
@@ -166,6 +173,9 @@ def create_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
+    # Add accounting type subcommands
+    add_accounting_type_subparser(subparsers)
+
     # Add voucher subcommands
     add_voucher_subparser(subparsers)
 
@@ -192,7 +202,9 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     )
 
     # Parse command based on the command type
-    if args.command == "vouchers":
+    if args.command == "accounting-types":
+        options.command = parse_accounting_type_command(args)
+    elif args.command == "vouchers":
         options.command = parse_voucher_command(args)
     elif args.command == "transactions":
         options.command = parse_transaction_command(args)
@@ -205,6 +217,10 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
 def handle_command(api: SevDeskAPI, command: Command) -> None:  # noqa: C901, PLR0912
     """Handle the execution of a command."""
     match command:
+        # Accounting type commands
+        case AccountingTypesListCommand() as cmd:
+            list_accounting_types(api, cmd)
+
         # Voucher commands
         case VouchersListCommand() as cmd:
             list_vouchers(api, cmd)

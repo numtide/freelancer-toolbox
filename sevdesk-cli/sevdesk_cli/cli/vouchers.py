@@ -76,6 +76,7 @@ class VoucherPositionInput:
     tax_rate: float
     net: bool = True
     text: str | None = None
+    accounting_type_skr: str | None = None
 
 
 @dataclass
@@ -219,9 +220,12 @@ def add_voucher_subparser(
     create_parser.add_argument(
         "--position",
         action="append",
-        nargs=4,
-        metavar=("NAME", "QUANTITY", "PRICE", "TAX_RATE"),
-        help="Add a position: NAME QUANTITY PRICE TAX_RATE (can use multiple times)",
+        nargs="+",
+        metavar=("NAME", "QUANTITY", "PRICE", "TAX_RATE", "[SKR]"),
+        help=(
+            "Add a position: NAME QUANTITY PRICE TAX_RATE [SKR_NUMBER] "
+            "(can use multiple times)"
+        ),
     )
 
     # Update voucher
@@ -446,6 +450,7 @@ def create_voucher(api: SevDeskAPI, cmd: VouchersCreateCommand) -> None:
                 tax_rate=pos_input.tax_rate,
                 net=pos_input.net,
                 text=pos_input.text,
+                accounting_type_skr=pos_input.accounting_type_skr,
             )
             positions.append(position)
 
@@ -549,14 +554,25 @@ def parse_voucher_command(
 
             # From command line arguments
             elif hasattr(args, "position") and args.position:
+                min_position_args = 4
                 for pos_args in args.position:
-                    name, quantity, price, tax_rate = pos_args
+                    if len(pos_args) < min_position_args:
+                        continue
+                    name = pos_args[0]
+                    quantity = float(pos_args[1])
+                    price = float(pos_args[2])
+                    tax_rate = float(pos_args[3])
+                    accounting_type_skr = (
+                        pos_args[4] if len(pos_args) > min_position_args else None
+                    )
+
                     positions.append(
                         VoucherPositionInput(
                             name=name,
-                            quantity=float(quantity),
-                            price=float(price),
-                            tax_rate=float(tax_rate),
+                            quantity=quantity,
+                            price=price,
+                            tax_rate=tax_rate,
+                            accounting_type_skr=accounting_type_skr,
                         ),
                     )
 

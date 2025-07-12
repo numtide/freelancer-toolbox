@@ -15,6 +15,8 @@ from .client import HTTP_BAD_REQUEST, SevDeskClient, SevDeskError
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from .accounting_types import AccountingTypeOperations
+
 
 class VoucherStatus(IntEnum):
     """Voucher status values."""
@@ -76,6 +78,12 @@ class VoucherPosition:
     position_number: int | None = None
     """Position number (auto-assigned if None)."""
 
+    accounting_type_id: int | None = None
+    """Accounting type ID (resolved from SKR if needed)."""
+
+    accounting_type_skr: str | None = None
+    """SKR account number (e.g., '5400' for expenses)."""
+
     def to_dict(self, index: int | None = None) -> dict[str, Any]:
         """Convert to API dictionary format.
 
@@ -121,6 +129,13 @@ class VoucherPosition:
         elif index is not None:
             pos_dict["positionNumber"] = index
 
+        # Add accounting type if provided
+        if self.accounting_type_id is not None:
+            pos_dict["accountDatev"] = {
+                "id": self.accounting_type_id,
+                "objectName": "AccountDatev",
+            }
+
         return pos_dict
 
 
@@ -147,14 +162,20 @@ class DocumentDownload:
 class VoucherOperations:
     """Operations for vouchers in SevDesk."""
 
-    def __init__(self, client: SevDeskClient) -> None:
+    def __init__(
+        self,
+        client: SevDeskClient,
+        accounting_types: AccountingTypeOperations | None = None,
+    ) -> None:
         """Initialize voucher operations.
 
         Args:
             client: The SevDesk client instance
+            accounting_types: Accounting type operations instance
 
         """
         self.client = client
+        self.accounting_types = accounting_types
 
     def get_vouchers(
         self,
@@ -448,6 +469,9 @@ class VoucherOperations:
         # Convert VoucherPosition objects to dicts
         positions_data = []
         if voucher_positions:
+            # First resolve any SKR numbers to IDs
+            self._resolve_skr_numbers(voucher_positions)
+
             for i, pos in enumerate(voucher_positions):
                 positions_data.append(pos.to_dict(index=i))
 
@@ -493,6 +517,9 @@ class VoucherOperations:
         # Convert VoucherPosition objects to dicts
         positions_data = []
         if voucher_positions:
+            # First resolve any SKR numbers to IDs
+            self._resolve_skr_numbers(voucher_positions)
+
             for i, pos in enumerate(voucher_positions):
                 positions_data.append(pos.to_dict(index=i))
 
@@ -601,3 +628,32 @@ class VoucherOperations:
             extension=extension,
             filesize=filesize,
         )
+
+    def _resolve_skr_numbers(self, positions: list[VoucherPosition]) -> None:
+        """Resolve SKR numbers to accounting type IDs in positions.
+
+        Args:
+            positions: List of voucher positions to process
+
+        Raises:
+            SevDeskError: If SKR number cannot be resolved
+
+        """
+        if not self.accounting_types:
+            return
+
+        for pos in positions:
+            # Skip if already has ID or no SKR number
+            if pos.accounting_type_id is not None or pos.accounting_type_skr is None:
+                continue
+
+            # Look up the SKR number
+            acc_type = self.accounting_types.get_accounting_type_by_skr(
+                pos.accounting_type_skr,
+            )
+            if not acc_type:
+                msg = f"SKR account number '{pos.accounting_type_skr}' not found"
+                raise SevDeskError(msg)
+
+            # Set the ID
+            pos.accounting_type_id = int(acc_type["id"])

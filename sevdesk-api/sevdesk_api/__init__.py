@@ -1,5 +1,6 @@
 """SevDesk API client package."""
 
+from .accounting_types import AccountingTypeOperations
 from .api import SevDeskAPI
 from .check_accounts import CheckAccountOperations
 from .client import SevDeskClient, SevDeskError
@@ -32,6 +33,7 @@ from .vouchers import (
 )
 
 __all__ = [
+    "AccountingTypeOperations",
     "CheckAccount",
     "CheckAccountOperations",
     "CheckAccountStatus",

@@ -30,6 +30,25 @@ Create a config file at `~/.config/sevdesk-cli/config.json`:
 
 ## Usage
 
+### Accounting Types (Booking Accounts)
+
+#### List Accounting Types
+
+```bash
+# List all accounting types
+sevdesk accounting-types list
+
+# With pagination
+sevdesk accounting-types list --limit 20 --offset 0
+```
+
+This displays:
+- Account ID and number
+- Account name and description
+- Type (Debit/Expense or Credit/Income)
+- SKR number (if available)
+- Status (Active/Inactive)
+
 ### List Vouchers
 
 ```bash
@@ -70,10 +89,14 @@ sevdesk vouchers create \
     --status DRAFT \
     --description "Office supplies invoice" \
     --supplier-name "Office Depot" \
-    --position "Printer Paper" 5 10.00 19 \
-    --position "Ink Cartridge" 2 25.00 19 \
-    --position "USB Cable" 1 15.00 19
+    --position "Printer Paper" 5 10.00 19 5400 \
+    --position "Ink Cartridge" 2 25.00 19 5400 \
+    --position "USB Cable" 1 15.00 19 5400
 ```
+
+The position format is: NAME QUANTITY PRICE TAX_RATE [SKR_NUMBER]
+- SKR_NUMBER is optional and specifies the booking account (e.g., 5400 for office supplies)
+- You can find available SKR numbers using: `sevdesk accounting-types list`
 
 Or using a JSON file for positions:
 
@@ -85,14 +108,16 @@ Or using a JSON file for positions:
         "quantity": 5,
         "price": 10.00,
         "tax_rate": 19,
-        "net": true
+        "net": true,
+        "accounting_type_skr": "5400"
     },
     {
         "name": "Ink Cartridge",
         "quantity": 2,
         "price": 25.00,
         "tax_rate": 19,
-        "net": true
+        "net": true,
+        "accounting_type_skr": "5400"
     }
 ]
 

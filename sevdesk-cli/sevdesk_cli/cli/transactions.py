@@ -692,7 +692,10 @@ def link_transaction(api: SevDeskAPI, cmd: TransactionsLinkCommand) -> None:
             target_type=object_name,
         )
     except Exception as e:
-        msg = f"Failed to link transaction {cmd.transaction_id} to {cmd.target_type} {cmd.target_id}: {e}"
+        msg = (
+            f"Failed to link transaction {cmd.transaction_id} to "
+            f"{cmd.target_type} {cmd.target_id}: {e}"
+        )
         raise SevDeskCLIError(msg) from e
 
     print(
@@ -721,6 +724,8 @@ def parse_transaction_command(  # noqa: PLR0911
     | TransactionsUpdateCommand
     | TransactionsDeleteCommand
     | TransactionsEnshrineCommand
+    | TransactionsLinkCommand
+    | TransactionsUnlinkCommand
     | None
 ):
     """Parse transaction command from argparse namespace."""

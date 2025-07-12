@@ -7,7 +7,9 @@ from .contacts import ContactOperations
 from .invoices import InvoiceOperations
 from .models import (
     CheckAccount,
+    CheckAccountStatus,
     CheckAccountTransaction,
+    CheckAccountType,
     Contact,
     ContactCategory,
     Invoice,
@@ -15,6 +17,7 @@ from .models import (
     InvoiceStatus,
     InvoiceType,
     TaxRule,
+    TransactionStatus,
     Unity,
 )
 from .transactions import TransactionOperations
@@ -31,7 +34,9 @@ from .vouchers import (
 __all__ = [
     "CheckAccount",
     "CheckAccountOperations",
+    "CheckAccountStatus",
     "CheckAccountTransaction",
+    "CheckAccountType",
     "Contact",
     "ContactCategory",
     "ContactOperations",
@@ -48,6 +53,7 @@ __all__ = [
     "TaxRule",
     "TaxType",
     "TransactionOperations",
+    "TransactionStatus",
     "Unity",
     "VoucherOperations",
     "VoucherPosition",

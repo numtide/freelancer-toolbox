@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from sevdesk_api import (
@@ -442,3 +444,65 @@ def create_voucher(api: SevDeskAPI, cmd: VouchersCreateCommand) -> None:
         raise SevDeskCLIError(msg) from e
 
     print(f"Successfully created voucher #{voucher_id}")
+
+
+def parse_voucher_command(
+    args: argparse.Namespace,
+) -> VouchersListCommand | VouchersGetCommand | VouchersCreateCommand | None:
+    """Parse voucher command from argparse namespace."""
+    if not hasattr(args, "action"):
+        return None
+
+    match args.action:
+        case "list":
+            return VouchersListCommand(
+                status=getattr(args, "status", None),
+                start_date=getattr(args, "start_date", None),
+                end_date=getattr(args, "end_date", None),
+                limit=getattr(args, "limit", None),
+                offset=getattr(args, "offset", None),
+            )
+        case "get":
+            return VouchersGetCommand(
+                voucher_id=args.voucher_id,
+            )
+        case "create":
+            # Parse positions
+            positions: list[VoucherPositionInput] = []
+
+            # From JSON file
+            if hasattr(args, "positions_json") and args.positions_json:
+                with Path(args.positions_json).open() as f:
+                    positions_data = json.load(f)
+                    positions.extend(
+                        VoucherPositionInput(**pos_data) for pos_data in positions_data
+                    )
+
+            # From command line arguments
+            elif hasattr(args, "position") and args.position:
+                for pos_args in args.position:
+                    name, quantity, price, tax_rate = pos_args
+                    positions.append(
+                        VoucherPositionInput(
+                            name=name,
+                            quantity=float(quantity),
+                            price=float(price),
+                            tax_rate=float(tax_rate),
+                        ),
+                    )
+
+            return VouchersCreateCommand(
+                credit_debit=args.credit_debit,
+                tax_type=args.tax_type,
+                voucher_type=args.voucher_type,
+                status=args.status,
+                voucher_date=getattr(args, "voucher_date", None),
+                supplier_id=getattr(args, "supplier_id", None),
+                supplier_name=getattr(args, "supplier_name", None),
+                description=getattr(args, "description", None),
+                pay_date=getattr(args, "pay_date", None),
+                currency=getattr(args, "currency", "EUR"),
+                positions=positions if positions else None,
+            )
+        case _:
+            return None

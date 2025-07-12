@@ -78,7 +78,7 @@ class TransactionsCreateCommand:
     amount: float
     status: TransactionStatus
     payee_payer_name: str
-    entry_date: datetime | None = None
+    entry_date: datetime
     paymt_purpose: str | None = None
     payee_payer_acct_no: str | None = None
     payee_payer_bank_code: str | None = None
@@ -204,6 +204,7 @@ def add_transaction_subparser(
     create_parser.add_argument(
         "--entry-date",
         type=parse_date,
+        required=True,
         help="Entry/import date (YYYY-MM-DD)",
     )
     create_parser.add_argument(
@@ -673,7 +674,7 @@ def parse_transaction_command(  # noqa: PLR0911
                 amount=args.amount,
                 status=args.status,
                 payee_payer_name=args.payee_payer_name,
-                entry_date=getattr(args, "entry_date", None),
+                entry_date=args.entry_date,
                 paymt_purpose=getattr(args, "paymt_purpose", None),
                 payee_payer_acct_no=getattr(args, "payee_payer_acct_no", None),
                 payee_payer_bank_code=getattr(args, "payee_payer_bank_code", None),

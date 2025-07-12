@@ -204,6 +204,7 @@ This displays:
 sevdesk transactions create \
     --check-account-id 12345 \
     --value-date 2024-01-15 \
+    --entry-date 2024-01-15 \
     --amount -150.50 \
     --status CREATED \
     --payee-payer-name "Office Supplies Ltd" \

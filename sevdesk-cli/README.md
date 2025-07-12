@@ -132,17 +132,6 @@ This displays:
 - Import settings
 - Creation and update dates
 
-### Create File Import Account
-
-```bash
-# Create a file import account for bank statement imports
-sevdesk check-accounts create-import \
-    --name "Business Bank Account" \
-    --import-type CSV \
-    --iban "DE89370400440532013000" \
-    --accounting-number "1200"
-```
-
 ### Create Clearing Account
 
 ```bash

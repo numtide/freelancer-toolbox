@@ -17,12 +17,10 @@ from sevdesk_api import SevDeskAPI, SevDeskError
 from sevdesk_cli.cli.check_accounts import (
     CheckAccountsBalanceCommand,
     CheckAccountsCreateClearingCommand,
-    CheckAccountsCreateImportCommand,
     CheckAccountsGetCommand,
     CheckAccountsListCommand,
     add_check_account_subparser,
     create_clearing_account,
-    create_file_import_account,
     get_check_account,
     get_check_account_balance,
     list_check_accounts,
@@ -77,7 +75,6 @@ Command = (
     | TransactionsEnshrineCommand
     | CheckAccountsListCommand
     | CheckAccountsGetCommand
-    | CheckAccountsCreateImportCommand
     | CheckAccountsCreateClearingCommand
     | CheckAccountsBalanceCommand
 )
@@ -226,8 +223,6 @@ def handle_command(api: SevDeskAPI, command: Command) -> None:  # noqa: C901, PL
             list_check_accounts(api, cmd)
         case CheckAccountsGetCommand() as cmd:
             get_check_account(api, cmd)
-        case CheckAccountsCreateImportCommand() as cmd:
-            create_file_import_account(api, cmd)
         case CheckAccountsCreateClearingCommand() as cmd:
             create_clearing_account(api, cmd)
         case CheckAccountsBalanceCommand() as cmd:

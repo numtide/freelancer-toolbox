@@ -31,16 +31,6 @@ class CheckAccountsGetCommand:
 
 
 @dataclass
-class CheckAccountsCreateImportCommand:
-    """Check accounts create import command."""
-
-    name: str
-    import_type: str = "CSV"
-    iban: str | None = None
-    accounting_number: int | None = None
-
-
-@dataclass
 class CheckAccountsCreateClearingCommand:
     """Check accounts create clearing command."""
 
@@ -90,31 +80,6 @@ def add_check_account_subparser(
         help="Get check account details",
     )
     get_parser.add_argument("check_account_id", type=int, help="Check account ID")
-
-    # Create file import account
-    import_parser = check_account_subparsers.add_parser(
-        "create-import",
-        help="Create a file import account",
-    )
-    import_parser.add_argument(
-        "name",
-        help="Name of the check account",
-    )
-    import_parser.add_argument(
-        "--import-type",
-        choices=["CSV", "MT940"],
-        default="CSV",
-        help="Import type (default: CSV)",
-    )
-    import_parser.add_argument(
-        "--iban",
-        help="IBAN of the bank account",
-    )
-    import_parser.add_argument(
-        "--accounting-number",
-        type=int,
-        help="Booking account number",
-    )
 
     # Create clearing account
     clearing_parser = check_account_subparsers.add_parser(
@@ -333,40 +298,6 @@ def get_check_account(api: SevDeskAPI, cmd: CheckAccountsGetCommand) -> None:
         print(line)
 
 
-def create_file_import_account(
-    api: SevDeskAPI,
-    cmd: CheckAccountsCreateImportCommand,
-) -> None:
-    """Create a file import account."""
-    try:
-        result = api.check_accounts.create_file_import_account(
-            name=cmd.name,
-            import_type=cmd.import_type,
-            iban=cmd.iban,
-            accounting_number=cmd.accounting_number,
-        )
-    except Exception as e:
-        msg = f"Failed to create file import account: {e}"
-        raise SevDeskCLIError(msg) from e
-
-    # Parse response
-    try:
-        account = result.get("objects", {})
-        account_id = account.get("id")
-        if not account_id:
-            msg = "No account ID returned in response"
-            raise SevDeskCLIError(msg)
-    except (KeyError, TypeError) as e:
-        msg = f"Invalid response format: {e}"
-        raise SevDeskCLIError(msg) from e
-
-    print(f"Successfully created file import account #{account_id}")
-    print(f"Name: {cmd.name}")
-    print(f"Import Type: {cmd.import_type}")
-    if cmd.iban:
-        print(f"IBAN: {cmd.iban}")
-
-
 def create_clearing_account(
     api: SevDeskAPI,
     cmd: CheckAccountsCreateClearingCommand,
@@ -432,12 +363,11 @@ def get_check_account_balance(
     print(f"  sevdesk transactions list --check-account-id {cmd.check_account_id}")
 
 
-def parse_check_account_command(  # noqa: PLR0911
+def parse_check_account_command(
     args: argparse.Namespace,
 ) -> (
     CheckAccountsListCommand
     | CheckAccountsGetCommand
-    | CheckAccountsCreateImportCommand
     | CheckAccountsCreateClearingCommand
     | CheckAccountsBalanceCommand
     | None
@@ -455,13 +385,6 @@ def parse_check_account_command(  # noqa: PLR0911
         case "get":
             return CheckAccountsGetCommand(
                 check_account_id=args.check_account_id,
-            )
-        case "create-import":
-            return CheckAccountsCreateImportCommand(
-                name=args.name,
-                import_type=getattr(args, "import_type", "CSV"),
-                iban=getattr(args, "iban", None),
-                accounting_number=getattr(args, "accounting_number", None),
             )
         case "create-clearing":
             return CheckAccountsCreateClearingCommand(

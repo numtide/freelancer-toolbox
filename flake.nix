@@ -37,6 +37,9 @@
             sevdesk-invoicer = pkgs.python3.pkgs.callPackage ./sevdesk-invoicer.nix {
               inherit (self'.packages) sevdesk-api;
             };
+            sevdesk-cli = pkgs.python3.pkgs.callPackage ./sevdesk-cli {
+              inherit (self'.packages) sevdesk-api;
+            };
             quipu-invoicer = pkgs.python3.pkgs.callPackage ./quipu-invoicer.nix { };
 
             paperless-cli = pkgs.callPackage ./paperless-cli { };
@@ -87,6 +90,10 @@
                 };
                 "quipu-invoicer" = { };
                 "paperless-cli" = { };
+                "sevdesk-cli" = {
+                  modules = [ "sevdesk_cli" ];
+                  extraPythonPackages = [ self'.packages.sevdesk-api ];
+                };
               };
             };
 

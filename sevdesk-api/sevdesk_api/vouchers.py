@@ -7,12 +7,121 @@ import json
 import mimetypes
 import uuid
 from dataclasses import dataclass
+from enum import IntEnum, StrEnum
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
 from .client import HTTP_BAD_REQUEST, SevDeskClient, SevDeskError
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+
+class VoucherStatus(IntEnum):
+    """Voucher status values."""
+
+    DRAFT = 50
+    UNPAID = 100
+    PAID = 1000
+
+
+class VoucherType(StrEnum):
+    """Voucher type values."""
+
+    VOUCHER = "VOU"
+    RECURRING_VOUCHER = "RV"
+
+
+class TaxType(StrEnum):
+    """Tax type values."""
+
+    DEFAULT = "default"
+    EU = "eu"
+    NON_EU = "noteu"
+    CUSTOM = "custom"
+    SMALL_BUSINESS = "ss"
+
+
+class CreditDebit(StrEnum):
+    """Credit/Debit values."""
+
+    CREDIT = "C"
+    DEBIT = "D"
+
+
+@dataclass
+class VoucherPosition:
+    """Voucher position data."""
+
+    name: str
+    """Name/description of the position."""
+
+    quantity: float
+    """Quantity of items."""
+
+    price: float
+    """Price per unit (net or gross based on net flag)."""
+
+    tax_rate: float
+    """Tax rate in percent (e.g., 19 for 19%)."""
+
+    net: bool = True
+    """Whether the price is net (True) or gross (False)."""
+
+    text: str | None = None
+    """Additional text/description."""
+
+    unity_id: int = 1
+    """Unity ID (default: 1 for 'Stück')."""
+
+    position_number: int | None = None
+    """Position number (auto-assigned if None)."""
+
+    def to_dict(self, index: int | None = None) -> dict[str, Any]:
+        """Convert to API dictionary format.
+
+        Args:
+            index: Position index (used if position_number is None)
+
+        Returns:
+            Dictionary in SevDesk API format
+
+        """
+        # Calculate sums
+        if self.net:
+            sum_net = self.quantity * self.price
+            sum_tax = sum_net * (self.tax_rate / 100)
+            sum_gross = sum_net + sum_tax
+        else:
+            sum_gross = self.quantity * self.price
+            sum_net = sum_gross / (1 + self.tax_rate / 100)
+            sum_tax = sum_gross - sum_net
+
+        pos_dict = {
+            "objectName": "VoucherPos",
+            "mapAll": True,
+            "comment": self.name,  # SevDesk stores position name in 'comment'
+            "quantity": self.quantity,
+            "price": self.price,
+            "taxRate": self.tax_rate,
+            "net": self.net,
+            "sumNet": round(sum_net, 2),
+            "sumTax": round(sum_tax, 2),
+            "sumGross": round(sum_gross, 2),
+            "unity": {
+                "id": self.unity_id,
+                "objectName": "Unity",
+            },
+        }
+
+        if self.text:
+            pos_dict["text"] = self.text
+
+        if self.position_number is not None:
+            pos_dict["positionNumber"] = self.position_number
+        elif index is not None:
+            pos_dict["positionNumber"] = index
+
+        return pos_dict
 
 
 @dataclass
@@ -49,8 +158,8 @@ class VoucherOperations:
 
     def get_vouchers(
         self,
-        status: int | None = None,
-        credit_debit: str | None = None,
+        status: VoucherStatus | None = None,
+        credit_debit: CreditDebit | None = None,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         supplier_id: int | None = None,
@@ -106,6 +215,22 @@ class VoucherOperations:
 
         """
         return self.client.get(f"Voucher/{voucher_id}")
+
+    def get_voucher_positions(self, voucher_id: int) -> dict[str, Any]:
+        """Get positions for a specific voucher.
+
+        Args:
+            voucher_id: ID of the voucher
+
+        Returns:
+            Voucher positions data
+
+        """
+        params = {
+            "voucher[id]": voucher_id,
+            "voucher[objectName]": "Voucher",
+        }
+        return self.client.get("VoucherPos", params=params)
 
     def upload_temp_file(self, file: BinaryIO, filename: str) -> dict[str, Any]:
         """Upload a temporary file for later attachment to a voucher.
@@ -166,10 +291,10 @@ class VoucherOperations:
 
     def _build_voucher_data(
         self,
-        credit_debit: str,
-        tax_type: str,
-        voucher_type: str,
-        status: int,
+        credit_debit: CreditDebit,
+        tax_type: TaxType,
+        voucher_type: VoucherType,
+        status: VoucherStatus,
         currency: str,
         voucher_date: datetime | None = None,
         supplier_id: int | None = None,
@@ -185,10 +310,10 @@ class VoucherOperations:
         voucher_data = {
             "objectName": "Voucher",
             "mapAll": True,
-            "creditDebit": credit_debit,
-            "taxType": tax_type,
-            "voucherType": voucher_type,
-            "status": status,
+            "creditDebit": credit_debit.value,
+            "taxType": tax_type.value,
+            "voucherType": voucher_type.value,
+            "status": int(status),
             "currency": currency,
         }
 
@@ -226,10 +351,10 @@ class VoucherOperations:
 
     def create_voucher(
         self,
-        credit_debit: str,
-        tax_type: str,
-        voucher_type: str,
-        status: int,
+        credit_debit: CreditDebit,
+        tax_type: TaxType,
+        voucher_type: VoucherType,
+        status: VoucherStatus,
         voucher_date: datetime | None = None,
         supplier_id: int | None = None,
         supplier_name: str | None = None,
@@ -240,16 +365,16 @@ class VoucherOperations:
         sum_gross: float | None = None,
         currency: str = "EUR",
         tax_rule: int | None = None,
-        voucher_positions: list[dict[str, Any]] | None = None,
+        voucher_positions: list[VoucherPosition] | None = None,
         filename: str | None = None,
     ) -> dict[str, Any]:
         """Create a new voucher.
 
         Args:
-            credit_debit: Credit or debit (C/D)
-            tax_type: Tax type (default, eu, noteu, custom, ss)
-            voucher_type: Voucher type (VOU, RV)
-            status: Status (50=Draft, 100=Unpaid)
+            credit_debit: Credit or debit
+            tax_type: Tax type
+            voucher_type: Voucher type
+            status: Voucher status
             voucher_date: Date of the voucher
             supplier_id: ID of supplier contact
             supplier_name: Name of supplier (if no contact)
@@ -285,11 +410,17 @@ class VoucherOperations:
             tax_rule,
         )
 
+        # Convert VoucherPosition objects to dicts
+        positions_data = []
+        if voucher_positions:
+            for i, pos in enumerate(voucher_positions):
+                positions_data.append(pos.to_dict(index=i))
+
         # Build request data
         request_data: dict[str, Any] = {
             "voucher": voucher_data,
             "voucherPosDelete": None,
-            "voucherPosSave": voucher_positions or [],
+            "voucherPosSave": positions_data,
         }
 
         # Add filename if provided
@@ -302,7 +433,7 @@ class VoucherOperations:
         self,
         voucher_id: int,
         voucher_data: dict[str, Any],
-        voucher_positions: list[dict[str, Any]] | None = None,
+        voucher_positions: list[VoucherPosition] | None = None,
         positions_to_delete: list[int] | None = None,
     ) -> dict[str, Any]:
         """Update an existing voucher.
@@ -322,9 +453,15 @@ class VoucherOperations:
         voucher_data["objectName"] = "Voucher"
         voucher_data["mapAll"] = True
 
+        # Convert VoucherPosition objects to dicts
+        positions_data = []
+        if voucher_positions:
+            for i, pos in enumerate(voucher_positions):
+                positions_data.append(pos.to_dict(index=i))
+
         request_data = {
             "voucher": voucher_data,
-            "voucherPosSave": voucher_positions or [],
+            "voucherPosSave": positions_data,
             "voucherPosDelete": positions_to_delete,
         }
 

@@ -3,12 +3,17 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sevdesk-api"
+name = "sevdesk-cli"
 version = "0.1.0"
-description = "Python client for the sevDesk API"
+description = "Command-line interface for SevDesk API"
 authors = [{name = "Freelancer Toolbox Team"}]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "sevdesk-api",
+]
+
+[project.scripts]
+sevdesk = "sevdesk_cli.main:main"
 
 [project.optional-dependencies]
 dev = [
@@ -34,5 +39,15 @@ ignore = [
     "TD003",  # Missing issue link for TODO
     "FIX002", # Line contains TODO
     "PLR0913", # Too many arguments in function definition
+    "D100",  # Missing docstring in public module
+    "D101",  # Missing docstring in public class
+    "D102",  # Missing docstring in public method
+    "D103",  # Missing docstring in public function
+    "D104",  # Missing docstring in public package
+    "D105",  # Missing docstring in magic method
+    "D106",  # Missing docstring in public nested class
+    "D107",  # Missing docstring in __init__
+    "T201",  # print found - OK for CLI tools
+    "T203",  # pprint found - OK for CLI tools
 ]
 

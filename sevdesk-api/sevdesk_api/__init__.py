@@ -18,7 +18,15 @@ from .models import (
     Unity,
 )
 from .transactions import TransactionOperations
-from .vouchers import DocumentDownload, VoucherOperations
+from .vouchers import (
+    CreditDebit,
+    DocumentDownload,
+    TaxType,
+    VoucherOperations,
+    VoucherPosition,
+    VoucherStatus,
+    VoucherType,
+)
 
 __all__ = [
     "CheckAccount",
@@ -27,6 +35,7 @@ __all__ = [
     "Contact",
     "ContactCategory",
     "ContactOperations",
+    "CreditDebit",
     "DocumentDownload",
     "Invoice",
     "InvoiceOperations",
@@ -37,7 +46,11 @@ __all__ = [
     "SevDeskClient",
     "SevDeskError",
     "TaxRule",
+    "TaxType",
     "TransactionOperations",
     "Unity",
     "VoucherOperations",
+    "VoucherPosition",
+    "VoucherStatus",
+    "VoucherType",
 ]

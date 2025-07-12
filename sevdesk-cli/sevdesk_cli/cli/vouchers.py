@@ -8,10 +8,11 @@ import shlex
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sevdesk_api import (
     CreditDebit,
+    SevDeskError,
     TaxType,
     VoucherPosition,
     VoucherStatus,
@@ -173,13 +174,14 @@ class VoucherPositionInput:
 
 
 @dataclass
-class VouchersCreateCommand:
-    """Vouchers create command."""
+class VouchersSaveCommand:
+    """Vouchers save command - unified create/update command."""
 
-    credit_debit: CreditDebit
-    tax_type: TaxType
-    voucher_type: VoucherType
-    status: VoucherStatus
+    voucher_id: int | None = None  # None for new vouchers
+    credit_debit: CreditDebit | None = None
+    tax_type: TaxType | None = None
+    voucher_type: VoucherType | None = None
+    status: VoucherStatus | None = None
     voucher_date: datetime | None = None
     supplier_id: int | None = None
     supplier_name: str | None = None
@@ -187,17 +189,31 @@ class VouchersCreateCommand:
     pay_date: datetime | None = None
     currency: str = "EUR"
     positions: list[VoucherPositionInput] | None = None
+    tax_rule: str | None = None
 
 
 @dataclass
-class VouchersUpdateCommand:
-    """Vouchers update command."""
+class VouchersBookCommand:
+    """Vouchers book command."""
 
     voucher_id: int
-    description: str | None = None
-    voucher_date: datetime | None = None
-    pay_date: datetime | None = None
-    supplier_name: str | None = None
+    transaction_id: int
+    amount: float | None = None
+
+
+@dataclass
+class VouchersUnbookCommand:
+    """Vouchers unbook command."""
+
+    voucher_id: int
+
+
+@dataclass
+class VouchersResetCommand:
+    """Vouchers reset command."""
+
+    voucher_id: int
+    to_status: str  # "draft" or "open"
 
 
 def add_voucher_subparser(
@@ -245,106 +261,126 @@ def add_voucher_subparser(
     )
     get_parser.add_argument("voucher_id", type=int, help="Voucher ID")
 
-    # Create voucher
-    create_parser = voucher_subparsers.add_parser(
-        "create",
-        help="Create a new voucher",
+    # Save voucher (unified create/update command)
+    save_parser = voucher_subparsers.add_parser(
+        "save",
+        help="Create or update a voucher",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
+        "voucher_id",
+        type=int,
+        nargs="?",
+        help="Voucher ID (omit for new voucher)",
+    )
+    save_parser.add_argument(
         "--credit-debit",
-        required=True,
         type=lambda x: CreditDebit(x.upper()),
         choices=list(CreditDebit),
-        help="Credit or debit",
+        help="Credit or debit (required for new vouchers)",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
         "--tax-type",
-        required=True,
         type=lambda x: TaxType(x.lower()),
         choices=list(TaxType),
-        help="Tax type",
+        default=TaxType.EU,
+        help="Tax type (default: eu)",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
         "--voucher-type",
-        required=True,
         type=lambda x: VoucherType(x.upper()),
         choices=list(VoucherType),
-        help="Voucher type",
+        help="Voucher type (required for new vouchers)",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
         "--status",
         type=parse_voucher_status,
-        required=True,
-        help="Status (DRAFT or UNPAID)",
+        help="Status (DRAFT=50, UNPAID=100, PAID=1000)",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
         "--voucher-date",
         type=parse_date,
-        help="Date of the voucher (YYYY-MM-DD)",
+        help="Voucher date (YYYY-MM-DD)",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
         "--supplier-id",
         type=int,
         help="ID of supplier contact",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
         "--supplier-name",
-        help="Name of supplier (if no contact)",
+        help="Name of supplier",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
         "--description",
         help="Description/number of voucher",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
         "--pay-date",
         type=parse_date,
         help="Payment deadline (YYYY-MM-DD)",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
         "--currency",
         default="EUR",
         help="Currency code (default: EUR)",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
+        "--tax-rule",
+        type=str,
+        help="Tax rule code (e.g., VORST_ABZUGSF_AUFW for deductible expenses)",
+    )
+    save_parser.add_argument(
         "--positions-json",
         type=str,
         help="JSON file with positions data",
     )
-    create_parser.add_argument(
+    save_parser.add_argument(
         "--position",
         action="append",
         type=parse_position_args,
         help=(
             "Add a position using key=value format. Required: name, price, skr. "
             "Optional: qty (default: 1), tax (default: 19), asset (default: false), "
-            "text, net. Example: --position \"name='Office supplies' price=50 skr=6815\" "
-            "--position \"name='Laptop' qty=1 price=1200 tax=19 skr=0670 asset=true\""
+            "text, net. Example: --position \"name='Office supplies' price=50 "
+            "skr=6815\" --position \"name='Laptop' qty=1 price=1200 tax=19 "
+            'skr=0670 asset=true"'
         ),
     )
 
-    # Update voucher
-    update_parser = voucher_subparsers.add_parser(
-        "update",
-        help="Update an existing voucher",
+    # Book voucher
+    book_parser = voucher_subparsers.add_parser(
+        "book",
+        help="Book a voucher with a payment transaction",
     )
-    update_parser.add_argument("voucher_id", type=int, help="Voucher ID")
-    update_parser.add_argument(
-        "--description",
-        help="Update description",
+    book_parser.add_argument("voucher_id", type=int, help="Voucher ID")
+    book_parser.add_argument(
+        "transaction_id",
+        type=int,
+        help="Check account transaction ID",
     )
-    update_parser.add_argument(
-        "--voucher-date",
-        type=parse_date,
-        help="Update voucher date (YYYY-MM-DD)",
+    book_parser.add_argument(
+        "--amount",
+        type=float,
+        help="Amount to book (defaults to full voucher amount)",
     )
-    update_parser.add_argument(
-        "--pay-date",
-        type=parse_date,
-        help="Update payment date (YYYY-MM-DD)",
+
+    # Unbook voucher
+    unbook_parser = voucher_subparsers.add_parser(
+        "unbook",
+        help="Unbook a voucher (reset to unpaid status)",
     )
-    update_parser.add_argument(
-        "--supplier-name",
-        help="Update supplier name",
+    unbook_parser.add_argument("voucher_id", type=int, help="Voucher ID")
+
+    # Reset voucher status
+    reset_parser = voucher_subparsers.add_parser(
+        "reset",
+        help="Reset voucher status to draft or open",
+    )
+    reset_parser.add_argument("voucher_id", type=int, help="Voucher ID")
+    reset_parser.add_argument(
+        "to_status",
+        choices=["draft", "open"],
+        help="Target status (draft=50, open=100)",
     )
 
 
@@ -386,7 +422,12 @@ def list_vouchers(api: SevDeskAPI, cmd: VouchersListCommand) -> None:
             status_int = int(status) if status != "N/A" else status
         except (ValueError, TypeError):
             status_int = status
-        status_text = {50: "Draft", 100: "Unpaid", 1000: "Paid"}.get(
+        status_text = {
+            50: "Draft",
+            100: "Unpaid",
+            750: "Partially Paid",
+            1000: "Paid",
+        }.get(
             status_int,
             f"Unknown ({status})",
         )
@@ -394,9 +435,21 @@ def list_vouchers(api: SevDeskAPI, cmd: VouchersListCommand) -> None:
         # Format type
         type_text = "Credit" if credit_debit == "C" else "Debit"
 
+        # Get tax rule info
+        tax_rule_text = ""
+        tax_rule = voucher.get("taxRule")
+        if tax_rule and isinstance(tax_rule, dict):
+            rule_id = tax_rule.get("id")
+            if rule_id:
+                try:
+                    tax_rule_obj = api.tax_rules.get_by_id(int(rule_id))
+                    tax_rule_text = f" | Tax: {tax_rule_obj.code}"
+                except (ValueError, KeyError, AttributeError, SevDeskError):
+                    tax_rule_text = f" | Tax: ID {rule_id}"
+
         print(f"ID: {voucher_id}")
         print(f"Description: {description}")
-        print(f"Type: {type_text}")
+        print(f"Type: {type_text}{tax_rule_text}")
         print(f"Status: {status_text}")
         print(f"Amount: {sum_gross} {currency}")
         print(f"Date: {voucher_date}")
@@ -411,7 +464,7 @@ def _format_voucher_status(voucher: dict[str, Any]) -> str:
         status_int = int(status) if status != "N/A" else status
     except (ValueError, TypeError):
         status_int = status
-    status_text = {50: "Draft", 100: "Unpaid", 1000: "Paid"}.get(
+    status_text = {50: "Draft", 100: "Unpaid", 750: "Partially Paid", 1000: "Paid"}.get(
         status_int,
         f"Unknown ({status})",
     )
@@ -477,6 +530,7 @@ def _format_voucher_basic_info(voucher: dict[str, Any]) -> list[str]:
         f"Description: {voucher.get('description', 'N/A')}",
         f"Type: {'Credit' if voucher.get('creditDebit') == 'C' else 'Debit'}",
         f"Voucher Type: {voucher.get('voucherType', 'N/A')}",
+        f"Tax Type: {voucher.get('taxType', 'N/A')}",
         _format_voucher_status(voucher),
         f"Voucher Date: {voucher.get('voucherDate', 'N/A')}",
         f"Pay Date: {voucher.get('payDate', 'N/A')}",
@@ -493,6 +547,30 @@ def _format_voucher_supplier(voucher: dict[str, Any]) -> list[str]:
             f"  Name: {voucher.get('supplierName', 'N/A')}",
         ]
     return []
+
+
+def _format_voucher_tax_rule(api: SevDeskAPI, voucher: dict[str, Any]) -> list[str]:
+    """Format voucher tax rule information."""
+    tax_rule = voucher.get("taxRule")
+    if not tax_rule or not isinstance(tax_rule, dict):
+        return []
+
+    rule_id = tax_rule.get("id")
+    if not rule_id:
+        return []
+
+    try:
+        # Look up the tax rule details
+        tax_rule_obj = api.tax_rules.get_by_id(int(rule_id))
+        lines = [
+            "\nTax Rule:",
+            f"  Code: {tax_rule_obj.code}",
+            f"  Name: {tax_rule_obj.name}",
+        ]
+    except (ValueError, KeyError, AttributeError, SevDeskError):
+        # Fallback if lookup fails
+        lines = [f"\nTax Rule: ID {rule_id}"]
+    return lines
 
 
 def get_voucher(api: SevDeskAPI, cmd: VouchersGetCommand) -> None:
@@ -524,6 +602,7 @@ def get_voucher(api: SevDeskAPI, cmd: VouchersGetCommand) -> None:
     output_lines.extend(_format_voucher_basic_info(voucher))
     output_lines.extend(_format_voucher_financial_info(voucher))
     output_lines.extend(_format_voucher_supplier(voucher))
+    output_lines.extend(_format_voucher_tax_rule(api, voucher))
     output_lines.extend(_format_voucher_positions(api, cmd.voucher_id))
 
     # Print all lines
@@ -531,91 +610,177 @@ def get_voucher(api: SevDeskAPI, cmd: VouchersGetCommand) -> None:
         print(line)
 
 
-def create_voucher(api: SevDeskAPI, cmd: VouchersCreateCommand) -> None:
-    """Create a new voucher."""
-    # Convert position inputs to VoucherPosition objects
-    positions = []
-    if cmd.positions:
-        for pos_input in cmd.positions:
-            position = VoucherPosition(
-                name=pos_input.name,
-                quantity=pos_input.quantity,
-                price=pos_input.price,
-                tax_rate=pos_input.tax_rate,
-                net=pos_input.net,
-                text=pos_input.text,
-                accounting_type_skr=pos_input.accounting_type_skr,
-                is_asset=pos_input.is_asset,
-            )
-            positions.append(position)
+def _build_new_voucher_data(cmd: VouchersSaveCommand) -> dict[str, Any]:
+    """Build voucher data for new voucher creation."""
+    if not all([cmd.credit_debit, cmd.voucher_type]):
+        msg = "credit_debit and voucher_type are required for new vouchers"
+        raise SevDeskCLIError(msg)
 
-    # Create voucher via API
-    try:
-        result = api.vouchers.create_voucher(
-            credit_debit=cmd.credit_debit,
-            tax_type=cmd.tax_type,
-            voucher_type=cmd.voucher_type,
-            status=cmd.status,
-            voucher_date=cmd.voucher_date,
-            supplier_id=cmd.supplier_id,
-            supplier_name=cmd.supplier_name,
-            description=cmd.description,
-            pay_date=cmd.pay_date,
-            currency=cmd.currency,
-            voucher_positions=positions if positions else None,
+    # These are guaranteed to be non-None by the check above
+    # Using cast to satisfy mypy
+    credit_debit = cast("CreditDebit", cmd.credit_debit)
+    voucher_type = cast("VoucherType", cmd.voucher_type)
+    # tax_type has a default value, so it should always be set
+    tax_type = cmd.tax_type if cmd.tax_type else TaxType.EU
+
+    return {
+        "creditDebit": credit_debit.value,
+        "taxType": tax_type.value,
+        "voucherType": voucher_type.value,
+        "status": int(cmd.status) if cmd.status else int(VoucherStatus.DRAFT),
+        "currency": cmd.currency,
+    }
+
+
+def _add_optional_voucher_fields(
+    voucher_data: dict[str, Any],
+    cmd: VouchersSaveCommand,
+    api: SevDeskAPI,
+) -> None:
+    """Add optional fields to voucher data."""
+    if cmd.description is not None:
+        voucher_data["description"] = cmd.description
+    if cmd.voucher_date is not None:
+        voucher_data["voucherDate"] = cmd.voucher_date.strftime("%d.%m.%Y")
+    if cmd.pay_date is not None:
+        voucher_data["payDate"] = cmd.pay_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    if cmd.supplier_id is not None:
+        voucher_data["supplier"] = {
+            "id": cmd.supplier_id,
+            "objectName": "Contact",
+        }
+    if cmd.supplier_name is not None:
+        voucher_data["supplierName"] = cmd.supplier_name
+    if cmd.status is not None and cmd.voucher_id is not None:
+        voucher_data["status"] = int(cmd.status)
+    if cmd.tax_rule is not None:
+        # Look up the tax rule by code
+        try:
+            tax_rule = api.tax_rules.get_by_code(cmd.tax_rule)
+            voucher_data["taxRule"] = {
+                "id": tax_rule.id,
+                "objectName": "TaxRule",
+            }
+        except (ValueError, KeyError, AttributeError, SevDeskError) as e:
+            msg = f"Failed to find tax rule '{cmd.tax_rule}': {e}"
+            raise SevDeskCLIError(msg) from e
+
+
+def _convert_position_inputs(position_inputs: list[Any]) -> list[VoucherPosition]:
+    """Convert position input data to VoucherPosition objects."""
+    positions = []
+    for pos_input in position_inputs:
+        position = VoucherPosition(
+            name=pos_input.name,
+            quantity=pos_input.quantity,
+            price=pos_input.price,
+            tax_rate=pos_input.tax_rate,
+            net=pos_input.net,
+            text=pos_input.text,
+            accounting_type_skr=pos_input.accounting_type_skr,
+            is_asset=pos_input.is_asset,
         )
-    except Exception as e:
-        msg = f"Failed to create voucher: {e}"
+        positions.append(position)
+    return positions
+
+
+def save_voucher(api: SevDeskAPI, cmd: VouchersSaveCommand) -> None:
+    """Save/create/update a voucher using the unified saveVoucher endpoint."""
+    # Build voucher data
+    voucher_data: dict[str, Any] = {}
+
+    # For new vouchers, add required fields
+    if cmd.voucher_id is None:
+        voucher_data = _build_new_voucher_data(cmd)
+
+    # Add optional fields
+    _add_optional_voucher_fields(voucher_data, cmd, api)
+
+    # Convert positions
+    positions = None
+    if cmd.positions:
+        positions = _convert_position_inputs(cmd.positions)
+
+    # Make API call
+    try:
+        result = api.vouchers.save_voucher(
+            voucher_id=cmd.voucher_id,
+            voucher_data=voucher_data,
+            voucher_positions=positions,
+        )
+    except (ValueError, KeyError, TypeError, SevDeskError) as e:
+        action = (
+            "create" if cmd.voucher_id is None else f"save voucher {cmd.voucher_id}"
+        )
+        msg = f"Failed to {action}: {e}"
         raise SevDeskCLIError(msg) from e
 
     # Parse response
     try:
         voucher = result.get("objects", {}).get("voucher", {})
-        voucher_id = voucher.get("id")
-        if not voucher_id:
-            msg = "No voucher ID returned in response"
-            raise SevDeskCLIError(msg)
+        voucher_id = voucher.get("id", cmd.voucher_id)
     except (KeyError, TypeError) as e:
         msg = f"Invalid response format: {e}"
         raise SevDeskCLIError(msg) from e
 
-    print(f"Successfully created voucher #{voucher_id}")
+    action = "created" if cmd.voucher_id is None else "saved"
+    print(f"Successfully {action} voucher #{voucher_id}")
 
 
-def update_voucher(api: SevDeskAPI, cmd: VouchersUpdateCommand) -> None:
-    """Update an existing voucher."""
+def book_voucher(api: SevDeskAPI, cmd: VouchersBookCommand) -> None:
+    """Book a voucher with a payment transaction."""
     try:
-        result = api.vouchers.update_voucher(
+        api.vouchers.book_voucher(
             voucher_id=cmd.voucher_id,
-            description=cmd.description,
-            voucher_date=cmd.voucher_date,
-            pay_date=cmd.pay_date,
-            supplier_name=cmd.supplier_name,
+            check_account_transaction_id=cmd.transaction_id,
+            amount=cmd.amount,
         )
     except Exception as e:
-        msg = f"Failed to update voucher {cmd.voucher_id}: {e}"
+        msg = f"Failed to book voucher {cmd.voucher_id}: {e}"
         raise SevDeskCLIError(msg) from e
 
-    # Parse response
+    print(
+        f"Successfully booked voucher #{cmd.voucher_id} with transaction "
+        f"#{cmd.transaction_id}",
+    )
+
+
+def unbook_voucher(api: SevDeskAPI, cmd: VouchersUnbookCommand) -> None:
+    """Unbook a voucher (reset to unpaid status)."""
     try:
-        voucher = result.get("objects", {})
-        if isinstance(voucher, list) and voucher:
-            voucher = voucher[0]
-        voucher_id = voucher.get("id", cmd.voucher_id)
-    except (KeyError, TypeError, IndexError) as e:
-        msg = f"Invalid response format: {e}"
+        api.vouchers.reset_to_open(cmd.voucher_id)
+    except Exception as e:
+        msg = f"Failed to unbook voucher {cmd.voucher_id}: {e}"
         raise SevDeskCLIError(msg) from e
 
-    print(f"Successfully updated voucher #{voucher_id}")
+    print(f"Successfully unbooked voucher #{cmd.voucher_id} (reset to unpaid status)")
 
 
-def parse_voucher_command(
+def reset_voucher(api: SevDeskAPI, cmd: VouchersResetCommand) -> None:
+    """Reset voucher status to draft or open."""
+    try:
+        if cmd.to_status == "draft":
+            api.vouchers.reset_to_draft(cmd.voucher_id)
+            status_text = "draft"
+        else:  # "open"
+            api.vouchers.reset_to_open(cmd.voucher_id)
+            status_text = "open/unpaid"
+    except Exception as e:
+        msg = f"Failed to reset voucher {cmd.voucher_id} to {cmd.to_status}: {e}"
+        raise SevDeskCLIError(msg) from e
+
+    print(f"Successfully reset voucher #{cmd.voucher_id} to {status_text} status")
+
+
+def parse_voucher_command(  # noqa: PLR0911
     args: argparse.Namespace,
 ) -> (
     VouchersListCommand
     | VouchersGetCommand
-    | VouchersCreateCommand
-    | VouchersUpdateCommand
+    | VouchersSaveCommand
+    | VouchersBookCommand
+    | VouchersUnbookCommand
+    | VouchersResetCommand
     | None
 ):
     """Parse voucher command from argparse namespace."""
@@ -635,7 +800,7 @@ def parse_voucher_command(
             return VouchersGetCommand(
                 voucher_id=args.voucher_id,
             )
-        case "create":
+        case "save":
             # Parse positions
             positions: list[VoucherPositionInput] = []
 
@@ -647,15 +812,16 @@ def parse_voucher_command(
                         VoucherPositionInput(**pos_data) for pos_data in positions_data
                     )
 
-            # From command line arguments (new format - already parsed)
+            # From command line arguments (already parsed)
             elif hasattr(args, "position") and args.position:
                 positions.extend(args.position)
 
-            return VouchersCreateCommand(
-                credit_debit=args.credit_debit,
-                tax_type=args.tax_type,
-                voucher_type=args.voucher_type,
-                status=args.status,
+            return VouchersSaveCommand(
+                voucher_id=getattr(args, "voucher_id", None),
+                credit_debit=getattr(args, "credit_debit", None),
+                tax_type=args.tax_type if hasattr(args, "tax_type") else TaxType.EU,
+                voucher_type=getattr(args, "voucher_type", None),
+                status=getattr(args, "status", None),
                 voucher_date=getattr(args, "voucher_date", None),
                 supplier_id=getattr(args, "supplier_id", None),
                 supplier_name=getattr(args, "supplier_name", None),
@@ -663,14 +829,22 @@ def parse_voucher_command(
                 pay_date=getattr(args, "pay_date", None),
                 currency=getattr(args, "currency", "EUR"),
                 positions=positions if positions else None,
+                tax_rule=getattr(args, "tax_rule", None),
             )
-        case "update":
-            return VouchersUpdateCommand(
+        case "book":
+            return VouchersBookCommand(
                 voucher_id=args.voucher_id,
-                description=getattr(args, "description", None),
-                voucher_date=getattr(args, "voucher_date", None),
-                pay_date=getattr(args, "pay_date", None),
-                supplier_name=getattr(args, "supplier_name", None),
+                transaction_id=args.transaction_id,
+                amount=getattr(args, "amount", None),
+            )
+        case "unbook":
+            return VouchersUnbookCommand(
+                voucher_id=args.voucher_id,
+            )
+        case "reset":
+            return VouchersResetCommand(
+                voucher_id=args.voucher_id,
+                to_status=args.to_status,
             )
         case _:
             return None

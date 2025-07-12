@@ -30,6 +30,21 @@ Create a config file at `~/.config/sevdesk-cli/config.json`:
 
 ## Usage
 
+### Tax Rules
+
+#### List Tax Rules
+
+```bash
+# List all available tax rules
+sevdesk tax-rules list
+```
+
+This displays:
+- Tax rule ID
+- Tax rule code (e.g., VORST_ABZUGSF_AUFW)
+- Tax rule name/description
+- Usage hints for common scenarios
+
 ### Accounting Types (Booking Accounts)
 
 #### List Accounting Types
@@ -82,26 +97,36 @@ This displays:
 Create a voucher with positions using key=value format:
 
 ```bash
-# Minimal syntax with defaults (qty=1, tax=19, asset=false)
+# Minimal syntax with defaults (qty=1, tax=19, asset=false, tax-type=eu)
 sevdesk vouchers create \
     --credit-debit D \
-    --tax-type default \
     --voucher-type VOU \
     --status DRAFT \
     --description "Office supplies invoice" \
     --supplier-name "Office Depot" \
-    --position "name='Printer Paper' price=10.00 skr=5400" \
-    --position "name='USB Cable' price=15.00 skr=5400"
+    --position "name='Printer Paper' price=10.00 skr=6815" \
+    --position "name='USB Cable' price=15.00 skr=6815"
+
+# With explicit tax rule for deductible expenses
+sevdesk vouchers create \
+    --credit-debit D \
+    --voucher-type VOU \
+    --status DRAFT \
+    --tax-rule VORST_ABZUGSF_AUFW \
+    --description "Office supplies invoice" \
+    --supplier-name "Office Depot" \
+    --position "name='Printer Paper' price=10.00 skr=6815" \
+    --position "name='USB Cable' price=15.00 skr=6815"
 
 # Full syntax with all parameters
 sevdesk vouchers create \
     --credit-debit D \
-    --tax-type default \
+    --tax-rule VORST_ABZUGSF_AUFW \
     --voucher-type VOU \
     --status DRAFT \
     --description "Mixed purchase invoice" \
     --supplier-name "Tech Store" \
-    --position "name='Office supplies' qty=5 price=10.00 tax=19 skr=5400 asset=false" \
+    --position "name='Office supplies' qty=5 price=10.00 tax=19 skr=6815 asset=false" \
     --position "name='Laptop' qty=1 price=1200.00 tax=19 skr=0670 asset=true" \
     --position "name='Software License' price=99.00 tax=19 skr=5880 text='1 year subscription'"
 ```
@@ -143,7 +168,6 @@ Or using a JSON file for positions:
 
 sevdesk vouchers create \
     --credit-debit D \
-    --tax-type default \
     --voucher-type VOU \
     --status DRAFT \
     --description "Office supplies invoice" \
@@ -163,6 +187,63 @@ sevdesk vouchers update 12345 \
 ```
 
 Note: Status updates are not supported via the update command. Use the Factory/saveVoucher endpoint for status changes.
+
+### Book Voucher (Mark as Paid)
+
+To mark a voucher as paid, you need to book it with a check account transaction. **Important: The voucher must be in UNPAID status (not DRAFT) before it can be booked.**
+
+```bash
+# First, ensure the voucher is in UNPAID status
+# If creating a new voucher, use --status UNPAID instead of DRAFT
+# For existing DRAFT vouchers, you need to update them first
+
+# Create a transaction for the payment
+sevdesk transactions create \
+    --check-account-id 12345 \
+    --value-date 2025-07-12 \
+    --amount -451.00 \
+    --payee-payer-name "Office World GmbH" \
+    --paymt-purpose "Payment for invoice #119608101"
+
+# Then book the voucher with the transaction
+sevdesk vouchers book 119608101 67890
+
+# Or specify a partial amount
+sevdesk vouchers book 119608101 67890 --amount 200.00
+```
+
+This links the payment transaction to the voucher and changes its status to PAID.
+
+**Note**: Due to SevDesk API restrictions:
+- Vouchers can only be created with status DRAFT (50) or UNPAID (100)
+- Vouchers cannot be directly set to PAID status
+- A voucher must be in UNPAID status before it can be booked with a transaction
+
+### Unbook Voucher (Reset to Unpaid)
+
+To unbook a voucher that has been paid, resetting it back to unpaid status:
+
+```bash
+# This will unlink any payments and reset status to UNPAID (100)
+sevdesk vouchers unbook 119608101
+```
+
+### Reset Voucher Status
+
+To reset a voucher to a different status:
+
+```bash
+# Reset to draft status (from UNPAID or PAID)
+sevdesk vouchers reset 119608101 draft
+
+# Reset to open/unpaid status (from PAID only)
+sevdesk vouchers reset 119608101 open
+```
+
+**Note about status changes**:
+- `reset draft`: Can be used on UNPAID (100) or PAID (1000) vouchers
+- `reset open`: Can only be used on PAID (1000) vouchers
+- To change from DRAFT to UNPAID, create/update the voucher with `--status UNPAID`
 
 ## Check Accounts
 

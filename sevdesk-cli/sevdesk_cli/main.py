@@ -32,6 +32,12 @@ from sevdesk_cli.cli.check_accounts import (
     list_check_accounts,
     parse_check_account_command,
 )
+from sevdesk_cli.cli.tax_rules import (
+    TaxRulesListCommand,
+    add_tax_rule_subparser,
+    list_tax_rules,
+    parse_tax_rule_command,
+)
 from sevdesk_cli.cli.transactions import (
     TransactionsCreateCommand,
     TransactionsDeleteCommand,
@@ -53,16 +59,20 @@ from sevdesk_cli.cli.transactions import (
     update_transaction,
 )
 from sevdesk_cli.cli.vouchers import (
-    VouchersCreateCommand,
+    VouchersBookCommand,
     VouchersGetCommand,
     VouchersListCommand,
-    VouchersUpdateCommand,
+    VouchersResetCommand,
+    VouchersSaveCommand,
+    VouchersUnbookCommand,
     add_voucher_subparser,
-    create_voucher,
+    book_voucher,
     get_voucher,
     list_vouchers,
     parse_voucher_command,
-    update_voucher,
+    reset_voucher,
+    save_voucher,
+    unbook_voucher,
 )
 from sevdesk_cli.errors import (
     AuthenticationError,
@@ -77,10 +87,13 @@ logger = logging.getLogger(__name__)
 
 Command = (
     AccountingTypesListCommand
+    | TaxRulesListCommand
     | VouchersListCommand
     | VouchersGetCommand
-    | VouchersCreateCommand
-    | VouchersUpdateCommand
+    | VouchersSaveCommand
+    | VouchersBookCommand
+    | VouchersUnbookCommand
+    | VouchersResetCommand
     | TransactionsListCommand
     | TransactionsGetCommand
     | TransactionsCreateCommand
@@ -176,6 +189,9 @@ def create_parser() -> argparse.ArgumentParser:
     # Add accounting type subcommands
     add_accounting_type_subparser(subparsers)
 
+    # Add tax rule subcommands
+    add_tax_rule_subparser(subparsers)
+
     # Add voucher subcommands
     add_voucher_subparser(subparsers)
 
@@ -204,6 +220,8 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     # Parse command based on the command type
     if args.command == "accounting-types":
         options.command = parse_accounting_type_command(args)
+    elif args.command == "tax-rules":
+        options.command = parse_tax_rule_command(args)
     elif args.command == "vouchers":
         options.command = parse_voucher_command(args)
     elif args.command == "transactions":
@@ -221,15 +239,23 @@ def handle_command(api: SevDeskAPI, command: Command) -> None:  # noqa: C901, PL
         case AccountingTypesListCommand() as cmd:
             list_accounting_types(api, cmd)
 
+        # Tax rule commands
+        case TaxRulesListCommand() as cmd:
+            list_tax_rules(api, cmd)
+
         # Voucher commands
         case VouchersListCommand() as cmd:
             list_vouchers(api, cmd)
         case VouchersGetCommand() as cmd:
             get_voucher(api, cmd)
-        case VouchersCreateCommand() as cmd:
-            create_voucher(api, cmd)
-        case VouchersUpdateCommand() as cmd:
-            update_voucher(api, cmd)
+        case VouchersSaveCommand() as cmd:
+            save_voucher(api, cmd)
+        case VouchersBookCommand() as cmd:
+            book_voucher(api, cmd)
+        case VouchersUnbookCommand() as cmd:
+            unbook_voucher(api, cmd)
+        case VouchersResetCommand() as cmd:
+            reset_voucher(api, cmd)
 
         # Transaction commands
         case TransactionsListCommand() as cmd:

@@ -1,6 +1,6 @@
 # sevDesk API Python Client
 
-A Python client library for interacting with the sevDesk API.
+A Python client library for interacting with the [sevDesk API](https://landing.sevdesk.de/service-support-center-technik).
 
 ## Installation
 

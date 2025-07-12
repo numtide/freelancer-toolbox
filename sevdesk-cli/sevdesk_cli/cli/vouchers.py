@@ -95,6 +95,17 @@ class VouchersCreateCommand:
     positions: list[VoucherPositionInput] | None = None
 
 
+@dataclass
+class VouchersUpdateCommand:
+    """Vouchers update command."""
+
+    voucher_id: int
+    status: VoucherStatus | None = None
+    description: str | None = None
+    pay_date: datetime | None = None
+    supplier_name: str | None = None
+
+
 def add_voucher_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -211,6 +222,31 @@ def add_voucher_subparser(
         nargs=4,
         metavar=("NAME", "QUANTITY", "PRICE", "TAX_RATE"),
         help="Add a position: NAME QUANTITY PRICE TAX_RATE (can use multiple times)",
+    )
+
+    # Update voucher
+    update_parser = voucher_subparsers.add_parser(
+        "update",
+        help="Update an existing voucher",
+    )
+    update_parser.add_argument("voucher_id", type=int, help="Voucher ID")
+    update_parser.add_argument(
+        "--status",
+        type=parse_voucher_status,
+        help="Update status (DRAFT=50, OPEN=100, PAID=1000)",
+    )
+    update_parser.add_argument(
+        "--description",
+        help="Update description",
+    )
+    update_parser.add_argument(
+        "--pay-date",
+        type=parse_date,
+        help="Update payment date (YYYY-MM-DD)",
+    )
+    update_parser.add_argument(
+        "--supplier-name",
+        help="Update supplier name",
     )
 
 
@@ -446,9 +482,42 @@ def create_voucher(api: SevDeskAPI, cmd: VouchersCreateCommand) -> None:
     print(f"Successfully created voucher #{voucher_id}")
 
 
+def update_voucher(api: SevDeskAPI, cmd: VouchersUpdateCommand) -> None:
+    """Update an existing voucher."""
+    try:
+        result = api.vouchers.update_voucher(
+            voucher_id=cmd.voucher_id,
+            status=cmd.status,
+            description=cmd.description,
+            pay_date=cmd.pay_date,
+            supplier_name=cmd.supplier_name,
+        )
+    except Exception as e:
+        msg = f"Failed to update voucher {cmd.voucher_id}: {e}"
+        raise SevDeskCLIError(msg) from e
+
+    # Parse response
+    try:
+        voucher = result.get("objects", {})
+        if isinstance(voucher, list) and voucher:
+            voucher = voucher[0]
+        voucher_id = voucher.get("id", cmd.voucher_id)
+    except (KeyError, TypeError, IndexError) as e:
+        msg = f"Invalid response format: {e}"
+        raise SevDeskCLIError(msg) from e
+
+    print(f"Successfully updated voucher #{voucher_id}")
+
+
 def parse_voucher_command(
     args: argparse.Namespace,
-) -> VouchersListCommand | VouchersGetCommand | VouchersCreateCommand | None:
+) -> (
+    VouchersListCommand
+    | VouchersGetCommand
+    | VouchersCreateCommand
+    | VouchersUpdateCommand
+    | None
+):
     """Parse voucher command from argparse namespace."""
     if not hasattr(args, "action"):
         return None
@@ -503,6 +572,14 @@ def parse_voucher_command(
                 pay_date=getattr(args, "pay_date", None),
                 currency=getattr(args, "currency", "EUR"),
                 positions=positions if positions else None,
+            )
+        case "update":
+            return VouchersUpdateCommand(
+                voucher_id=args.voucher_id,
+                status=getattr(args, "status", None),
+                description=getattr(args, "description", None),
+                pay_date=getattr(args, "pay_date", None),
+                supplier_name=getattr(args, "supplier_name", None),
             )
         case _:
             return None

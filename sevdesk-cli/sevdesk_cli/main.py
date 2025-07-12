@@ -31,26 +31,32 @@ from sevdesk_cli.cli.transactions import (
     TransactionsDeleteCommand,
     TransactionsEnshrineCommand,
     TransactionsGetCommand,
+    TransactionsLinkCommand,
     TransactionsListCommand,
+    TransactionsUnlinkCommand,
     TransactionsUpdateCommand,
     add_transaction_subparser,
     create_transaction,
     delete_transaction,
     enshrine_transaction,
     get_transaction,
+    link_transaction,
     list_transactions,
     parse_transaction_command,
+    unlink_transaction,
     update_transaction,
 )
 from sevdesk_cli.cli.vouchers import (
     VouchersCreateCommand,
     VouchersGetCommand,
     VouchersListCommand,
+    VouchersUpdateCommand,
     add_voucher_subparser,
     create_voucher,
     get_voucher,
     list_vouchers,
     parse_voucher_command,
+    update_voucher,
 )
 from sevdesk_cli.errors import (
     AuthenticationError,
@@ -67,12 +73,15 @@ Command = (
     VouchersListCommand
     | VouchersGetCommand
     | VouchersCreateCommand
+    | VouchersUpdateCommand
     | TransactionsListCommand
     | TransactionsGetCommand
     | TransactionsCreateCommand
     | TransactionsUpdateCommand
     | TransactionsDeleteCommand
     | TransactionsEnshrineCommand
+    | TransactionsLinkCommand
+    | TransactionsUnlinkCommand
     | CheckAccountsListCommand
     | CheckAccountsGetCommand
     | CheckAccountsCreateClearingCommand
@@ -203,6 +212,8 @@ def handle_command(api: SevDeskAPI, command: Command) -> None:  # noqa: C901, PL
             get_voucher(api, cmd)
         case VouchersCreateCommand() as cmd:
             create_voucher(api, cmd)
+        case VouchersUpdateCommand() as cmd:
+            update_voucher(api, cmd)
 
         # Transaction commands
         case TransactionsListCommand() as cmd:
@@ -217,6 +228,10 @@ def handle_command(api: SevDeskAPI, command: Command) -> None:  # noqa: C901, PL
             delete_transaction(api, cmd)
         case TransactionsEnshrineCommand() as cmd:
             enshrine_transaction(api, cmd)
+        case TransactionsLinkCommand() as cmd:
+            link_transaction(api, cmd)
+        case TransactionsUnlinkCommand() as cmd:
+            unlink_transaction(api, cmd)
 
         # Check account commands
         case CheckAccountsListCommand() as cmd:

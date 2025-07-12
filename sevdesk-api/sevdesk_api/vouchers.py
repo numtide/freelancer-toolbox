@@ -216,6 +216,41 @@ class VoucherOperations:
         """
         return self.client.get(f"Voucher/{voucher_id}")
 
+    def update_voucher(
+        self,
+        voucher_id: int,
+        status: VoucherStatus | None = None,
+        description: str | None = None,
+        pay_date: datetime | None = None,
+        supplier_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Update voucher fields.
+
+        Args:
+            voucher_id: ID of the voucher to update
+            status: Voucher status enum
+            description: Description/comment
+            pay_date: Payment date
+            supplier_name: Supplier name
+            **kwargs: Additional fields to update
+
+        Returns:
+            Updated voucher data
+
+        """
+        data: dict[str, Any] = {}
+
+        if status is not None:
+            data["status"] = status.value
+        if description is not None:
+            data["description"] = description
+        if pay_date is not None:
+            data["payDate"] = pay_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        if supplier_name is not None:
+            data["supplierName"] = supplier_name
+
+        return self.client.put(f"Voucher/{voucher_id}", json_data=data)
+
     def get_voucher_positions(self, voucher_id: int) -> dict[str, Any]:
         """Get positions for a specific voucher.
 
@@ -429,14 +464,16 @@ class VoucherOperations:
 
         return self.client.post("Voucher/Factory/saveVoucher", json_data=request_data)
 
-    def update_voucher(
+    def save_voucher(
         self,
         voucher_id: int,
         voucher_data: dict[str, Any],
         voucher_positions: list[VoucherPosition] | None = None,
         positions_to_delete: list[int] | None = None,
     ) -> dict[str, Any]:
-        """Update an existing voucher.
+        """Save/update a voucher using the Factory endpoint.
+
+        This method allows updating voucher data and positions in a single call.
 
         Args:
             voucher_id: ID of the voucher to update

@@ -14,15 +14,65 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sevdesk_api import SevDeskAPI, SevDeskError
 
+from sevdesk_cli.cli.accounting_types import (
+    AccountingTypesListCommand,
+    add_accounting_type_subparser,
+    list_accounting_types,
+    parse_accounting_type_command,
+)
+from sevdesk_cli.cli.check_accounts import (
+    CheckAccountsBalanceCommand,
+    CheckAccountsCreateClearingCommand,
+    CheckAccountsGetCommand,
+    CheckAccountsListCommand,
+    add_check_account_subparser,
+    create_clearing_account,
+    get_check_account,
+    get_check_account_balance,
+    list_check_accounts,
+    parse_check_account_command,
+)
+from sevdesk_cli.cli.tax_rules import (
+    TaxRulesListCommand,
+    add_tax_rule_subparser,
+    list_tax_rules,
+    parse_tax_rule_command,
+)
+from sevdesk_cli.cli.transactions import (
+    TransactionsCreateCommand,
+    TransactionsDeleteCommand,
+    TransactionsEnshrineCommand,
+    TransactionsGetCommand,
+    TransactionsLinkCommand,
+    TransactionsListCommand,
+    TransactionsUnlinkCommand,
+    TransactionsUpdateCommand,
+    add_transaction_subparser,
+    create_transaction,
+    delete_transaction,
+    enshrine_transaction,
+    get_transaction,
+    link_transaction,
+    list_transactions,
+    parse_transaction_command,
+    unlink_transaction,
+    update_transaction,
+)
 from sevdesk_cli.cli.vouchers import (
-    VoucherPositionInput,
-    VouchersCreateCommand,
+    VouchersBookCommand,
     VouchersGetCommand,
     VouchersListCommand,
+    VouchersResetCommand,
+    VouchersSaveCommand,
+    VouchersUnbookCommand,
     add_voucher_subparser,
-    create_voucher,
+    book_voucher,
     get_voucher,
     list_vouchers,
+    parse_voucher_command,
+    reset_voucher,
+    save_voucher,
+    unbook_voucher,
 )
 from sevdesk_cli.errors import (
     AuthenticationError,
@@ -35,7 +85,28 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-Command = VouchersListCommand | VouchersGetCommand | VouchersCreateCommand
+Command = (
+    AccountingTypesListCommand
+    | TaxRulesListCommand
+    | VouchersListCommand
+    | VouchersGetCommand
+    | VouchersSaveCommand
+    | VouchersBookCommand
+    | VouchersUnbookCommand
+    | VouchersResetCommand
+    | TransactionsListCommand
+    | TransactionsGetCommand
+    | TransactionsCreateCommand
+    | TransactionsUpdateCommand
+    | TransactionsDeleteCommand
+    | TransactionsEnshrineCommand
+    | TransactionsLinkCommand
+    | TransactionsUnlinkCommand
+    | CheckAccountsListCommand
+    | CheckAccountsGetCommand
+    | CheckAccountsCreateClearingCommand
+    | CheckAccountsBalanceCommand
+)
 
 
 @dataclass
@@ -115,8 +186,20 @@ def create_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
+    # Add accounting type subcommands
+    add_accounting_type_subparser(subparsers)
+
+    # Add tax rule subcommands
+    add_tax_rule_subparser(subparsers)
+
     # Add voucher subcommands
     add_voucher_subparser(subparsers)
+
+    # Add transaction subcommands
+    add_transaction_subparser(subparsers)
+
+    # Add check account subcommands
+    add_check_account_subparser(subparsers)
 
     return parser
 
@@ -134,72 +217,74 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
         debug=args.debug,
     )
 
-    # Handle voucher commands
-    if args.command == "vouchers" and hasattr(args, "action"):
-        action = args.action
-        if action == "list":
-            options.command = VouchersListCommand(
-                status=getattr(args, "status", None),
-                start_date=getattr(args, "start_date", None),
-                end_date=getattr(args, "end_date", None),
-                limit=getattr(args, "limit", None),
-                offset=getattr(args, "offset", None),
-            )
-        elif action == "get":
-            options.command = VouchersGetCommand(
-                voucher_id=args.voucher_id,
-            )
-        elif action == "create":
-            # Parse positions
-            positions: list[VoucherPositionInput] = []
-
-            # From JSON file
-            if hasattr(args, "positions_json") and args.positions_json:
-                with Path(args.positions_json).open() as f:
-                    positions_data = json.load(f)
-                    positions.extend(
-                        VoucherPositionInput(**pos_data) for pos_data in positions_data
-                    )
-
-            # From command line arguments
-            elif hasattr(args, "position") and args.position:
-                for pos_args in args.position:
-                    name, quantity, price, tax_rate = pos_args
-                    positions.append(
-                        VoucherPositionInput(
-                            name=name,
-                            quantity=float(quantity),
-                            price=float(price),
-                            tax_rate=float(tax_rate),
-                        ),
-                    )
-
-            options.command = VouchersCreateCommand(
-                credit_debit=args.credit_debit,
-                tax_type=args.tax_type,
-                voucher_type=args.voucher_type,
-                status=args.status,
-                voucher_date=getattr(args, "voucher_date", None),
-                supplier_id=getattr(args, "supplier_id", None),
-                supplier_name=getattr(args, "supplier_name", None),
-                description=getattr(args, "description", None),
-                pay_date=getattr(args, "pay_date", None),
-                currency=getattr(args, "currency", "EUR"),
-                positions=positions if positions else None,
-            )
+    # Parse command based on the command type
+    if args.command == "accounting-types":
+        options.command = parse_accounting_type_command(args)
+    elif args.command == "tax-rules":
+        options.command = parse_tax_rule_command(args)
+    elif args.command == "vouchers":
+        options.command = parse_voucher_command(args)
+    elif args.command == "transactions":
+        options.command = parse_transaction_command(args)
+    elif args.command == "check-accounts":
+        options.command = parse_check_account_command(args)
 
     return options
 
 
-def handle_command(api: SevDeskAPI, command: Command) -> None:
+def handle_command(api: SevDeskAPI, command: Command) -> None:  # noqa: C901, PLR0912
     """Handle the execution of a command."""
     match command:
+        # Accounting type commands
+        case AccountingTypesListCommand() as cmd:
+            list_accounting_types(api, cmd)
+
+        # Tax rule commands
+        case TaxRulesListCommand() as cmd:
+            list_tax_rules(api, cmd)
+
+        # Voucher commands
         case VouchersListCommand() as cmd:
             list_vouchers(api, cmd)
         case VouchersGetCommand() as cmd:
             get_voucher(api, cmd)
-        case VouchersCreateCommand() as cmd:
-            create_voucher(api, cmd)
+        case VouchersSaveCommand() as cmd:
+            save_voucher(api, cmd)
+        case VouchersBookCommand() as cmd:
+            book_voucher(api, cmd)
+        case VouchersUnbookCommand() as cmd:
+            unbook_voucher(api, cmd)
+        case VouchersResetCommand() as cmd:
+            reset_voucher(api, cmd)
+
+        # Transaction commands
+        case TransactionsListCommand() as cmd:
+            list_transactions(api, cmd)
+        case TransactionsGetCommand() as cmd:
+            get_transaction(api, cmd)
+        case TransactionsCreateCommand() as cmd:
+            create_transaction(api, cmd)
+        case TransactionsUpdateCommand() as cmd:
+            update_transaction(api, cmd)
+        case TransactionsDeleteCommand() as cmd:
+            delete_transaction(api, cmd)
+        case TransactionsEnshrineCommand() as cmd:
+            enshrine_transaction(api, cmd)
+        case TransactionsLinkCommand() as cmd:
+            link_transaction(api, cmd)
+        case TransactionsUnlinkCommand() as cmd:
+            unlink_transaction(api, cmd)
+
+        # Check account commands
+        case CheckAccountsListCommand() as cmd:
+            list_check_accounts(api, cmd)
+        case CheckAccountsGetCommand() as cmd:
+            get_check_account(api, cmd)
+        case CheckAccountsCreateClearingCommand() as cmd:
+            create_clearing_account(api, cmd)
+        case CheckAccountsBalanceCommand() as cmd:
+            get_check_account_balance(api, cmd)
+
         case _:
             print("Unknown command")
             sys.exit(1)

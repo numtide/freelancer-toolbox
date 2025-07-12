@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .accounting_types import AccountingTypeOperations
 from .check_accounts import CheckAccountOperations
 from .client import SevDeskClient, SevDeskError
 from .contacts import ContactOperations
@@ -28,11 +29,12 @@ class SevDeskAPI:
 
         """
         self.client = SevDeskClient(api_token, base_url)
+        self.accounting_types = AccountingTypeOperations(self.client)
         self.contacts = ContactOperations(self.client)
         self.invoices = InvoiceOperations(self.client)
         self.check_accounts = CheckAccountOperations(self.client)
         self.transactions = TransactionOperations(self.client)
-        self.vouchers = VoucherOperations(self.client)
+        self.vouchers = VoucherOperations(self.client, self.accounting_types)
 
         # Object resolver and dynamic types
         self.object_resolver = ObjectResolver(self.client)

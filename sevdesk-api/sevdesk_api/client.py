@@ -10,6 +10,9 @@ from urllib.parse import urlencode, urlparse
 # HTTP status codes
 HTTP_BAD_REQUEST = 400
 
+# Constants
+RESPONSE_SIZE_LIMIT = 1000
+
 
 class SevDeskError(Exception):
     """Base exception for SevDesk API errors."""
@@ -73,6 +76,52 @@ class SevDeskClient:
             raise ValueError(msg)
         return HTTPSConnection(self.host, self.port)
 
+    def _format_error_message(
+        self,
+        response_body: str,
+        response_status: int,
+        method: str,
+        path: str,
+    ) -> str:
+        """Format error message from API response.
+
+        Args:
+            response_body: Response body
+            response_status: HTTP status code
+            method: HTTP method
+            path: Request path
+
+        Returns:
+            Formatted error message
+
+        """
+        error_msg = f"API request failed with status {response_status}"
+        if not response_body:
+            return error_msg
+
+        try:
+            error_data = json.loads(response_body)
+            error_detail = error_data.get("error", {}).get("message", error_msg)
+            error_msg = f"API request failed: {error_detail}"
+
+            # Include more context if available
+            if "error" in error_data and isinstance(error_data["error"], dict):
+                if "code" in error_data["error"]:
+                    error_msg += f" (code: {error_data['error']['code']})"
+                if "details" in error_data["error"]:
+                    error_msg += f"\nDetails: {error_data['error']['details']}"
+
+            # Always include the full response for debugging
+            error_msg += f"\nHTTP {response_status} {method} {path}"
+            if len(response_body) < RESPONSE_SIZE_LIMIT:
+                error_msg += f"\nFull response: {response_body}"
+        except json.JSONDecodeError:
+            error_msg = (
+                f"API request failed: {response_body}\n"
+                f"HTTP {response_status} {method} {path}"
+            )
+        return error_msg
+
     def _request(
         self,
         method: str,
@@ -125,17 +174,12 @@ class SevDeskClient:
 
             # Check status
             if response.status >= HTTP_BAD_REQUEST:
-                error_msg = f"API request failed with status {response.status}"
-                if response_body:
-                    try:
-                        error_data = json.loads(response_body)
-                        error_detail = error_data.get("error", {}).get(
-                            "message",
-                            error_msg,
-                        )
-                        error_msg = f"API request failed: {error_detail}"
-                    except json.JSONDecodeError:
-                        error_msg = f"API request failed: {response_body}"
+                error_msg = self._format_error_message(
+                    response_body,
+                    response.status,
+                    method,
+                    path,
+                )
                 raise SevDeskError(error_msg, response.status, response_body)
 
             # Parse response

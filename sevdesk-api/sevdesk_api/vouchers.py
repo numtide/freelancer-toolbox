@@ -7,13 +7,14 @@ import json
 import mimetypes
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import IntEnum, StrEnum
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
 from .client import HTTP_BAD_REQUEST, SevDeskClient, SevDeskError
 
 if TYPE_CHECKING:
-    from datetime import datetime
+    from .accounting_types import AccountingTypeOperations
 
 
 class VoucherStatus(IntEnum):
@@ -21,6 +22,7 @@ class VoucherStatus(IntEnum):
 
     DRAFT = 50
     UNPAID = 100
+    PARTIALLY_PAID = 750  # Undocumented status we discovered
     PAID = 1000
 
 
@@ -76,6 +78,15 @@ class VoucherPosition:
     position_number: int | None = None
     """Position number (auto-assigned if None)."""
 
+    accounting_type_id: int | None = None
+    """Accounting type ID (resolved from SKR if needed)."""
+
+    accounting_type_skr: str | None = None
+    """SKR account number (e.g., '5400' for expenses)."""
+
+    is_asset: bool = False
+    """Whether this position is for an asset account."""
+
     def to_dict(self, index: int | None = None) -> dict[str, Any]:
         """Convert to API dictionary format.
 
@@ -121,6 +132,15 @@ class VoucherPosition:
         elif index is not None:
             pos_dict["positionNumber"] = index
 
+        # Add accounting type if provided
+        if self.accounting_type_id is not None:
+            pos_dict["accountDatev"] = {
+                "id": self.accounting_type_id,
+                "objectName": "AccountDatev",
+            }
+            # Always include isAsset when we have an accounting type
+            pos_dict["isAsset"] = self.is_asset
+
         return pos_dict
 
 
@@ -147,14 +167,20 @@ class DocumentDownload:
 class VoucherOperations:
     """Operations for vouchers in SevDesk."""
 
-    def __init__(self, client: SevDeskClient) -> None:
+    def __init__(
+        self,
+        client: SevDeskClient,
+        accounting_types: AccountingTypeOperations | None = None,
+    ) -> None:
         """Initialize voucher operations.
 
         Args:
             client: The SevDesk client instance
+            accounting_types: Accounting type operations instance
 
         """
         self.client = client
+        self.accounting_types = accounting_types
 
     def get_vouchers(
         self,
@@ -185,9 +211,9 @@ class VoucherOperations:
         """
         params: dict[str, Any] = {}
         if status is not None:
-            params["status"] = status
+            params["status"] = status.value
         if credit_debit:
-            params["creditDebit"] = credit_debit
+            params["creditDebit"] = credit_debit.value
         if start_date:
             params["startDate"] = int(start_date.timestamp())
         if end_date:
@@ -215,6 +241,43 @@ class VoucherOperations:
 
         """
         return self.client.get(f"Voucher/{voucher_id}")
+
+    def update_voucher(
+        self,
+        voucher_id: int,
+        description: str | None = None,
+        voucher_date: datetime | None = None,
+        pay_date: datetime | None = None,
+        supplier_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Update voucher fields.
+
+        Note: Status updates are not supported via this endpoint.
+        Use the Factory/saveVoucher endpoint for status changes.
+
+        Args:
+            voucher_id: ID of the voucher to update
+            description: Description/comment
+            voucher_date: Voucher date
+            pay_date: Payment date
+            supplier_name: Supplier name
+
+        Returns:
+            Updated voucher data
+
+        """
+        data: dict[str, Any] = {}
+
+        if description is not None:
+            data["description"] = description
+        if voucher_date is not None:
+            data["voucherDate"] = voucher_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        if pay_date is not None:
+            data["payDate"] = pay_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        if supplier_name is not None:
+            data["supplierName"] = supplier_name
+
+        return self.client.put(f"Voucher/{voucher_id}", json_data=data)
 
     def get_voucher_positions(self, voucher_id: int) -> dict[str, Any]:
         """Get positions for a specific voucher.
@@ -349,121 +412,55 @@ class VoucherOperations:
 
         return voucher_data
 
-    def create_voucher(
+    def save_voucher(
         self,
-        credit_debit: CreditDebit,
-        tax_type: TaxType,
-        voucher_type: VoucherType,
-        status: VoucherStatus,
-        voucher_date: datetime | None = None,
-        supplier_id: int | None = None,
-        supplier_name: str | None = None,
-        description: str | None = None,
-        pay_date: datetime | None = None,
-        sum_net: float | None = None,
-        sum_tax: float | None = None,
-        sum_gross: float | None = None,
-        currency: str = "EUR",
-        tax_rule: int | None = None,
-        voucher_positions: list[VoucherPosition] | None = None,
-        filename: str | None = None,
-    ) -> dict[str, Any]:
-        """Create a new voucher.
-
-        Args:
-            credit_debit: Credit or debit
-            tax_type: Tax type
-            voucher_type: Voucher type
-            status: Voucher status
-            voucher_date: Date of the voucher
-            supplier_id: ID of supplier contact
-            supplier_name: Name of supplier (if no contact)
-            description: Description/number of voucher
-            pay_date: Payment deadline
-            sum_net: Net amount
-            sum_tax: Tax amount
-            sum_gross: Gross amount
-            currency: Currency code
-            tax_rule: Tax rule ID (overrides tax_type)
-            voucher_positions: List of voucher positions
-            filename: Internal filename from upload_temp_file
-
-        Returns:
-            Created voucher data
-
-        """
-        # Build voucher data
-        voucher_data = self._build_voucher_data(
-            credit_debit,
-            tax_type,
-            voucher_type,
-            status,
-            currency,
-            voucher_date,
-            supplier_id,
-            supplier_name,
-            description,
-            pay_date,
-            sum_net,
-            sum_tax,
-            sum_gross,
-            tax_rule,
-        )
-
-        # Convert VoucherPosition objects to dicts
-        positions_data = []
-        if voucher_positions:
-            for i, pos in enumerate(voucher_positions):
-                positions_data.append(pos.to_dict(index=i))
-
-        # Build request data
-        request_data: dict[str, Any] = {
-            "voucher": voucher_data,
-            "voucherPosDelete": None,
-            "voucherPosSave": positions_data,
-        }
-
-        # Add filename if provided
-        if filename:
-            request_data["filename"] = filename
-
-        return self.client.post("Voucher/Factory/saveVoucher", json_data=request_data)
-
-    def update_voucher(
-        self,
-        voucher_id: int,
-        voucher_data: dict[str, Any],
+        voucher_id: int | None = None,
+        voucher_data: dict[str, Any] | None = None,
         voucher_positions: list[VoucherPosition] | None = None,
         positions_to_delete: list[int] | None = None,
     ) -> dict[str, Any]:
-        """Update an existing voucher.
+        """Save/update a voucher using the Factory endpoint.
+
+        This method allows creating or updating voucher data and positions
+        in a single call.
 
         Args:
-            voucher_id: ID of the voucher to update
-            voucher_data: Voucher data to update
+            voucher_id: ID of the voucher to update (None for new vouchers)
+            voucher_data: Voucher data to create/update
             voucher_positions: Voucher positions to save/update
             positions_to_delete: IDs of positions to delete
 
         Returns:
-            Updated voucher data
+            Created/Updated voucher data
 
         """
+        if voucher_data is None:
+            voucher_data = {}
+
         # Ensure required fields
-        voucher_data["id"] = voucher_id
+        if voucher_id is not None:
+            voucher_data["id"] = voucher_id
         voucher_data["objectName"] = "Voucher"
         voucher_data["mapAll"] = True
 
         # Convert VoucherPosition objects to dicts
         positions_data = []
         if voucher_positions:
+            # First resolve any SKR numbers to IDs
+            self._resolve_skr_numbers(voucher_positions)
+
             for i, pos in enumerate(voucher_positions):
                 positions_data.append(pos.to_dict(index=i))
 
         request_data = {
             "voucher": voucher_data,
-            "voucherPosSave": positions_data,
+            "voucherPosSave": positions_data if positions_data else None,
             "voucherPosDelete": positions_to_delete,
         }
+
+        # Handle filename if it's in voucher_data
+        if "filename" in voucher_data:
+            request_data["filename"] = voucher_data.pop("filename")
 
         return self.client.post("Voucher/Factory/saveVoucher", json_data=request_data)
 
@@ -484,17 +481,71 @@ class VoucherOperations:
             Booking response
 
         """
+        # Get voucher to find the amount if not provided
+        if amount is None:
+            voucher_result = self.get_voucher(voucher_id)
+            voucher = voucher_result.get("objects", [{}])[0]
+            amount = float(voucher.get("sumGross", 0))
+
+        # Get transaction to find check account
+        trans_result = self.client.get(
+            f"CheckAccountTransaction/{check_account_transaction_id}",
+        )
+        transaction = trans_result.get("objects", [{}])[0]
+        check_account = transaction.get("checkAccount", {})
+
         data: dict[str, Any] = {
+            "amount": amount,
+            "date": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "type": "FULL_PAYMENT",
+            "checkAccount": {
+                "id": check_account.get("id"),
+                "objectName": "CheckAccount",
+            },
             "checkAccountTransaction": {
                 "id": check_account_transaction_id,
                 "objectName": "CheckAccountTransaction",
             },
         }
 
-        if amount is not None:
-            data["amount"] = amount
+        return self.client.put(f"Voucher/{voucher_id}/bookAmount", json_data=data)
 
-        return self.client.post(f"Voucher/{voucher_id}/bookAmount", json_data=data)
+    def reset_to_open(self, voucher_id: int) -> dict[str, Any]:
+        """Reset voucher status to open/unpaid.
+
+        This will unlink any payments and reset the status to UNPAID (100).
+        Can only be used on vouchers with status PAID (1000).
+        Cannot be used to upgrade from DRAFT to UNPAID.
+
+        Args:
+            voucher_id: ID of the voucher to reset
+
+        Returns:
+            Updated voucher data
+
+        Raises:
+            SevDeskError: If the reset fails
+
+        """
+        return self.client.put(f"Voucher/{voucher_id}/resetToOpen")
+
+    def reset_to_draft(self, voucher_id: int) -> dict[str, Any]:
+        """Reset voucher status to draft.
+
+        This will reset the status to DRAFT (50).
+        Can be used on vouchers with status UNPAID (100) or PAID (1000).
+
+        Args:
+            voucher_id: ID of the voucher to reset
+
+        Returns:
+            Updated voucher data
+
+        Raises:
+            SevDeskError: If the reset fails
+
+        """
+        return self.client.put(f"Voucher/{voucher_id}/resetToDraft")
 
     def download_voucher_document(self, document_id: int) -> DocumentDownload:
         """Download a voucher document.
@@ -564,3 +615,32 @@ class VoucherOperations:
             extension=extension,
             filesize=filesize,
         )
+
+    def _resolve_skr_numbers(self, positions: list[VoucherPosition]) -> None:
+        """Resolve SKR numbers to accounting type IDs in positions.
+
+        Args:
+            positions: List of voucher positions to process
+
+        Raises:
+            SevDeskError: If SKR number cannot be resolved
+
+        """
+        if not self.accounting_types:
+            return
+
+        for pos in positions:
+            # Skip if already has ID or no SKR number
+            if pos.accounting_type_id is not None or pos.accounting_type_skr is None:
+                continue
+
+            # Look up the SKR number
+            acc_type = self.accounting_types.get_accounting_type_by_skr(
+                pos.accounting_type_skr,
+            )
+            if not acc_type:
+                msg = f"SKR account number '{pos.accounting_type_skr}' not found"
+                raise SevDeskError(msg)
+
+            # Set the ID
+            pos.accounting_type_id = int(acc_type["id"])

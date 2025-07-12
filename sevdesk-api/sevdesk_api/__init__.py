@@ -1,5 +1,6 @@
 """SevDesk API client package."""
 
+from .accounting_types import AccountingTypeOperations
 from .api import SevDeskAPI
 from .check_accounts import CheckAccountOperations
 from .client import SevDeskClient, SevDeskError
@@ -7,7 +8,9 @@ from .contacts import ContactOperations
 from .invoices import InvoiceOperations
 from .models import (
     CheckAccount,
+    CheckAccountStatus,
     CheckAccountTransaction,
+    CheckAccountType,
     Contact,
     ContactCategory,
     Invoice,
@@ -15,6 +18,7 @@ from .models import (
     InvoiceStatus,
     InvoiceType,
     TaxRule,
+    TransactionStatus,
     Unity,
 )
 from .transactions import TransactionOperations
@@ -29,9 +33,12 @@ from .vouchers import (
 )
 
 __all__ = [
+    "AccountingTypeOperations",
     "CheckAccount",
     "CheckAccountOperations",
+    "CheckAccountStatus",
     "CheckAccountTransaction",
+    "CheckAccountType",
     "Contact",
     "ContactCategory",
     "ContactOperations",
@@ -48,6 +55,7 @@ __all__ = [
     "TaxRule",
     "TaxType",
     "TransactionOperations",
+    "TransactionStatus",
     "Unity",
     "VoucherOperations",
     "VoucherPosition",

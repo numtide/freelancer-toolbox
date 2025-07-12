@@ -43,19 +43,15 @@ from sevdesk_cli.cli.transactions import (
     TransactionsDeleteCommand,
     TransactionsEnshrineCommand,
     TransactionsGetCommand,
-    TransactionsLinkCommand,
     TransactionsListCommand,
-    TransactionsUnlinkCommand,
     TransactionsUpdateCommand,
     add_transaction_subparser,
     create_transaction,
     delete_transaction,
     enshrine_transaction,
     get_transaction,
-    link_transaction,
     list_transactions,
     parse_transaction_command,
-    unlink_transaction,
     update_transaction,
 )
 from sevdesk_cli.cli.vouchers import (
@@ -100,8 +96,6 @@ Command = (
     | TransactionsUpdateCommand
     | TransactionsDeleteCommand
     | TransactionsEnshrineCommand
-    | TransactionsLinkCommand
-    | TransactionsUnlinkCommand
     | CheckAccountsListCommand
     | CheckAccountsGetCommand
     | CheckAccountsCreateClearingCommand
@@ -270,10 +264,6 @@ def handle_command(api: SevDeskAPI, command: Command) -> None:  # noqa: C901, PL
             delete_transaction(api, cmd)
         case TransactionsEnshrineCommand() as cmd:
             enshrine_transaction(api, cmd)
-        case TransactionsLinkCommand() as cmd:
-            link_transaction(api, cmd)
-        case TransactionsUnlinkCommand() as cmd:
-            unlink_transaction(api, cmd)
 
         # Check account commands
         case CheckAccountsListCommand() as cmd:

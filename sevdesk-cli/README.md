@@ -364,23 +364,6 @@ sevdesk transactions delete 67890
 sevdesk transactions enshrine 67890
 ```
 
-### Link Transaction
-
-```bash
-# Link a transaction to a voucher
-sevdesk transactions link 67890 12345
-
-# Link a transaction to an invoice
-sevdesk transactions link 67890 54321 --type invoice
-```
-
-### Unlink Transaction
-
-```bash
-# Unlink a transaction from any linked documents
-sevdesk transactions unlink 67890
-```
-
 ## Development
 
 Format code:

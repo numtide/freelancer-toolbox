@@ -332,11 +332,16 @@ def _display_transaction_summary(transaction: dict[str, Any]) -> None:
         status_text = f"Unknown ({status})"
 
     # Format amount with color hint
-    amount_str = f"{amount:,.2f}"
-    if amount < 0:
-        amount_display = f"{amount_str} (Expense)"
-    else:
-        amount_display = f"{amount_str} (Income)"
+    # Convert amount to float for comparison and formatting
+    try:
+        amount_float = float(amount)
+        amount_str = f"{amount_float:,.2f}"
+        if amount_float < 0:
+            amount_display = f"{amount_str} (Expense)"
+        else:
+            amount_display = f"{amount_str} (Income)"
+    except (ValueError, TypeError):
+        amount_display = str(amount)
 
     print(f"ID: {transaction_id}")
     print(f"Date: {value_date}")
@@ -371,10 +376,14 @@ def _format_transaction_status(status: str | int | None) -> str:
         return f"{status_enum.name} ({status})"
 
 
-def _format_amount(amount: float) -> str:
+def _format_amount(amount: float | str) -> str:
     """Format transaction amount with income/expense indicator."""
-    formatted = f"{amount:,.2f}"
-    return formatted + (" (Expense)" if amount < 0 else " (Income)")
+    try:
+        amount_float = float(amount)
+        formatted = f"{amount_float:,.2f}"
+        return formatted + (" (Expense)" if amount_float < 0 else " (Income)")
+    except (ValueError, TypeError):
+        return str(amount)
 
 
 def _format_basic_info(transaction: dict[str, Any], transaction_id: int) -> list[str]:
@@ -427,14 +436,64 @@ def _format_check_account(transaction: dict[str, Any]) -> list[str]:
     """Format check account information."""
     lines = []
     check_account = transaction.get("checkAccount")
+
     if check_account and isinstance(check_account, dict):
+        # The API returns only id and objectName, not the full account details
+        account_id = check_account.get("id", "N/A")
         lines.extend(
             [
                 "\nCheck Account:",
-                f"  ID: {check_account.get('id', 'N/A')}",
-                f"  Name: {check_account.get('name', 'N/A')}",
+                f"  ID: {account_id}",
             ],
         )
+        # Note: To get the account name, we would need to make a separate API call
+        # to fetch the check account details using the ID
+    return lines
+
+
+def _format_check_account_with_details(
+    api: SevDeskAPI,
+    transaction: dict[str, Any],
+) -> list[str]:
+    """Format check account information with details fetched from API."""
+    lines = []
+    check_account = transaction.get("checkAccount")
+
+    if check_account and isinstance(check_account, dict):
+        account_id = check_account.get("id")
+        if account_id:
+            # Try to fetch the check account details
+            try:
+                result = api.check_accounts.get_check_account(int(account_id))
+                account_details = result.get("objects", [{}])[0]
+                if account_details:
+                    lines.extend(
+                        [
+                            "\nCheck Account:",
+                            f"  ID: {account_id}",
+                            f"  Name: {account_details.get('name', 'N/A')}",
+                            f"  Type: {account_details.get('type', 'N/A')}",
+                        ],
+                    )
+                else:
+                    # Fallback if we can't get details
+                    lines.extend(
+                        [
+                            "\nCheck Account:",
+                            f"  ID: {account_id}",
+                        ],
+                    )
+            except (KeyError, ValueError, SevDeskCLIError):
+                # If fetching fails, just show the ID
+                lines.extend(
+                    [
+                        "\nCheck Account:",
+                        f"  ID: {account_id}",
+                    ],
+                )
+        else:
+            # No ID available
+            lines.append("\nCheck Account: N/A")
     return lines
 
 
@@ -492,7 +551,7 @@ def get_transaction(api: SevDeskAPI, cmd: TransactionsGetCommand) -> None:
     output_lines.extend(_format_basic_info(transaction, cmd.transaction_id))
     output_lines.extend(_format_payee_info(transaction))
     output_lines.extend(_format_purpose_info(transaction))
-    output_lines.extend(_format_check_account(transaction))
+    output_lines.extend(_format_check_account_with_details(api, transaction))
     output_lines.extend(_format_enshrined_status(transaction))
     output_lines.extend(_format_linked_documents(transaction))
 

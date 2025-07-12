@@ -112,22 +112,6 @@ class TransactionsEnshrineCommand:
     transaction_id: int
 
 
-@dataclass
-class TransactionsLinkCommand:
-    """Transactions link command."""
-
-    transaction_id: int
-    target_id: int
-    target_type: str = "voucher"
-
-
-@dataclass
-class TransactionsUnlinkCommand:
-    """Transactions unlink command."""
-
-    transaction_id: int
-
-
 def add_transaction_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
@@ -301,32 +285,6 @@ def add_transaction_subparser(
         help="Enshrine (lock) a transaction",
     )
     enshrine_parser.add_argument("transaction_id", type=int, help="Transaction ID")
-
-    # Link transaction
-    link_parser = transaction_subparsers.add_parser(
-        "link",
-        help="Link a transaction to a voucher or invoice",
-    )
-    link_parser.add_argument("transaction_id", type=int, help="Transaction ID")
-    link_parser.add_argument(
-        "target_id",
-        type=int,
-        help="ID of the voucher or invoice to link to",
-    )
-    link_parser.add_argument(
-        "--type",
-        dest="target_type",
-        choices=["voucher", "invoice"],
-        default="voucher",
-        help="Type of object to link to (default: voucher)",
-    )
-
-    # Unlink transaction
-    unlink_parser = transaction_subparsers.add_parser(
-        "unlink",
-        help="Unlink a transaction from any linked documents",
-    )
-    unlink_parser.add_argument("transaction_id", type=int, help="Transaction ID")
 
 
 def list_transactions(api: SevDeskAPI, cmd: TransactionsListCommand) -> None:
@@ -680,41 +638,6 @@ def enshrine_transaction(api: SevDeskAPI, cmd: TransactionsEnshrineCommand) -> N
     print(f"Successfully enshrined transaction #{cmd.transaction_id}")
 
 
-def link_transaction(api: SevDeskAPI, cmd: TransactionsLinkCommand) -> None:
-    """Link a transaction to a voucher or invoice."""
-    # Convert CLI type to API objectName
-    object_name = "Voucher" if cmd.target_type == "voucher" else "Invoice"
-
-    try:
-        api.transactions.link_transaction(
-            transaction_id=cmd.transaction_id,
-            target_id=cmd.target_id,
-            target_type=object_name,
-        )
-    except Exception as e:
-        msg = (
-            f"Failed to link transaction {cmd.transaction_id} to "
-            f"{cmd.target_type} {cmd.target_id}: {e}"
-        )
-        raise SevDeskCLIError(msg) from e
-
-    print(
-        f"Successfully linked transaction #{cmd.transaction_id} "
-        f"to {cmd.target_type} #{cmd.target_id}",
-    )
-
-
-def unlink_transaction(api: SevDeskAPI, cmd: TransactionsUnlinkCommand) -> None:
-    """Unlink a transaction from any linked documents."""
-    try:
-        api.transactions.unlink_transaction(cmd.transaction_id)
-    except Exception as e:
-        msg = f"Failed to unlink transaction {cmd.transaction_id}: {e}"
-        raise SevDeskCLIError(msg) from e
-
-    print(f"Successfully unlinked transaction #{cmd.transaction_id}")
-
-
 def parse_transaction_command(  # noqa: PLR0911
     args: argparse.Namespace,
 ) -> (
@@ -724,8 +647,6 @@ def parse_transaction_command(  # noqa: PLR0911
     | TransactionsUpdateCommand
     | TransactionsDeleteCommand
     | TransactionsEnshrineCommand
-    | TransactionsLinkCommand
-    | TransactionsUnlinkCommand
     | None
 ):
     """Parse transaction command from argparse namespace."""
@@ -775,16 +696,6 @@ def parse_transaction_command(  # noqa: PLR0911
             )
         case "enshrine":
             return TransactionsEnshrineCommand(
-                transaction_id=args.transaction_id,
-            )
-        case "link":
-            return TransactionsLinkCommand(
-                transaction_id=args.transaction_id,
-                target_id=args.target_id,
-                target_type=getattr(args, "target_type", "voucher"),
-            )
-        case "unlink":
-            return TransactionsUnlinkCommand(
                 transaction_id=args.transaction_id,
             )
         case _:

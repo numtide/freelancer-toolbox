@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,6 +49,97 @@ def parse_voucher_status(value: str) -> VoucherStatus:
             raise argparse.ArgumentTypeError(msg) from e
 
 
+def parse_position_args(arg_string: str) -> VoucherPositionInput:
+    """Parse position arguments in key=value format.
+
+    Examples:
+        name='Office supplies' price=50 skr=6815
+        name='Laptop' qty=1 price=1200 tax=19 skr=0670 asset=true
+
+    """
+    # Default values with proper types
+    defaults: dict[str, Any] = {
+        "quantity": 1.0,
+        "tax_rate": 19.0,
+        "is_asset": False,
+        "net": True,
+        "text": None,
+        "accounting_type_skr": None,
+        "name": None,
+        "price": None,
+    }
+
+    # Parse arguments using shlex to handle quoted values
+    args = shlex.split(arg_string)
+    parsed: dict[str, Any] = defaults.copy()
+
+    # Key mappings (short to full names)
+    key_map = {
+        "name": "name",
+        "qty": "quantity",
+        "quantity": "quantity",
+        "price": "price",
+        "tax": "tax_rate",
+        "tax_rate": "tax_rate",
+        "skr": "accounting_type_skr",
+        "asset": "is_asset",
+        "is_asset": "is_asset",
+        "text": "text",
+        "net": "net",
+    }
+
+    for arg in args:
+        if "=" not in arg:
+            msg = f"Invalid position argument '{arg}'. Expected format: key=value"
+            raise argparse.ArgumentTypeError(msg)
+
+        key, value = arg.split("=", 1)
+        key = key.lower()
+
+        if key not in key_map:
+            valid_keys = sorted(set(key_map.keys()))
+            msg = (
+                f"Unknown parameter '{key}'. Valid parameters: {', '.join(valid_keys)}"
+            )
+            raise argparse.ArgumentTypeError(msg)
+
+        mapped_key = key_map[key]
+
+        # Convert values based on expected type
+        try:
+            if mapped_key in ("quantity", "price", "tax_rate"):
+                parsed[mapped_key] = float(value)
+            elif mapped_key in ("is_asset", "net"):
+                parsed[mapped_key] = value.lower() in ("true", "1", "yes", "on")
+            else:
+                parsed[mapped_key] = value
+        except ValueError as e:
+            msg = f"Invalid value '{value}' for parameter '{key}': {e}"
+            raise argparse.ArgumentTypeError(msg) from e
+
+    # Check required fields
+    if parsed.get("name") is None:
+        msg = "Missing required parameter 'name'"
+        raise argparse.ArgumentTypeError(msg)
+    if parsed.get("price") is None:
+        msg = "Missing required parameter 'price'"
+        raise argparse.ArgumentTypeError(msg)
+    if parsed.get("accounting_type_skr") is None:
+        msg = "Missing required parameter 'skr' (SKR account number)"
+        raise argparse.ArgumentTypeError(msg)
+
+    return VoucherPositionInput(
+        name=parsed["name"],
+        quantity=parsed["quantity"],
+        price=parsed["price"],
+        tax_rate=parsed["tax_rate"],
+        net=parsed["net"],
+        text=parsed["text"],
+        accounting_type_skr=parsed["accounting_type_skr"],
+        is_asset=parsed["is_asset"],
+    )
+
+
 @dataclass
 class VouchersListCommand:
     """Vouchers list command."""
@@ -77,6 +169,7 @@ class VoucherPositionInput:
     net: bool = True
     text: str | None = None
     accounting_type_skr: str | None = None
+    is_asset: bool = False
 
 
 @dataclass
@@ -101,8 +194,8 @@ class VouchersUpdateCommand:
     """Vouchers update command."""
 
     voucher_id: int
-    status: VoucherStatus | None = None
     description: str | None = None
+    voucher_date: datetime | None = None
     pay_date: datetime | None = None
     supplier_name: str | None = None
 
@@ -220,11 +313,12 @@ def add_voucher_subparser(
     create_parser.add_argument(
         "--position",
         action="append",
-        nargs="+",
-        metavar=("NAME", "QUANTITY", "PRICE", "TAX_RATE", "[SKR]"),
+        type=parse_position_args,
         help=(
-            "Add a position: NAME QUANTITY PRICE TAX_RATE [SKR_NUMBER] "
-            "(can use multiple times)"
+            "Add a position using key=value format. Required: name, price, skr. "
+            "Optional: qty (default: 1), tax (default: 19), asset (default: false), "
+            "text, net. Example: --position \"name='Office supplies' price=50 skr=6815\" "
+            "--position \"name='Laptop' qty=1 price=1200 tax=19 skr=0670 asset=true\""
         ),
     )
 
@@ -235,13 +329,13 @@ def add_voucher_subparser(
     )
     update_parser.add_argument("voucher_id", type=int, help="Voucher ID")
     update_parser.add_argument(
-        "--status",
-        type=parse_voucher_status,
-        help="Update status (DRAFT=50, OPEN=100, PAID=1000)",
-    )
-    update_parser.add_argument(
         "--description",
         help="Update description",
+    )
+    update_parser.add_argument(
+        "--voucher-date",
+        type=parse_date,
+        help="Update voucher date (YYYY-MM-DD)",
     )
     update_parser.add_argument(
         "--pay-date",
@@ -451,6 +545,7 @@ def create_voucher(api: SevDeskAPI, cmd: VouchersCreateCommand) -> None:
                 net=pos_input.net,
                 text=pos_input.text,
                 accounting_type_skr=pos_input.accounting_type_skr,
+                is_asset=pos_input.is_asset,
             )
             positions.append(position)
 
@@ -492,8 +587,8 @@ def update_voucher(api: SevDeskAPI, cmd: VouchersUpdateCommand) -> None:
     try:
         result = api.vouchers.update_voucher(
             voucher_id=cmd.voucher_id,
-            status=cmd.status,
             description=cmd.description,
+            voucher_date=cmd.voucher_date,
             pay_date=cmd.pay_date,
             supplier_name=cmd.supplier_name,
         )
@@ -552,29 +647,9 @@ def parse_voucher_command(
                         VoucherPositionInput(**pos_data) for pos_data in positions_data
                     )
 
-            # From command line arguments
+            # From command line arguments (new format - already parsed)
             elif hasattr(args, "position") and args.position:
-                min_position_args = 4
-                for pos_args in args.position:
-                    if len(pos_args) < min_position_args:
-                        continue
-                    name = pos_args[0]
-                    quantity = float(pos_args[1])
-                    price = float(pos_args[2])
-                    tax_rate = float(pos_args[3])
-                    accounting_type_skr = (
-                        pos_args[4] if len(pos_args) > min_position_args else None
-                    )
-
-                    positions.append(
-                        VoucherPositionInput(
-                            name=name,
-                            quantity=quantity,
-                            price=price,
-                            tax_rate=tax_rate,
-                            accounting_type_skr=accounting_type_skr,
-                        ),
-                    )
+                positions.extend(args.position)
 
             return VouchersCreateCommand(
                 credit_debit=args.credit_debit,
@@ -592,8 +667,8 @@ def parse_voucher_command(
         case "update":
             return VouchersUpdateCommand(
                 voucher_id=args.voucher_id,
-                status=getattr(args, "status", None),
                 description=getattr(args, "description", None),
+                voucher_date=getattr(args, "voucher_date", None),
                 pay_date=getattr(args, "pay_date", None),
                 supplier_name=getattr(args, "supplier_name", None),
             )

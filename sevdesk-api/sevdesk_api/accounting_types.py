@@ -85,7 +85,7 @@ class AccountingTypeOperations:
         # Use a large limit to get all in one request
         batch_size = 1000
         result = self.get_accounting_types(limit=batch_size, count_all=True)
-        total = result.get("total", 0)
+        total = int(result.get("total", 0))
 
         if total > batch_size:
             # Need to fetch in batches

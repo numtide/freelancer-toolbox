@@ -79,9 +79,10 @@ This displays:
 
 ### Create Voucher
 
-Create a voucher with positions using command line arguments:
+Create a voucher with positions using key=value format:
 
 ```bash
+# Minimal syntax with defaults (qty=1, tax=19, asset=false)
 sevdesk vouchers create \
     --credit-debit D \
     --tax-type default \
@@ -89,13 +90,30 @@ sevdesk vouchers create \
     --status DRAFT \
     --description "Office supplies invoice" \
     --supplier-name "Office Depot" \
-    --position "Printer Paper" 5 10.00 19 5400 \
-    --position "Ink Cartridge" 2 25.00 19 5400 \
-    --position "USB Cable" 1 15.00 19 5400
+    --position "name='Printer Paper' price=10.00 skr=5400" \
+    --position "name='USB Cable' price=15.00 skr=5400"
+
+# Full syntax with all parameters
+sevdesk vouchers create \
+    --credit-debit D \
+    --tax-type default \
+    --voucher-type VOU \
+    --status DRAFT \
+    --description "Mixed purchase invoice" \
+    --supplier-name "Tech Store" \
+    --position "name='Office supplies' qty=5 price=10.00 tax=19 skr=5400 asset=false" \
+    --position "name='Laptop' qty=1 price=1200.00 tax=19 skr=0670 asset=true" \
+    --position "name='Software License' price=99.00 tax=19 skr=5880 text='1 year subscription'"
 ```
 
-The position format is: NAME QUANTITY PRICE TAX_RATE [SKR_NUMBER]
-- SKR_NUMBER is optional and specifies the booking account (e.g., 5400 for office supplies)
+Position parameters:
+- **Required**: `name`, `price`, `skr` (SKR account number)
+- **Optional**: 
+  - `qty` or `quantity` (default: 1)
+  - `tax` or `tax_rate` (default: 19)
+  - `asset` or `is_asset` (default: false)
+  - `text` (additional description)
+  - `net` (whether price is net or gross, default: true)
 - You can find available SKR numbers using: `sevdesk accounting-types list`
 
 Or using a JSON file for positions:
@@ -109,7 +127,8 @@ Or using a JSON file for positions:
         "price": 10.00,
         "tax_rate": 19,
         "net": true,
-        "accounting_type_skr": "5400"
+        "accounting_type_skr": "5400",
+        "is_asset": false
     },
     {
         "name": "Ink Cartridge",
@@ -117,7 +136,8 @@ Or using a JSON file for positions:
         "price": 25.00,
         "tax_rate": 19,
         "net": true,
-        "accounting_type_skr": "5400"
+        "accounting_type_skr": "5400",
+        "is_asset": false
     }
 ]
 
@@ -130,6 +150,19 @@ sevdesk vouchers create \
     --supplier-name "Office Depot" \
     --positions-json positions.json
 ```
+
+### Update Voucher
+
+```bash
+# Update an existing voucher
+sevdesk vouchers update 12345 \
+    --description "Updated description" \
+    --voucher-date 2024-01-20 \
+    --pay-date 2024-02-20 \
+    --supplier-name "New Supplier Name"
+```
+
+Note: Status updates are not supported via the update command. Use the Factory/saveVoucher endpoint for status changes.
 
 ## Check Accounts
 

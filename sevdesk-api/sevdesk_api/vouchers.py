@@ -84,6 +84,9 @@ class VoucherPosition:
     accounting_type_skr: str | None = None
     """SKR account number (e.g., '5400' for expenses)."""
 
+    is_asset: bool = False
+    """Whether this position is for an asset account."""
+
     def to_dict(self, index: int | None = None) -> dict[str, Any]:
         """Convert to API dictionary format.
 
@@ -135,6 +138,8 @@ class VoucherPosition:
                 "id": self.accounting_type_id,
                 "objectName": "AccountDatev",
             }
+            # Always include isAsset when we have an accounting type
+            pos_dict["isAsset"] = self.is_asset
 
         return pos_dict
 
@@ -206,9 +211,9 @@ class VoucherOperations:
         """
         params: dict[str, Any] = {}
         if status is not None:
-            params["status"] = status
+            params["status"] = status.value
         if credit_debit:
-            params["creditDebit"] = credit_debit
+            params["creditDebit"] = credit_debit.value
         if start_date:
             params["startDate"] = int(start_date.timestamp())
         if end_date:
@@ -240,20 +245,22 @@ class VoucherOperations:
     def update_voucher(
         self,
         voucher_id: int,
-        status: VoucherStatus | None = None,
         description: str | None = None,
+        voucher_date: datetime | None = None,
         pay_date: datetime | None = None,
         supplier_name: str | None = None,
     ) -> dict[str, Any]:
         """Update voucher fields.
 
+        Note: Status updates are not supported via this endpoint.
+        Use the Factory/saveVoucher endpoint for status changes.
+
         Args:
             voucher_id: ID of the voucher to update
-            status: Voucher status enum
             description: Description/comment
+            voucher_date: Voucher date
             pay_date: Payment date
             supplier_name: Supplier name
-            **kwargs: Additional fields to update
 
         Returns:
             Updated voucher data
@@ -261,10 +268,10 @@ class VoucherOperations:
         """
         data: dict[str, Any] = {}
 
-        if status is not None:
-            data["status"] = status.value
         if description is not None:
             data["description"] = description
+        if voucher_date is not None:
+            data["voucherDate"] = voucher_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
         if pay_date is not None:
             data["payDate"] = pay_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
         if supplier_name is not None:

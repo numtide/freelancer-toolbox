@@ -7,7 +7,7 @@ pkgs.python3.pkgs.buildPythonApplication {
   src = ./.;
 
   pyproject = true;
-  build-system = [ pkgs.python3.pkgs.setuptools ];
+  build-system = [ pkgs.python3.pkgs.hatchling ];
 
   doCheck = false;
 

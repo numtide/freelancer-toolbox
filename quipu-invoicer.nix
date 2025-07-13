@@ -14,7 +14,7 @@ pkgs.python3.pkgs.buildPythonApplication rec {
   ];
 
   nativeBuildInputs = [
-    pkgs.python3.pkgs.setuptools
+    pkgs.python3.pkgs.hatchling
   ];
 
   doCheck = false;

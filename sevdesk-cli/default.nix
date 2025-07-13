@@ -1,7 +1,7 @@
 {
   lib,
   buildPythonApplication,
-  setuptools,
+  hatchling,
   sevdesk-api,
 }:
 
@@ -12,7 +12,7 @@ buildPythonApplication {
 
   src = ./.;
 
-  build-system = [ setuptools ];
+  build-system = [ hatchling ];
 
   dependencies = [
     sevdesk-api

@@ -32,12 +32,11 @@ Homepage = "https://github.com/numtide/numtide-invoice-generator"
 wise-exporter = "wise_exporter:main"
 
 [build-system]
-requires = ["setuptools>=64", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["wise_exporter*"]
+[tool.hatch.build.targets.wheel]
+packages = ["wise_exporter"]
 
 [tool.mypy]
 python_version = "3.12"

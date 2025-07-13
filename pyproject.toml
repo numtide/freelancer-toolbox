@@ -33,12 +33,11 @@ Homepage = "https://github.com/numtide/harvest-invoice-calculator"
 harvest-exporter = "harvest_exporter.cli:main"
 
 [build-system]
-requires = ["setuptools>=64", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["harvest*", "harvest_exporter*", "kimai*", "kimai_exporter*", "rest*"]
+[tool.hatch.build.targets.wheel]
+packages = ["harvest", "harvest_exporter", "kimai", "kimai_exporter", "rest"]
 
 [tool.ruff]
 line-length = 88

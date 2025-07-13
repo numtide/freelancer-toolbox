@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "sevdesk-cli"
@@ -50,4 +50,7 @@ ignore = [
     "T201",  # print found - OK for CLI tools
     "T203",  # pprint found - OK for CLI tools
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["sevdesk_cli"]
 

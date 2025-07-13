@@ -17,9 +17,6 @@ if TYPE_CHECKING:
 class AccountingTypesListCommand:
     """Accounting types list command."""
 
-    limit: int | None = None
-    offset: int | None = None
-
 
 def add_accounting_type_subparser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
@@ -35,43 +32,28 @@ def add_accounting_type_subparser(
     )
 
     # List accounting types
-    list_parser = accounting_type_subparsers.add_parser(
+    accounting_type_subparsers.add_parser(
         "list",
         help="List accounting types",
     )
-    list_parser.add_argument(
-        "--limit",
-        type=int,
-        help="Limit number of results",
-    )
-    list_parser.add_argument(
-        "--offset",
-        type=int,
-        help="Skip number of results",
-    )
 
 
-def list_accounting_types(api: SevDeskAPI, cmd: AccountingTypesListCommand) -> None:
+def list_accounting_types(api: SevDeskAPI, cmd: AccountingTypesListCommand) -> None:  # noqa: ARG001
     """List accounting types."""
     try:
-        result = api.accounting_types.get_accounting_types(
-            limit=cmd.limit,
-            offset=cmd.offset,
-            count_all=True,
-        )
+        result = api.accounting_types.get_accounting_types()
     except Exception as e:
         msg = f"Failed to fetch accounting types: {e}"
         raise SevDeskCLIError(msg) from e
 
     accounting_types = result.get("objects", [])
-    total = result.get("total", len(accounting_types))
 
     if not accounting_types:
         print("No accounting types found.")
         return
 
     # Display accounting types
-    print(f"Found {len(accounting_types)} accounting type(s) (Total: {total}):")
+    print(f"Found {len(accounting_types)} accounting type(s):")
     print("-" * 80)
 
     for acc_type in accounting_types:
@@ -81,51 +63,45 @@ def list_accounting_types(api: SevDeskAPI, cmd: AccountingTypesListCommand) -> N
 
 def _display_accounting_type_summary(acc_type: dict[str, Any]) -> None:
     """Display an accounting type summary."""
-    acc_id = acc_type.get("id", "N/A")
-    name = acc_type.get("name", "N/A")
-    number = acc_type.get("number", "N/A")
+    acc_id = acc_type.get("accountDatevId", "N/A")
+    name = acc_type.get("accountName", "N/A")
+    number = acc_type.get("accountNumber", "N/A")
 
-    # Determine account type based on fields
-    expense_account = acc_type.get("expenseAccount")
-    revenue_account = acc_type.get("revenueAccount")
-    asset_account = acc_type.get("assetAccount", "0")
-    balance_side = acc_type.get("balanceSide", "")
-
-    type_desc = "General"
-    if asset_account == "1":
-        type_desc = "Asset"
-    elif expense_account == "1":
-        type_desc = "Expense"
-    elif revenue_account == "1":
-        type_desc = "Revenue"
-    elif balance_side:
-        type_desc = f"Balance ({balance_side})"
+    # Get account type description
+    type_field = acc_type.get("accountGuideType", "")
+    type_desc_map = {
+        "ASSET": "Asset",
+        "EXPENSE": "Expense",
+        "REVENUE": "Revenue",
+        "REGULAR": "Regular",
+        "EQUITYOUT": "Equity Out (Privatentnahme)",
+        "EQUITYIN": "Equity In (Privateinlage)",
+    }
+    type_desc = type_desc_map.get(type_field, type_field or "General")
 
     print(f"ID: {acc_id}")
     print(f"Number: {number}")
     print(f"Name: {name}")
     print(f"Type: {type_desc}")
 
-    # Show if deprecated or hidden
-    deprecated = acc_type.get("deprecated", "0")
-    hidden = acc_type.get("hidden", "0")
-    deactivated = acc_type.get("deactivated", "0")
+    # Show if favorite
+    if acc_type.get("favorite"):
+        print("Favorite: Yes")
 
-    status_parts = []
-    if deprecated == "1":
-        status_parts.append("Deprecated")
-    if hidden == "1":
-        status_parts.append("Hidden")
-    if deactivated == "1":
-        status_parts.append("Deactivated")
-
-    if status_parts:
-        print(f"Status: {', '.join(status_parts)}")
+    # Show if hidden
+    if acc_type.get("hidden"):
+        print("Status: Hidden")
 
     # Show description if available
-    simple_desc = acc_type.get("simpleDescription")
-    if simple_desc:
-        print(f"Description: {simple_desc}")
+    description = acc_type.get("description")
+    if description:
+        print(f"Description: {description}")
+
+    # Show allowed tax rules
+    tax_rules = acc_type.get("allowedTaxRules", [])
+    if tax_rules:
+        tax_rule_names = [rule.get("name", "") for rule in tax_rules]
+        print(f"Allowed tax rules: {', '.join(tax_rule_names)}")
 
 
 def parse_accounting_type_command(
@@ -137,9 +113,6 @@ def parse_accounting_type_command(
 
     match args.action:
         case "list":
-            return AccountingTypesListCommand(
-                limit=getattr(args, "limit", None),
-                offset=getattr(args, "offset", None),
-            )
+            return AccountingTypesListCommand()
         case _:
             return None

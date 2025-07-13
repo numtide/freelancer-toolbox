@@ -21,42 +21,15 @@ class AccountingTypeOperations:
         self.client = client
         self._skr_cache: dict[str, dict[str, Any]] | None = None
 
-    def get_accounting_types(
-        self,
-        *,
-        limit: int | None = None,
-        offset: int | None = None,
-        count_all: bool = False,
-        depth: int | None = None,
-        embed: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Get accounting types (AccountDatev).
-
-        Args:
-            limit: Limit number of results
-            offset: Skip number of results
-            count_all: Return total count
-            depth: Depth for nested objects
-            embed: Embed related objects
+    def get_accounting_types(self) -> dict[str, Any]:
+        """Get accounting types from selectableAccounts endpoint.
 
         Returns:
             Response with accounting types
 
         """
-        params: dict[str, Any] = {}
-
-        if limit is not None:
-            params["limit"] = limit
-        if offset is not None:
-            params["offset"] = offset
-        if count_all:
-            params["countAll"] = "true"
-        if depth is not None:
-            params["depth"] = depth
-        if embed:
-            params["embed"] = ",".join(embed)
-
-        return self.client.get("AccountDatev", params=params)
+        # Get selectable accounts - this endpoint returns all accounts
+        return self.client.get("Account/Factory/selectableAccounts")
 
     def get_accounting_type_by_skr(self, skr_number: str) -> dict[str, Any] | None:
         """Get accounting type by SKR account number.
@@ -81,23 +54,17 @@ class AccountingTypeOperations:
         """Build cache of SKR numbers to accounting types."""
         self._skr_cache = {}
 
-        # Fetch all accounting types
-        # Use a large limit to get all in one request
-        batch_size = 1000
-        result = self.get_accounting_types(limit=batch_size, count_all=True)
-        total = int(result.get("total", 0))
+        # Fetch all accounting types - selectableAccounts returns all at once
+        result = self.get_accounting_types()
 
-        if total > batch_size:
-            # Need to fetch in batches
-            for offset in range(batch_size, total, batch_size):
-                batch = self.get_accounting_types(limit=batch_size, offset=offset)
-                result["objects"].extend(batch.get("objects", []))
-
-        # Build the cache
+        # Build the cache using the accountNumber field
         for acc_type in result.get("objects", []):
-            number = acc_type.get("number")
+            number = acc_type.get("accountNumber")
             if number:
-                self._skr_cache[str(number)] = acc_type
+                # Store with accountDatevId as the id for voucher creation
+                cached_entry = acc_type.copy()
+                cached_entry["id"] = acc_type.get("accountDatevId")
+                self._skr_cache[str(number)] = cached_entry
 
     def clear_cache(self) -> None:
         """Clear the SKR cache."""

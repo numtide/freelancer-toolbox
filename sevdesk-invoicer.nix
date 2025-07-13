@@ -1,5 +1,5 @@
 {
-  setuptools,
+  hatchling,
   buildPythonApplication,
   sevdesk-api,
 }:
@@ -9,7 +9,7 @@ buildPythonApplication {
   src = ./sevdesk-invoicer;
   pyproject = true;
   nativeBuildInputs = [
-    setuptools
+    hatchling
   ];
 
   propagatedBuildInputs = [

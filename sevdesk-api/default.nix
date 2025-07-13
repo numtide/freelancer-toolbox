@@ -11,8 +11,7 @@ python.pkgs.buildPythonPackage {
   src = ./.;
 
   nativeBuildInputs = with python.pkgs; [
-    setuptools
-    wheel
+    hatchling
   ];
 
   # No runtime dependencies for the base API client

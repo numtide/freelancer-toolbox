@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "quipu"
@@ -23,8 +23,8 @@ Homepage = "https://github.com/numtide/numtide-invoice-generator"
 quipu-invoicer = "quipu_invoicer:main"
 quipu-cli = "quipu_api.cli:main"
 
-[tool.setuptools.packages]
-find = {}
+[tool.hatch.build.targets.wheel]
+packages = ["quipu_invoicer", "quipu_api"]
 
 [tool.mypy]
 python_version = "3.12"

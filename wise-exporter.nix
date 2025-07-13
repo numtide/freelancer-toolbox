@@ -7,7 +7,7 @@ pkgs.python3.pkgs.buildPythonApplication {
   src = ./wise-exporter;
 
   pyproject = true;
-  build-system = [ pkgs.python3.pkgs.setuptools ];
+  build-system = [ pkgs.python3.pkgs.hatchling ];
 
   dependencies = [
     pkgs.python3.pkgs.rsa

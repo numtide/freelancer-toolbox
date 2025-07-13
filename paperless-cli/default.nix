@@ -12,8 +12,7 @@ python3.pkgs.buildPythonApplication {
   format = "pyproject";
 
   nativeBuildInputs = with python3.pkgs; [
-    setuptools
-    wheel
+    hatchling
   ];
 
   pythonImportsCheck = [ "paperless_cli" ];

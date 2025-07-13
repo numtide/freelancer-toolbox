@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "sevdesk-invoicer"
@@ -29,8 +29,8 @@ sevdesk-invoicer = "sevdesk_invoicer:main"
 sevdesk-wise-importer = "sevdesk_wise_importer:main"
 sevdesk-tax-estimator = "sevdesk_tax_estimator:main"
 
-[tool.setuptools.packages]
-find = {}
+[tool.hatch.build.targets.wheel]
+packages = ["sevdesk_invoicer", "sevdesk_wise_importer", "sevdesk_tax_estimator"]
 
 [tool.mypy]
 python_version = "3.12"

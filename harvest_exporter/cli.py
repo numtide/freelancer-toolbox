@@ -7,7 +7,7 @@ import sys
 from datetime import date, datetime, timedelta
 from fractions import Fraction
 
-from harvest import get_time_entries
+from harvest import get_current_user, get_time_entries
 
 from . import Task, aggregate_time_entries, export
 
@@ -46,7 +46,12 @@ def parse_args() -> argparse.Namespace:
         "--user",
         type=str,
         default=os.environ.get("HARVEST_USER"),
-        help="user to filter for (env: HARVEST_USER)",
+        help="Filter by user name (env: HARVEST_USER). Defaults to the authenticated user.",
+    )
+    parser.add_argument(
+        "--all-users",
+        action="store_true",
+        help="Process entries for all users instead of just the authenticated user",
     )
     parser.add_argument(
         "--start",
@@ -142,6 +147,20 @@ NUMTIDE_RATE = Fraction(0.75)
 
 def main() -> None:
     args = parse_args()
+
+    # Determine which user to filter by:
+    # 1. --all-users: no filtering
+    # 2. --user: use the specified user
+    # 3. default: auto-discover the authenticated user
+    filter_user = None
+    if not args.all_users:
+        if args.user:
+            filter_user = args.user
+        else:
+            filter_user = get_current_user(
+                args.harvest_account_id, args.harvest_bearer_token
+            )
+
     entries = get_time_entries(
         args.harvest_account_id, args.harvest_bearer_token, args.start, args.end
     )
@@ -152,15 +171,15 @@ def main() -> None:
 
     users = aggregate_time_entries(entries, args.hourly_rate, agency_rate)
 
-    if args.user:
-        for_user = users.get(args.user)
+    if filter_user:
+        for_user = users.get(filter_user)
         if not for_user:
             print(
-                f"user {args.user} not found in time range, found {', '.join(users.keys())}",
+                f"user {filter_user} not found in time range, found {', '.join(users.keys())}",
                 file=sys.stderr,
             )
             sys.exit(1)
-        users = {args.user: for_user}
+        users = {filter_user: for_user}
 
     for user in users.values():
         for client in user.clients.values():

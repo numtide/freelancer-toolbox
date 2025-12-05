@@ -31,6 +31,7 @@
           };
           packages = {
             harvest-exporter = pkgs.callPackage ./harvest-exporter.nix { };
+            harvest-rounder = pkgs.callPackage ./harvest-rounder.nix { };
 
             wise-exporter = pkgs.callPackage ./wise-exporter.nix { };
             sevdesk-api = pkgs.python3.pkgs.callPackage ./sevdesk-api { };
@@ -70,6 +71,7 @@
                   "harvest"
                   "harvest_exporter"
                   "harvest_report"
+                  "harvest_rounder"
                   "rest"
                   "kimai"
                   "kimai_exporter"

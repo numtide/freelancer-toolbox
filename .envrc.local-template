@@ -2,8 +2,8 @@
 export HARVEST_ACCOUNT_ID=<TODO>
 export HARVEST_BEARER_TOKEN=<TODO>
 
-# Used to filter exports
-export HARVEST_USER="<YOUR NAME>"
+# Used to filter exports (picks the current user by default)
+#export HARVEST_USER="<YOUR NAME>"
 
 # optional: sevdesk credentials
 #export SEVDESK_API_TOKEN=<TODO>

@@ -81,6 +81,24 @@ $ working-days-calculator report.csv
 Working days: 171 from 2022-01-12 00:00:00 to 2022-12-29 00:00:00
 ```
 
+## Harvest Rounder
+
+Round Harvest time entries up to the nearest increment (default: 15 minutes). This tool helps ensure your time entries are rounded consistently for billing purposes.
+
+### Usage
+
+By default, rounds entries for the authenticated user from the past 4 weeks:
+
+```console
+harvest-rounder --dry-run
+```
+
+Apply rounding (will prompt for confirmation):
+
+```console
+harvest-rounder
+```
+
 ## Kimai Usage/Examples
 
 Exports the last month timesheets of user Jon for client Bob  

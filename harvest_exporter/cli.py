@@ -2,8 +2,10 @@
 
 import argparse
 import calendar
+import json
 import os
 import sys
+import urllib.error
 from datetime import date, datetime, timedelta
 from fractions import Fraction
 
@@ -157,9 +159,20 @@ def main() -> None:
         if args.user:
             filter_user = args.user
         else:
-            filter_user = get_current_user(
-                args.harvest_account_id, args.harvest_bearer_token
-            )
+            try:
+                current_user = get_current_user(
+                    args.harvest_account_id, args.harvest_bearer_token
+                )
+            except (urllib.error.URLError, json.JSONDecodeError) as e:
+                print(f"Failed to get current user: {e}", file=sys.stderr)
+                sys.exit(1)
+            if not current_user:
+                print(
+                    "Failed to get current user: API returned empty value",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            filter_user = current_user
 
     entries = get_time_entries(
         args.harvest_account_id, args.harvest_bearer_token, args.start, args.end

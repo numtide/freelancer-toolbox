@@ -8,7 +8,7 @@ Country-specific guidance for freelancers, covering tax registration, health ins
 |---------|--------|-------------|
 | [Germany](./germany.md) | Comprehensive | Tax registration, health insurance, accounting, toolbox integration |
 | [UK](./uk.md) | Brief | Links to community resources, FreeAgent |
-| [Estonia](./estonia.md) | Brief | e-Residency options |
+| [Estonia](./estonia.md) | Brief | e-Residency, permanent establishment risk, banking |
 | [Switzerland](./switzerland.md) | Placeholder | Contributions welcome |
 | [Spain](./spain.md) | Placeholder | Contributions welcome |
 

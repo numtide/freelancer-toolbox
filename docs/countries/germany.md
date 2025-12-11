@@ -56,8 +56,17 @@ As a freelancer in IT, you'll likely pay the maximum monthly fee (capped at 4,98
 - Good at parsing PDF invoices
 - Can submit VAT reports directly to the tax office (Umsatzsteuervoranmeldung)
 - API available for automation
+- Calculate all form fields for the yearly 'Einnahmenüberschussrechnung'
 
 In Germany, have your health insurance charge from your business account since it's a tax-relevant expense.
+
+## Tax Software
+
+Sevdesk provides the field mappings needed to fill out [Elster](https://www.elster.de) directly.
+Most of us are also using [Wiso](https://www.buhl.de/mein-buhlkonto/) on top, since it provides
+additional consistency checks. We usually don't every single buisness transaction also into Wise,
+but instead use the "total" fields. This works well except for "Abschreibungstabellen" (write-off),
+which are more manual labour.
 
 ## Toolbox Integration
 
@@ -80,6 +89,8 @@ sevdesk-tax-estimator \
   --wise-folder statements/2024 \
   --tax-office-name "Finanzamt Berlin Finanzkasse"
 ```
+
+This is just for estimation. Use sevdesk to get more accurate numbers for submitting your yearly tax.
 
 Use the [BMF Tax Calculator](https://www.bmf-steuerrechner.de/) to calculate your income tax based on net income.
 

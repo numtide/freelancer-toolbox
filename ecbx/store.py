@@ -165,6 +165,10 @@ class ExchangeRateStore:
                 (latest_date,),
             )
 
+            # Calculate cross-rates for all dates
+            for date_str in dates:
+                rate_count += self._calculate_cross_rates(date_str)
+
         self.conn.commit()
         return (rate_count, len(dates))
 

@@ -21,6 +21,8 @@
           treefmt = config.treefmt.build.wrapper;
         };
         packages = {
+          ecbx = pkgs.callPackage ./ecbx.nix { };
+
           harvest-exporter = pkgs.callPackage ./harvest-exporter.nix { };
           harvest-report = pkgs.callPackage ./harvest-report.nix { };
 

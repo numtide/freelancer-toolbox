@@ -259,6 +259,7 @@ def rates(ctx, date):
 @click.option(
     "--format",
     "-f",
+    "output_format",
     type=click.Choice(["text", "json"]),
     default="text",
     help="Output format",
@@ -266,7 +267,7 @@ def rates(ctx, date):
 @click.argument("date", required=False, callback=validate_date)
 @click.argument("base_currency")
 @click.pass_context
-def matrix(ctx, format, date, base_currency):
+def matrix(ctx, output_format, date, base_currency):
     """
     Show a matrix of exchange rates for a specific base currency.
 
@@ -306,7 +307,7 @@ def matrix(ctx, format, date, base_currency):
         )
         return
 
-    if format == "json":
+    if output_format == "json":
         result = {
             "date": actual_date,
             "base": base_currency,

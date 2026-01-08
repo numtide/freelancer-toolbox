@@ -9,7 +9,7 @@ from rich import box
 from rich.panel import Panel
 from rich.table import Table
 
-from .constants import BEFORE, DEFAULT_AMOUNT
+from .constants import BEFORE
 from .store import ExchangeRateStore
 from .utils import console, format_date
 

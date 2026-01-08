@@ -201,7 +201,7 @@ class ExchangeRateStore:
             console.print(
                 "[yellow]Database not initialized. Running initialization...[/yellow]"
             )
-            rates, dates = self.initialize()
+            rates, _ = self.initialize()
             return (rates, self.get_last_update_date())
 
         # Fetch the latest data

@@ -2,14 +2,12 @@
 
 import json
 import tempfile
-from decimal import Decimal
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
 from ecbx.cli import cli
-from ecbx.store import ExchangeRateStore
 
 
 @pytest.fixture

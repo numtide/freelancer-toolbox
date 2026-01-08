@@ -3,8 +3,8 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ecbxrate"
-version = "0.3.0"
+name = "ecbx"
+version = "0.1.0"
 description = "Fetch exchange rate data from the European Central Bank"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -18,43 +18,43 @@ classifiers = [
     "Intended Audience :: Financial and Insurance Industry",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.6",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Financial",
     "Topic :: Utilities",
 ]
 dependencies = [
-    "requests>=2.25.0",
-    "click>=8.0.0",
-    "rich>=10.0.0",
+    "requests",
+    "click",
+    "rich",
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/ecbxrate"
-Documentation = "https://github.com/yourusername/ecbxrate#readme"
-Issues = "https://github.com/yourusername/ecbxrate/issues"
-Changelog = "https://github.com/yourusername/ecbxrate/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/numtide/harvest-invoice-calculator"
+Documentation = "https://github.com/numtide/harvest-invoice-calculator/tree/main/ecbx#readme"
+Issues = "https://github.com/numtide/harvest-invoice-calculator/issues"
+Changelog = "https://github.com/numtide/harvest-invoice-calculator/blob/main/ecbx/CHANGELOG.md"
 
 [project.scripts]
-ecbxrate = "ecbx:cli"
+ecbx = "ecbx.cli:main"
 
 [tool.setuptools]
-py-modules = ["ecbxrate"]
+packages = ["ecbx"]
 
 [tool.setuptools.package-data]
-ecbxrate = ["py.typed"]
+ecbx = ["py.typed"]
 
-[tool.black]
+[tool.ruff]
 line-length = 88
-target-version = ["py36", "py37", "py38", "py39", "py310"]
+target-version = "py312"
 
-[tool.isort]
-profile = "black"
-line_length = 88
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
+addopts = "-v --cov=ecbx --cov-report=term-missing"

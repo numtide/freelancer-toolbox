@@ -1,10 +1,9 @@
 """Tests for ExchangeRateStore class."""
 
 import tempfile
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -58,7 +57,7 @@ class TestExchangeRateStore:
         """Test initialization with default database path."""
         mock_path = Path("/tmp/test.db")
         mock_get_db_path.return_value = mock_path
-        
+
         store = ExchangeRateStore()
         assert store.db_path == mock_path
         store.close()
@@ -74,24 +73,24 @@ class TestExchangeRateStore:
     def test_initialize(self, mock_parse, mock_fetch, temp_db, sample_xml_data):
         """Test database initialization."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         store = ExchangeRateStore(temp_db)
         rate_count, date_count = store.initialize()
-        
+
         assert rate_count > 0
         assert date_count == 2
         assert store._check_tables_exist()
-        
+
         # Check currencies were added
         currencies = store.list_currencies()
         assert "EUR" in currencies
         assert "USD" in currencies
         assert "JPY" in currencies
         assert "GBP" in currencies
-        
+
         store.close()
 
     def test_get_rate_uninitialized_db(self, temp_db):
@@ -104,26 +103,28 @@ class TestExchangeRateStore:
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_get_rate_exact_date(self, mock_parse, mock_fetch, temp_db, sample_xml_data):
+    def test_get_rate_exact_date(
+        self, mock_parse, mock_fetch, temp_db, sample_xml_data
+    ):
         """Test getting rate for exact date."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         store = ExchangeRateStore(temp_db)
         store.initialize()
-        
+
         # Test EUR to USD
         date, rate = store.get_rate("EUR", "USD", "2024-01-05")
         assert date == "2024-01-05"
         assert rate == Decimal("1.0955")
-        
+
         # Test USD to EUR (inverse)
         date, rate = store.get_rate("USD", "EUR", "2024-01-05")
         assert date == "2024-01-05"
         assert abs(rate - (Decimal("1") / Decimal("1.0955"))) < Decimal("0.0001")
-        
+
         store.close()
 
     @patch("ecbx.store.fetch_ecb_data")
@@ -131,36 +132,38 @@ class TestExchangeRateStore:
     def test_get_rate_latest(self, mock_parse, mock_fetch, temp_db, sample_xml_data):
         """Test getting latest rate."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         store = ExchangeRateStore(temp_db)
         store.initialize()
-        
+
         date, rate = store.get_rate("EUR", "USD", "latest")
         assert date == "2024-01-05"  # Latest date in sample data
         assert rate == Decimal("1.0955")
-        
+
         store.close()
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_get_rate_closest_before(self, mock_parse, mock_fetch, temp_db, sample_xml_data):
+    def test_get_rate_closest_before(
+        self, mock_parse, mock_fetch, temp_db, sample_xml_data
+    ):
         """Test getting closest rate before a date."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         store = ExchangeRateStore(temp_db)
         store.initialize()
-        
+
         # Request date that doesn't exist
         date, rate = store.get_rate("EUR", "USD", "2024-01-06", closest_rate="before")
         assert date == "2024-01-05"  # Should get the previous date
         assert rate == Decimal("1.0955")
-        
+
         store.close()
 
     @patch("ecbx.store.fetch_ecb_data")
@@ -168,24 +171,24 @@ class TestExchangeRateStore:
     def test_cross_rates(self, mock_parse, mock_fetch, temp_db, sample_xml_data):
         """Test cross-rate calculations."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         store = ExchangeRateStore(temp_db)
         store.initialize()
-        
+
         # Test USD to JPY (cross-rate)
         date, rate = store.get_rate("USD", "JPY", "2024-01-05")
         assert date == "2024-01-05"
-        
+
         # Calculate expected cross-rate
         usd_rate = Decimal("1.0955")
         jpy_rate = Decimal("157.89")
         expected = jpy_rate / usd_rate
-        
+
         assert abs(rate - expected) < Decimal("0.01")
-        
+
         store.close()
 
     @patch("ecbx.store.fetch_ecb_data")
@@ -193,18 +196,18 @@ class TestExchangeRateStore:
     def test_get_stats(self, mock_parse, mock_fetch, temp_db, sample_xml_data):
         """Test getting database statistics."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         store = ExchangeRateStore(temp_db)
-        
+
         # Stats before initialization
         stats = store.get_stats()
         assert not stats["initialized"]
         assert stats["currency_count"] == 0
         assert stats["rate_count"] == 0
-        
+
         # Initialize and check stats
         store.initialize()
         stats = store.get_stats()
@@ -213,20 +216,20 @@ class TestExchangeRateStore:
         assert stats["currency_count"] == 4  # EUR, USD, JPY, GBP
         assert stats["rate_count"] > 0
         assert stats["date_range"] == ("2024-01-04", "2024-01-05")
-        
+
         store.close()
 
     @patch("ecbx.store.fetch_ecb_data")
     def test_update_no_new_data(self, mock_fetch, temp_db):
         """Test update when no new data is available."""
         mock_fetch.return_value = None
-        
+
         store = ExchangeRateStore(temp_db)
         rate_count, latest_date = store.update()
-        
+
         assert rate_count == 0
         assert latest_date is None
-        
+
         store.close()
 
     def test_list_currencies_empty_db(self, temp_db):

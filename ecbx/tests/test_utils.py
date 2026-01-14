@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from unittest.mock import Mock, patch
 
-import pytest
 import requests
 
 from ecbx.utils import (
@@ -73,7 +72,9 @@ class TestFetchEcbData:
     def test_http_error(self, mock_console, mock_get):
         """Test handling of HTTP errors."""
         mock_response = Mock()
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404")
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404"
+        )
         mock_get.return_value = mock_response
 
         result = fetch_ecb_data("http://test.url")

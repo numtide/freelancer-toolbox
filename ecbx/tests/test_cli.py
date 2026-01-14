@@ -50,13 +50,15 @@ class TestCLI:
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_initialize_command(self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data):
+    def test_initialize_command(
+        self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data
+    ):
         """Test initialize command."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         result = runner.invoke(cli, ["--db", temp_db, "initialize"])
         assert result.exit_code == 0
         assert "Initialized with" in result.output
@@ -69,16 +71,18 @@ class TestCLI:
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_status_initialized(self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data):
+    def test_status_initialized(
+        self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data
+    ):
         """Test status command on initialized database."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         # Initialize first
         runner.invoke(cli, ["--db", temp_db, "initialize"])
-        
+
         # Check status
         result = runner.invoke(cli, ["--db", temp_db, "status"])
         assert result.exit_code == 0
@@ -88,16 +92,18 @@ class TestCLI:
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_status_verbose(self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data):
+    def test_status_verbose(
+        self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data
+    ):
         """Test status command with verbose flag."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         # Initialize first
         runner.invoke(cli, ["--db", temp_db, "initialize"])
-        
+
         # Check verbose status
         result = runner.invoke(cli, ["--db", temp_db, "--verbose", "status"])
         assert result.exit_code == 0
@@ -106,16 +112,18 @@ class TestCLI:
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_convert_command(self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data):
+    def test_convert_command(
+        self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data
+    ):
         """Test convert command."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         # Initialize first
         runner.invoke(cli, ["--db", temp_db, "initialize"])
-        
+
         # Test conversion
         result = runner.invoke(cli, ["--db", temp_db, "convert", "EUR", "USD", "100"])
         assert result.exit_code == 0
@@ -124,18 +132,22 @@ class TestCLI:
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_convert_with_date(self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data):
+    def test_convert_with_date(
+        self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data
+    ):
         """Test convert command with specific date."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         # Initialize first
         runner.invoke(cli, ["--db", temp_db, "initialize"])
-        
+
         # Test conversion with date
-        result = runner.invoke(cli, ["--db", temp_db, "convert", "2024-01-05", "EUR", "USD"])
+        result = runner.invoke(
+            cli, ["--db", temp_db, "convert", "2024-01-05", "EUR", "USD"]
+        )
         assert result.exit_code == 0
         assert "2024-01-05" in result.output
 
@@ -147,16 +159,18 @@ class TestCLI:
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_currencies_command(self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data):
+    def test_currencies_command(
+        self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data
+    ):
         """Test currencies command."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         # Initialize first
         runner.invoke(cli, ["--db", temp_db, "initialize"])
-        
+
         # List currencies
         result = runner.invoke(cli, ["--db", temp_db, "currencies"])
         assert result.exit_code == 0
@@ -166,16 +180,18 @@ class TestCLI:
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_rates_command(self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data):
+    def test_rates_command(
+        self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data
+    ):
         """Test rates command."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         # Initialize first
         runner.invoke(cli, ["--db", temp_db, "initialize"])
-        
+
         # Show rates
         result = runner.invoke(cli, ["--db", temp_db, "rates"])
         assert result.exit_code == 0
@@ -184,16 +200,18 @@ class TestCLI:
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_matrix_command_text(self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data):
+    def test_matrix_command_text(
+        self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data
+    ):
         """Test matrix command with text output."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         # Initialize first
         runner.invoke(cli, ["--db", temp_db, "initialize"])
-        
+
         # Show matrix
         result = runner.invoke(cli, ["--db", temp_db, "matrix", "EUR"])
         assert result.exit_code == 0
@@ -201,20 +219,24 @@ class TestCLI:
 
     @patch("ecbx.store.fetch_ecb_data")
     @patch("ecbx.store.parse_ecb_xml")
-    def test_matrix_command_json(self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data):
+    def test_matrix_command_json(
+        self, mock_parse, mock_fetch, runner, temp_db, sample_xml_data
+    ):
         """Test matrix command with JSON output."""
         from ecbx.utils import parse_ecb_xml
-        
+
         mock_fetch.return_value = sample_xml_data
         mock_parse.return_value = parse_ecb_xml(sample_xml_data)
-        
+
         # Initialize first
         runner.invoke(cli, ["--db", temp_db, "initialize"])
-        
+
         # Show matrix as JSON
-        result = runner.invoke(cli, ["--db", temp_db, "matrix", "--format", "json", "EUR"])
+        result = runner.invoke(
+            cli, ["--db", temp_db, "matrix", "--format", "json", "EUR"]
+        )
         assert result.exit_code == 0
-        
+
         # Parse JSON output
         output_json = json.loads(result.output)
         assert output_json["base"] == "EUR"
@@ -230,20 +252,24 @@ class TestCLI:
                          xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref">
             <Cube></Cube>
         </gesmes:Envelope>"""
-        
+
         result = runner.invoke(cli, ["--db", temp_db, "update"])
         assert result.exit_code == 0
         assert "No new rates to update" in result.output
 
     def test_validate_date_callback(self, runner, temp_db):
         """Test date validation in CLI."""
-        result = runner.invoke(cli, ["--db", temp_db, "convert", "invalid-date", "EUR", "USD"])
+        result = runner.invoke(
+            cli, ["--db", temp_db, "convert", "invalid-date", "EUR", "USD"]
+        )
         assert result.exit_code != 0
         assert "Invalid date format" in result.output
 
     def test_validate_date_compact_format(self, runner, temp_db):
         """Test compact date format support."""
         # This should not fail on date validation
-        result = runner.invoke(cli, ["--db", temp_db, "convert", "20240105", "EUR", "USD"])
+        result = runner.invoke(
+            cli, ["--db", temp_db, "convert", "20240105", "EUR", "USD"]
+        )
         # Will fail because DB not initialized, but not because of date format
         assert "Database not initialized" in result.output

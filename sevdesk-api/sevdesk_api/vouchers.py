@@ -486,6 +486,9 @@ class VoucherOperations:
             voucher_result = self.get_voucher(voucher_id)
             voucher = voucher_result.get("objects", [{}])[0]
             amount = float(voucher.get("sumGross", 0))
+            # Expense vouchers (CREDIT) need negative amounts
+            if voucher.get("creditDebit") == "C":
+                amount = -abs(amount)
 
         # Get transaction to find check account
         trans_result = self.client.get(

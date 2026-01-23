@@ -24,7 +24,7 @@ def get_current_user(account_id: str, access_token: str) -> str:
 
 
 def get_time_entries(
-    account_id: str, access_token: str, from_date: int, to_date: int
+    account_id: str, access_token: str, from_date: str, to_date: str
 ) -> list[dict[str, Any]]:
     headers = {
         "Authorization": f"Bearer {access_token}",

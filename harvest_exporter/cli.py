@@ -57,13 +57,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--start",
-        type=int,
-        help="Start date i.e. 20220101",
+        type=str,
+        help="Start date i.e. 2022-01-01",
     )
     parser.add_argument(
         "--end",
-        type=int,
-        help="End date i.e. 20220101",
+        type=str,
+        help="End date i.e. 2022-01-01",
     )
     parser.add_argument(
         "--months",
@@ -116,8 +116,8 @@ def parse_args() -> argparse.Namespace:
         # Show the previous month by default
         start_of_month = today.replace(day=1)
         end_of_previous_month = start_of_month - timedelta(days=1)
-        args.start = end_of_previous_month.strftime("%Y%m01")
-        args.end = end_of_previous_month.strftime("%Y%m%d")
+        args.start = end_of_previous_month.strftime("%Y-%m-01")
+        args.end = end_of_previous_month.strftime("%Y-%m-%d")
 
     if args.agency == "none" and not args.client:
         print("--client must be passed if agency is disabled", file=sys.stderr)
@@ -129,8 +129,8 @@ def parse_args() -> argparse.Namespace:
 def get_month_range(year: int, month: int) -> tuple[str, str]:
     """Get the start and end dates for a given month and year."""
     _, last_day = calendar.monthrange(year, month)
-    start = date(year, month, 1).strftime("%Y%m%d")
-    end = date(year, month, last_day).strftime("%Y%m%d")
+    start = date(year, month, 1).strftime("%Y-%m-%d")
+    end = date(year, month, last_day).strftime("%Y-%m-%d")
     return start, end
 
 

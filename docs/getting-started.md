@@ -23,6 +23,15 @@ Health insurance requirements and options vary significantly by country. Some ha
 
 Check your [country guide](./countries/) for specific recommendations.
 
+### Professional Indemnity Insurance
+
+Professional Indemnity (PI) insurance protects you if a client claims your work caused them financial loss. It covers legal defense costs and damages. Many client contracts require it, and in some countries, carrying your own PI policy is one of the markers that distinguish a genuine independent contractor from a disguised employee.
+
+- **Also known as:** Berufshaftpflichtversicherung (DE), RC professionnelle (FR/CH), Professional Indemnity Insurance (UK), Beroepsaansprakelijkheidsverzekering (BE)
+- **Typical cost:** EUR 300–800/year for IT consulting, depending on your country and turnover
+
+Search for "professional indemnity insurance for IT consultants" in your country, or ask your accountant. Check your [country guide](./countries/) for specific options.
+
 ### Personal Website and Email
 
 To stand out as a contractor, establish your own website and professional email address. Publishing blog posts about your work and learnings helps build your reputation.

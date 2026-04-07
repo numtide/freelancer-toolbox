@@ -31,6 +31,7 @@
           };
           packages = {
             harvest-exporter = pkgs.callPackage ./harvest-exporter.nix { };
+            kimai-exporter = self'.packages.harvest-exporter;
 
             wise-exporter = pkgs.callPackage ./wise-exporter.nix { };
             sevdesk-api = pkgs.python3.pkgs.callPackage ./sevdesk-api { };

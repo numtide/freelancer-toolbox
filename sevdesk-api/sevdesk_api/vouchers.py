@@ -455,7 +455,11 @@ class VoucherOperations:
         request_data = {
             "voucher": voucher_data,
             "voucherPosSave": positions_data if positions_data else None,
-            "voucherPosDelete": positions_to_delete,
+            "voucherPosDelete": (
+                [{"id": pid, "objectName": "VoucherPos"} for pid in positions_to_delete]
+                if positions_to_delete
+                else None
+            ),
         }
 
         # Handle filename if it's in voucher_data
@@ -469,6 +473,8 @@ class VoucherOperations:
         voucher_id: int,
         check_account_transaction_id: int,
         amount: float | None = None,
+        *,
+        partial: bool | None = None,
     ) -> dict[str, Any]:
         """Book a voucher with a payment transaction.
 
@@ -476,12 +482,14 @@ class VoucherOperations:
             voucher_id: ID of the voucher
             check_account_transaction_id: ID of the payment transaction
             amount: Amount to book (optional, defaults to full amount)
+            partial: Force partial payment booking; auto-enabled when amount is set
 
         Returns:
             Booking response
 
         """
         # Get voucher to find the amount if not provided
+        explicit_amount = amount is not None
         if amount is None:
             voucher_result = self.get_voucher(voucher_id)
             voucher = voucher_result.get("objects", [{}])[0]
@@ -489,6 +497,13 @@ class VoucherOperations:
             # Expense vouchers (CREDIT) need negative amounts
             if voucher.get("creditDebit") == "C":
                 amount = -abs(amount)
+
+        # Decide payment type: partial when caller opts in, or implicitly when
+        # an explicit amount was given (to allow multiple vouchers against one
+        # transaction). Otherwise keep the historic FULL_PAYMENT behaviour.
+        if partial is None:
+            partial = explicit_amount
+        payment_type = "PARTIAL_PAYMENT" if partial else "FULL_PAYMENT"
 
         # Get transaction to find check account
         trans_result = self.client.get(
@@ -500,7 +515,7 @@ class VoucherOperations:
         data: dict[str, Any] = {
             "amount": amount,
             "date": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-            "type": "FULL_PAYMENT",
+            "type": payment_type,
             "checkAccount": {
                 "id": check_account.get("id"),
                 "objectName": "CheckAccount",

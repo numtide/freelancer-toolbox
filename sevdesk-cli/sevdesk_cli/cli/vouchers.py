@@ -421,8 +421,15 @@ def list_vouchers(api: SevDeskAPI, cmd: VouchersListCommand) -> None:
         voucher_id = voucher.get("id", "N/A")
         description = voucher.get("description", "No description")
         status = voucher.get("status", "N/A")
-        sum_gross = voucher.get("sumGross", 0)
-        currency = voucher.get("currency", "EUR")
+        currency = voucher.get("currency") or "EUR"
+        # Prefer the foreign-currency value when the voucher is in a non-EUR
+        # currency: sevdesk stores the EUR base in sumGross and the original
+        # value in sumGrossForeignCurrency. Without this swap the listing
+        # claims e.g. "324.59 USD" for what is really 378 USD = 324.59 EUR.
+        if currency != "EUR" and voucher.get("sumGrossForeignCurrency") is not None:
+            sum_gross = voucher.get("sumGrossForeignCurrency", 0)
+        else:
+            sum_gross = voucher.get("sumGross", 0)
         voucher_date = voucher.get("voucherDate", "N/A")
         credit_debit = voucher.get("creditDebit", "N/A")
 
@@ -480,16 +487,23 @@ def _format_voucher_status(voucher: dict[str, Any]) -> str:
     return f"Status: {status_text}"
 
 
-def _format_voucher_position(pos: dict[str, Any], position_number: int) -> list[str]:
+def _format_voucher_position(
+    pos: dict[str, Any],
+    position_number: int,
+    currency: str = "EUR",
+) -> list[str]:
     """Format a single voucher position."""
     lines = []
     # The API returns different field names than we send
     comment = pos.get("comment", "")
     name = comment if comment else "Position"  # Use comment as name if available
     tax_rate = pos.get("taxRate", 0)
-    sum_net = pos.get("sumNet", 0)
-    sum_tax = pos.get("sumTax", 0)
-    sum_gross = pos.get("sumGross", 0)
+    # For foreign-currency vouchers sevdesk stores the EUR base value in
+    # sumNet/sumGross and the original amount in *ForeignCurrency. Prefer the
+    # foreign-currency fields when available so we don't lie about the unit.
+    sum_net = pos.get("sumNetForeignCurrency") or pos.get("sumNet", 0)
+    sum_tax = pos.get("sumTaxForeignCurrency") or pos.get("sumTax", 0)
+    sum_gross = pos.get("sumGrossForeignCurrency") or pos.get("sumGross", 0)
 
     # Get account/category information
     account_datev = pos.get("accountDatev", {})
@@ -500,12 +514,22 @@ def _format_voucher_position(pos: dict[str, Any], position_number: int) -> list[
         lines.append(f"  Comment: {comment}")
     lines.append(f"  Account/Category ID: {account_id}")
     lines.append(f"  Tax Rate: {tax_rate}%")
-    lines.append(f"  Net: {sum_net}, Tax: {sum_tax}, Gross: {sum_gross}")
+    lines.append(
+        f"  Net: {sum_net}, Tax: {sum_tax}, Gross: {sum_gross} {currency}",
+    )
+    if currency != "EUR":
+        eur_gross = pos.get("sumGross")
+        if eur_gross is not None:
+            lines.append(f"  (Base: {eur_gross} EUR)")
     lines.append("-" * 60)
     return lines
 
 
-def _format_voucher_positions(api: SevDeskAPI, voucher_id: int) -> list[str]:
+def _format_voucher_positions(
+    api: SevDeskAPI,
+    voucher_id: int,
+    currency: str = "EUR",
+) -> list[str]:
     """Format voucher positions."""
     try:
         positions_result = api.vouchers.get_voucher_positions(voucher_id)
@@ -518,18 +542,35 @@ def _format_voucher_positions(api: SevDeskAPI, voucher_id: int) -> list[str]:
 
     lines = ["\nPositions:", "-" * 60]
     for i, pos in enumerate(positions, 1):
-        lines.extend(_format_voucher_position(pos, i))
+        lines.extend(_format_voucher_position(pos, i, currency=currency))
     return lines
 
 
 def _format_voucher_financial_info(voucher: dict[str, Any]) -> list[str]:
     """Format voucher financial information."""
+    currency = voucher.get("currency") or "EUR"
+    # sevdesk stores the base (EUR) amount in sumNet/sumGross and the original
+    # foreign currency value in sum*ForeignCurrency. Show the user the field
+    # that actually matches the displayed currency.
+    if currency != "EUR" and voucher.get("sumGrossForeignCurrency") is not None:
+        net = voucher.get("sumNetForeignCurrency", 0)
+        tax = voucher.get("sumTaxForeignCurrency", 0)
+        gross = voucher.get("sumGrossForeignCurrency", 0)
+        eur_gross = voucher.get("sumGross", 0)
+        return [
+            "\nFinancial Information:",
+            f"  Net Amount: {net} {currency}",
+            f"  Tax Amount: {tax} {currency}",
+            f"  Gross Amount: {gross} {currency}",
+            f"  Currency: {currency}",
+            f"  Base Amount: {eur_gross} EUR",
+        ]
     return [
         "\nFinancial Information:",
         f"  Net Amount: {voucher.get('sumNet', 0)}",
         f"  Tax Amount: {voucher.get('sumTax', 0)}",
         f"  Gross Amount: {voucher.get('sumGross', 0)}",
-        f"  Currency: {voucher.get('currency', 'EUR')}",
+        f"  Currency: {currency}",
     ]
 
 
@@ -612,7 +653,13 @@ def get_voucher(api: SevDeskAPI, cmd: VouchersGetCommand) -> None:
     output_lines.extend(_format_voucher_financial_info(voucher))
     output_lines.extend(_format_voucher_supplier(voucher))
     output_lines.extend(_format_voucher_tax_rule(api, voucher))
-    output_lines.extend(_format_voucher_positions(api, cmd.voucher_id))
+    output_lines.extend(
+        _format_voucher_positions(
+            api,
+            cmd.voucher_id,
+            currency=voucher.get("currency") or "EUR",
+        ),
+    )
 
     # Print all lines
     for line in output_lines:

@@ -170,7 +170,7 @@ def generate_report(options: ReportOptions) -> None:
         total_rate = Fraction(0)
         total_internal_rate = Fraction(0)
         tasks = set()
-        if project.name not in customer.name or customer.name not in project.name:
+        if project.name not in customer.name and customer.name not in project.name:
             tasks.add(project.name)
         for entry_data in api.get_time_entries(
             options.start, options.end, user.id, customer.id, project_id=project.id
@@ -183,7 +183,17 @@ def generate_report(options: ReportOptions) -> None:
             total_rate += entry.rate
             total_internal_rate += entry.internalRate
 
-        hourly_rate = api.get_time_entry(user.id).hourlyRate
+        if total_seconds == 0:
+            # No matching entries for this user/project in the period.
+            continue
+
+        # Derive the effective hourly rate from the entries we just summed.
+        # Kimai's per-timesheet `rate` already reflects the user/activity/
+        # project-specific rate, and the user endpoint does not expose a
+        # single hourly rate. Previously this called
+        # `api.get_time_entry(user.id)`, which fetches /api/timesheets/{id}
+        # using a *user* id and returned an unrelated timesheet's rate.
+        hourly_rate = total_rate / (Fraction(total_seconds) / 3600)
 
         rounded_hours = round(total_seconds / 60 / 60, 1)
         orig_hours = total_seconds / 60 / 60

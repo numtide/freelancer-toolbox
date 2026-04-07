@@ -22,13 +22,6 @@ class Error(Exception):
     pass
 
 
-def are_floats_similar(a: float, b: float, error_rate: float) -> bool:
-    """Compare two floats to see if they are 'similar enough' within the specified error rate."""
-    curr_err = abs(a - b)
-    # print(f"Current error {curr_err}. Allowed error: {error_rate}", file=sys.stderr)
-    return curr_err <= error_rate
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -170,7 +163,7 @@ def generate_report(options: ReportOptions) -> None:
         total_rate = Fraction(0)
         total_internal_rate = Fraction(0)
         tasks = set()
-        if project.name not in customer.name or customer.name not in project.name:
+        if project.name not in customer.name and customer.name not in project.name:
             tasks.add(project.name)
         for entry_data in api.get_time_entries(
             options.start, options.end, user.id, customer.id, project_id=project.id
@@ -183,52 +176,50 @@ def generate_report(options: ReportOptions) -> None:
             total_rate += entry.rate
             total_internal_rate += entry.internalRate
 
-        hourly_rate = api.get_time_entry(user.id).hourlyRate
+        if total_seconds == 0:
+            # No matching entries for this user/project in the period.
+            continue
 
-        rounded_hours = round(total_seconds / 60 / 60, 1)
-        orig_hours = total_seconds / 60 / 60
-        time_err = round(Fraction(orig_hours) - Fraction(rounded_hours), 4)
+        # Derive the effective hourly rate from the entries we just summed.
+        # Kimai's per-timesheet `rate` already reflects the user/activity/
+        # project-specific rate, and the user endpoint does not expose a
+        # single hourly rate. Previously this called
+        # `api.get_time_entry(user.id)`, which fetches /api/timesheets/{id}
+        # using a *user* id and returned an unrelated timesheet's rate.
+        hourly_rate = total_rate / (Fraction(total_seconds) / 3600)
+
+        # Round hours to 2 decimals (matches Kimai's UI granularity) and
+        # report cost as hours * rate so the downstream invoice line
+        # (`hours @ rate`) reproduces the same total. Log any drift between
+        # the rounded value and the actual sum so it doesn't go unnoticed.
+        rounded_hours = round(Fraction(total_seconds) / 3600, 2)
+        orig_hours = Fraction(total_seconds) / 3600
+        time_err = round(orig_hours - rounded_hours, 4)
         if time_err < 0:
             print(f"Time lost: {float(time_err)} hours", file=sys.stderr)
         elif time_err > 0:
             print(f"Time gained: {float(time_err)} hours", file=sys.stderr)
 
         exchange_rate = get_exchange_rate(customer.currency, options.currency)
-        report = ProjectReport(
-            agency=options.agency,
-            client=customer.name,
-            end_date=options.end.strftime("%Y%m%d"),
-            exchange_rate=float(exchange_rate),
-            rounded_hours=rounded_hours,
-            source_cost=rounded_hours * hourly_rate,
-            source_currency=customer.currency,
-            source_hourly_rate=hourly_rate,
-            start_date=options.start.strftime("%Y%m%d"),
-            target_cost=rounded_hours * hourly_rate * exchange_rate,
-            target_currency=options.currency,
-            target_hourly_rate=hourly_rate * exchange_rate,
-            task=", ".join(tasks),
-            user=user.alias,
-        )
-
-        price = float(round(report.target_cost / report.rounded_hours, 2))
-
-        if not are_floats_similar(report.target_hourly_rate, price, 0.02):
-            msg = f"Price {price} is not similar to target hourly rate {report.target_hourly_rate}"
-            raise RuntimeError(msg)
-
-        original_price = float(
-            round(
-                (Fraction(report.source_cost) / Fraction(report.rounded_hours)),
-                2,
+        target_hourly_rate = hourly_rate * exchange_rate
+        all_reports.append(
+            ProjectReport(
+                agency=options.agency,
+                client=customer.name,
+                end_date=options.end.strftime("%Y%m%d"),
+                exchange_rate=float(exchange_rate),
+                rounded_hours=rounded_hours,
+                source_cost=rounded_hours * hourly_rate,
+                source_currency=customer.currency,
+                source_hourly_rate=hourly_rate,
+                start_date=options.start.strftime("%Y%m%d"),
+                target_cost=rounded_hours * target_hourly_rate,
+                target_currency=options.currency,
+                target_hourly_rate=target_hourly_rate,
+                task=", ".join(tasks),
+                user=user.alias,
             )
         )
-
-        if not are_floats_similar(report.source_hourly_rate, original_price, 0.02):
-            msg = f"Original price {original_price} is not similar to source hourly rate {report.source_hourly_rate}"
-            raise RuntimeError(msg)
-
-        all_reports.append(report)
 
     print(json.dumps(all_reports, indent=2, cls=JsonEncoder))
 

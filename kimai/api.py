@@ -26,6 +26,8 @@ class KimaiAPI:
     def kimai_request(
         self, endpoint: str, data: dict[str, Any]
     ) -> list[dict[str, Any]]:
+        # Don't mutate the caller's dict.
+        data = dict(data)
         data["page"] = 1
         headers = {
             "Authorization": f"Bearer {self.access_token}",
@@ -49,9 +51,11 @@ class KimaiAPI:
 
     def get_visible_projects(self, billable: bool = False) -> list[dict[str, Any]]:
         endpoint = "/api/projects"
-        data = {
+        data: dict[str, Any] = {
             "visible": 1,
         }
+        if billable:
+            data["billable"] = 1
         return self.kimai_request(endpoint, data)
 
     def get_visible_users(self) -> list[dict[str, Any]]:

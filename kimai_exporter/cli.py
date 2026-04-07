@@ -214,10 +214,7 @@ def generate_report(options: ReportOptions) -> None:
                 )
 
             target_hourly_rate = hourly_rate * exchange_rate
-            if (
-                project.name in customer.name
-                or customer.name in project.name
-            ):
+            if project.name in customer.name or customer.name in project.name:
                 task = activity.name
             else:
                 task = f"{project.name}: {activity.name}"

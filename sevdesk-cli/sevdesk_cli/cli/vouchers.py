@@ -190,6 +190,7 @@ class VouchersSaveCommand:
     currency: str = "EUR"
     positions: list[VoucherPositionInput] | None = None
     tax_rule: str | None = None
+    replace_positions: bool = False
 
 
 @dataclass
@@ -333,6 +334,14 @@ def add_voucher_subparser(
         "--positions-json",
         type=str,
         help="JSON file with positions data",
+    )
+    save_parser.add_argument(
+        "--replace-positions",
+        action="store_true",
+        help=(
+            "Delete all existing positions on the voucher before adding the "
+            "new --position entries (avoids the default append behaviour)."
+        ),
     )
     save_parser.add_argument(
         "--position",
@@ -701,12 +710,27 @@ def save_voucher(api: SevDeskAPI, cmd: VouchersSaveCommand) -> None:
     if cmd.positions:
         positions = _convert_position_inputs(cmd.positions)
 
+    # Collect IDs of existing positions to delete when replacing
+    positions_to_delete: list[int] | None = None
+    if cmd.replace_positions and cmd.voucher_id is not None:
+        try:
+            existing = api.vouchers.get_voucher_positions(cmd.voucher_id)
+        except (ValueError, KeyError, TypeError, SevDeskError) as e:
+            msg = (
+                f"Failed to fetch existing positions for voucher {cmd.voucher_id}: {e}"
+            )
+            raise SevDeskCLIError(msg) from e
+        positions_to_delete = [
+            int(p["id"]) for p in existing.get("objects", []) if p.get("id")
+        ]
+
     # Make API call
     try:
         result = api.vouchers.save_voucher(
             voucher_id=cmd.voucher_id,
             voucher_data=voucher_data,
             voucher_positions=positions,
+            positions_to_delete=positions_to_delete,
         )
     except (ValueError, KeyError, TypeError, SevDeskError) as e:
         action = (
@@ -830,6 +854,7 @@ def parse_voucher_command(  # noqa: PLR0911
                 currency=getattr(args, "currency", "EUR"),
                 positions=positions if positions else None,
                 tax_rule=getattr(args, "tax_rule", None),
+                replace_positions=getattr(args, "replace_positions", False),
             )
         case "book":
             return VouchersBookCommand(

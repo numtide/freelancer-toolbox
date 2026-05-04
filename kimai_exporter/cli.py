@@ -26,26 +26,22 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    token = os.environ.get("KIMAI_API_KEY")
+    # Credentials are resolved after parsing so ArgumentDefaultsHelpFormatter
+    # does not leak secrets from the environment into --help output.
     parser.add_argument(
         "--kimai-api-key",
-        default=token,
-        required=token is None,
+        default=None,
         help="Get one from your kimai account (env: KIMAI_API_KEY)",
     )
-    api_url = os.environ.get("KIMAI_API_URL")
     parser.add_argument(
         "--api-url",
-        default=api_url,
-        required=api_url is None,
+        default=None,
         help="Kimai API URL (env: KIMAI_API_URL)",
     )
-    user = os.environ.get("KIMAI_USER")
     parser.add_argument(
         "--user",
         type=str,
-        default=user,
-        required=user is None,
+        default=None,
         help="user to filter for (env: KIMAI_USER)",
     )
     parser.add_argument(
@@ -87,6 +83,25 @@ def parse_args() -> argparse.Namespace:
         help="Target currency to convert to, i.e EUR",
     )
     args = parser.parse_args()
+
+    if args.kimai_api_key is None:
+        args.kimai_api_key = os.environ.get("KIMAI_API_KEY")
+    if args.api_url is None:
+        args.api_url = os.environ.get("KIMAI_API_URL")
+    if args.user is None:
+        args.user = os.environ.get("KIMAI_USER")
+    missing = [
+        name
+        for name, val in (
+            ("KIMAI_API_KEY / --kimai-api-key", args.kimai_api_key),
+            ("KIMAI_API_URL / --api-url", args.api_url),
+            ("KIMAI_USER / --user", args.user),
+        )
+        if not val
+    ]
+    if missing:
+        parser.error("Missing required configuration: " + ", ".join(missing))
+
     today = datetime.today()
     if args.month and (args.start or args.end):
         print("--month flag conflicts with --start and --end", file=sys.stderr)

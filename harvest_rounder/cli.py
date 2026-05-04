@@ -19,19 +19,16 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    account = os.environ.get("HARVEST_ACCOUNT_ID")
+    # Credentials are resolved after parsing so ArgumentDefaultsHelpFormatter
+    # does not leak secrets from the environment into --help output.
     parser.add_argument(
         "--harvest-account-id",
-        default=account,
-        required=account is None,
+        default=None,
         help="Get one from https://id.getharvest.com/developers (env: HARVEST_ACCOUNT_ID)",
     )
-
-    token = os.environ.get("HARVEST_BEARER_TOKEN")
     parser.add_argument(
         "--harvest-bearer-token",
-        default=token,
-        required=token is None,
+        default=None,
         help="Get one from https://id.getharvest.com/developers (env: HARVEST_BEARER_TOKEN)",
     )
 
@@ -82,6 +79,18 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
+
+    if args.harvest_account_id is None:
+        args.harvest_account_id = os.environ.get("HARVEST_ACCOUNT_ID")
+    if args.harvest_bearer_token is None:
+        args.harvest_bearer_token = os.environ.get("HARVEST_BEARER_TOKEN")
+    if not args.harvest_account_id or not args.harvest_bearer_token:
+        parser.error(
+            "Harvest credentials missing. Set HARVEST_ACCOUNT_ID and "
+            "HARVEST_BEARER_TOKEN or pass --harvest-account-id / "
+            "--harvest-bearer-token."
+        )
+
     today = datetime.today()
 
     # Default to the past 4 weeks (28 days) starting from today

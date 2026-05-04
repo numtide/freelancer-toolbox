@@ -434,7 +434,7 @@ class Invoice(SevDeskObject):
         data["mapAll"] = True
 
         # Contact person special handling
-        data["contactPerson"] = self.contact_person if self.contact_person else None
+        data["contactPerson"] = self.contact_person or None
 
         return data
 

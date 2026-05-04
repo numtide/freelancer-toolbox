@@ -114,7 +114,7 @@ def parse_args() -> argparse.Namespace:
         sys.exit(1)
 
     if args.months:
-        year = args.year if args.year else today.year
+        year = args.year or today.year
         # Sort months to ensure chronological order
         months = sorted(args.months)
         args.start = get_month_range(year, months[0])[0]

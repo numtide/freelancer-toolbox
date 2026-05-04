@@ -151,8 +151,9 @@ def generate_report(options: ReportOptions) -> None:
     users_data = api.get_visible_users()
     users_data = list(
         filter(
-            lambda user: user["username"] == options.user
-            or user["alias"] == options.user,
+            lambda user: (
+                user["username"] == options.user or user["alias"] == options.user
+            ),
             users_data,
         )
     )

@@ -496,7 +496,7 @@ def _format_voucher_position(
     lines = []
     # The API returns different field names than we send
     comment = pos.get("comment", "")
-    name = comment if comment else "Position"  # Use comment as name if available
+    name = comment or "Position"  # Use comment as name if available
     tax_rate = pos.get("taxRate", 0)
     # For foreign-currency vouchers sevdesk stores the EUR base value in
     # sumNet/sumGross and the original amount in *ForeignCurrency. Prefer the
@@ -677,7 +677,7 @@ def _build_new_voucher_data(cmd: VouchersSaveCommand) -> dict[str, Any]:
     credit_debit = cast("CreditDebit", cmd.credit_debit)
     voucher_type = cast("VoucherType", cmd.voucher_type)
     # tax_type has a default value, so it should always be set
-    tax_type = cmd.tax_type if cmd.tax_type else TaxType.EU
+    tax_type = cmd.tax_type or TaxType.EU
 
     return {
         "creditDebit": credit_debit.value,
@@ -899,7 +899,7 @@ def parse_voucher_command(  # noqa: PLR0911
                 description=getattr(args, "description", None),
                 pay_date=getattr(args, "pay_date", None),
                 currency=getattr(args, "currency", "EUR"),
-                positions=positions if positions else None,
+                positions=positions or None,
                 tax_rule=getattr(args, "tax_rule", None),
                 replace_positions=getattr(args, "replace_positions", False),
             )

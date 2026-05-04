@@ -454,7 +454,7 @@ class VoucherOperations:
 
         request_data = {
             "voucher": voucher_data,
-            "voucherPosSave": positions_data if positions_data else None,
+            "voucherPosSave": positions_data or None,
             "voucherPosDelete": (
                 [{"id": pid, "objectName": "VoucherPos"} for pid in positions_to_delete]
                 if positions_to_delete

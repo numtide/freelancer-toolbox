@@ -176,18 +176,19 @@ def generate_report(options: ReportOptions) -> None:
         if customer.name != options.client:
             continue
 
-        # Group entries by activity so each activity becomes its own
-        # invoice line (different hourly rates and tasks shouldn't be
-        # collapsed into a single line). Within an activity we still sum
-        # across all matching timesheets in the period.
-        per_activity: dict[int, dict[str, Fraction]] = {}
+        # Group entries by (activity, date) so we can round each day's
+        # hours up to the nearest 30-minute block before summing.
+        #   key: activity_id
+        #   value: dict of date -> {"seconds": ..., "rate": ...}
+        per_activity: dict[int, dict[str, dict[str, Fraction]]] = {}
         for entry_data in api.get_time_entries(
             options.start, options.end, user.id, customer.id, project_id=project.id
         ):
             entry = TimeEntry.from_json(entry_data)
-            bucket = per_activity.setdefault(
-                entry.activity,
-                {"seconds": Fraction(0), "rate": Fraction(0)},
+            day = entry.begin[:10]  # "YYYY-MM-DD"
+            by_day = per_activity.setdefault(entry.activity, {})
+            bucket = by_day.setdefault(
+                day, {"seconds": Fraction(0), "rate": Fraction(0)}
             )
             bucket["seconds"] += entry.duration
             bucket["rate"] += entry.rate
@@ -197,9 +198,11 @@ def generate_report(options: ReportOptions) -> None:
 
         exchange_rate = get_exchange_rate(customer.currency, options.currency)
 
-        for activity_id, bucket in per_activity.items():
-            total_seconds = bucket["seconds"]
-            total_rate = bucket["rate"]
+        for activity_id, days in per_activity.items():
+            # Sum seconds/rate across all days (unrounded) for hourly
+            # rate derivation, then sum per-day rounded hours for billing.
+            total_seconds = sum(d["seconds"] for d in days.values())
+            total_rate = sum(d["rate"] for d in days.values())
             if total_seconds == 0:
                 continue
             activity = api.get_activity(activity_id)
@@ -210,22 +213,24 @@ def generate_report(options: ReportOptions) -> None:
             # not expose a single hourly rate.
             hourly_rate = total_rate / (Fraction(total_seconds) / 3600)
 
-            # Round hours to 2 decimals (matches Kimai's UI granularity)
-            # and report cost as hours * rate so the downstream invoice
-            # line (`hours @ rate`) reproduces the same total. Log any
-            # drift between the rounded value and the actual sum so it
-            # doesn't go unnoticed.
+            # Round each day's hours up to nearest 0.5h, then sum.
             orig_hours = Fraction(total_seconds) / 3600
-            rounded_hours = round(orig_hours, 2)
-            time_err = round(orig_hours - rounded_hours, 4)
-            if time_err < 0:
+            rounded_hours = Fraction(0)
+            for day, bucket in sorted(days.items()):
+                day_hours = Fraction(bucket["seconds"]) / 3600
+                half = day_hours * 2
+                ceiled = -(-half // 1)  # ceiling division for Fraction
+                day_rounded = Fraction(ceiled, 2)
+                if day_rounded > day_hours:
+                    print(
+                        f"{project.name}/{activity.name} {day}: {float(day_hours):.4f}h → {float(day_rounded)}h",
+                        file=sys.stderr,
+                    )
+                rounded_hours += day_rounded
+            time_diff = float(rounded_hours - orig_hours)
+            if time_diff > 0:
                 print(
-                    f"{project.name}/{activity.name}: Time lost: {float(time_err)} hours",
-                    file=sys.stderr,
-                )
-            elif time_err > 0:
-                print(
-                    f"{project.name}/{activity.name}: Time gained: {float(time_err)} hours",
+                    f"{project.name}/{activity.name}: Total rounded {float(orig_hours):.4f}h → {float(rounded_hours)}h (+{time_diff:.4f}h)",
                     file=sys.stderr,
                 )
 

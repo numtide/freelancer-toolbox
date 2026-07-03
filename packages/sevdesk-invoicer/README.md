@@ -170,7 +170,7 @@ Taxes left to pay:  | 6000.00
 
 - [sevdesk-cli](../sevdesk-cli/) - CLI for SevDesk operations
 - [sevdesk-api](../sevdesk-api/) - Python API client
-- [harvest-exporter](../harvest/harvest_exporter/) - Export Harvest timesheets
+- [harvest-exporter](../harvest/src/harvest_exporter/) - Export Harvest timesheets
 - [wise-exporter](../wise-exporter/) - Export Wise statements
 - [Monthly Invoicing Workflow](../../docs/workflows/monthly-invoicing.md)
 - [Tax Preparation Workflow](../docs/workflows/tax-preparation.md)

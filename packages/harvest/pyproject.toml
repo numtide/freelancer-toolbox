@@ -33,5 +33,5 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["harvest", "harvest_exporter", "harvest_rounder", "kimai", "kimai_exporter", "rest"]
+packages = ["src/harvest", "src/harvest_exporter", "src/harvest_rounder", "src/kimai", "src/kimai_exporter", "src/rest"]
 

@@ -31,5 +31,5 @@ quipu-invoicer = "quipu_invoicer:main"
 quipu-cli = "quipu_api.cli:cli"
 
 [tool.hatch.build.targets.wheel]
-packages = ["quipu_invoicer", "quipu_api"]
+packages = ["src/quipu_invoicer", "src/quipu_api"]
 

@@ -22,9 +22,9 @@ Step-by-step guides for common tasks:
 
 | Tool | Description |
 |------|-------------|
-| **[harvest-exporter](packages/harvest/harvest_exporter/README.md)** | Export timesheets from [Harvest](https://getharvest.com) with currency conversion |
-| **[harvest-rounder](packages/harvest/harvest_rounder/README.md)** | Round Harvest time entries up to the nearest increment |
-| **[kimai-exporter](packages/harvest/kimai_exporter/README.md)** | Export time entries from [Kimai](https://www.kimai.org) |
+| **[harvest-exporter](packages/harvest/src/harvest_exporter/README.md)** | Export timesheets from [Harvest](https://getharvest.com) with currency conversion |
+| **[harvest-rounder](packages/harvest/src/harvest_rounder/README.md)** | Round Harvest time entries up to the nearest increment |
+| **[kimai-exporter](packages/harvest/src/kimai_exporter/README.md)** | Export time entries from [Kimai](https://www.kimai.org) |
 
 ### Invoicing & Accounting
 

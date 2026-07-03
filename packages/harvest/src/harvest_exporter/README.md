@@ -124,6 +124,6 @@ sevdesk-invoicer --customer "1234" harvest.json
 ```
 
 See also:
-- [sevdesk-invoicer](../../sevdesk-invoicer/) - Generate SevDesk invoices
-- [quipu](../../quipu-invoicer/) - Generate Quipu invoices
-- [Monthly Invoicing Workflow](../../../docs/workflows/monthly-invoicing.md)
+- [sevdesk-invoicer](../../../sevdesk-invoicer/) - Generate SevDesk invoices
+- [quipu](../../../quipu-invoicer/) - Generate Quipu invoices
+- [Monthly Invoicing Workflow](../../../../docs/workflows/monthly-invoicing.md)

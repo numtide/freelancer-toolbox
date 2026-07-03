@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any, cast
 
 from paperless_cli.api import PaperlessAPIError, PaperlessClient
-from paperless_cli.errors import PaperlessCliError
 from paperless_cli.cli.documents import (
     DocumentsBulkCommand,
     DocumentsDeleteCommand,
@@ -53,6 +52,7 @@ from paperless_cli.cli.tags import (
     delete_tag,
     list_tags,
 )
+from paperless_cli.errors import PaperlessCliError
 
 # Module-level logger
 logger = logging.getLogger(__name__)

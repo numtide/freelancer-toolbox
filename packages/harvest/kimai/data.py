@@ -1,10 +1,20 @@
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from kimai.jsonserializer import JsonSerializable
 
 T = TypeVar("T", bound="JsonSerializable")
+
+__all__ = [
+    "ActivityInfo",
+    "CustomerInfo",
+    "JsonSerializable",
+    "ProjectInfo",
+    "TimeEntry",
+    "TimeEntryFull",
+    "UserInfo",
+]
 
 # ruff: noqa: N815
 
@@ -42,8 +52,8 @@ class CustomerInfo(JsonSerializable):
     email: str | None
     homepage: str | None
     timezone: str
-    metaFields: list
-    teams: list
+    metaFields: list[Any]
+    teams: list[Any]
     budget: float
     timeBudget: float
     budgetType: str | None
@@ -61,8 +71,8 @@ class ProjectInfo(JsonSerializable):
     comment: str | None
     visible: bool
     billable: bool
-    metaFields: list
-    teams: list
+    metaFields: list[Any]
+    teams: list[Any]
     globalActivities: bool
     number: str
     color: str
@@ -73,7 +83,7 @@ class TimeEntry(JsonSerializable):
     activity: int
     project: int
     user: int
-    tags: list
+    tags: list[Any]
     id: int
     begin: str
     end: str
@@ -83,7 +93,7 @@ class TimeEntry(JsonSerializable):
     internalRate: Fraction
     exported: bool
     billable: bool
-    metaFields: list
+    metaFields: list[Any]
 
 
 @dataclass
@@ -91,7 +101,7 @@ class TimeEntryFull(JsonSerializable):
     activity: int
     project: int
     user: int
-    tags: list
+    tags: list[Any]
     id: int
     begin: str
     end: str
@@ -102,7 +112,7 @@ class TimeEntryFull(JsonSerializable):
     internalRate: Fraction
     exported: bool
     billable: bool
-    metaFields: list
+    metaFields: list[Any]
 
 
 @dataclass
@@ -114,8 +124,8 @@ class ActivityInfo(JsonSerializable):
     comment: str | None
     visible: bool
     billable: bool
-    metaFields: list
-    teams: list
+    metaFields: list[Any]
+    teams: list[Any]
     number: str
     budget: float
     timeBudget: float

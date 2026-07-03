@@ -1,8 +1,8 @@
 """Document management commands for Paperless-ngx."""
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
-import time
 
 from paperless_cli.api import PaperlessAPIError, PaperlessClient
 from paperless_cli.cli.formatter import print_table
@@ -302,7 +302,7 @@ def update_document(client: PaperlessClient, cmd: DocumentsUpdateCommand) -> Non
         # Replace all tags
         tag_ids = resolve_tag_names_to_ids(client, cmd.set_tags) if cmd.set_tags else []
         update_request.tags = tag_ids
-        action = f"Setting tags to: {cmd.set_tags if cmd.set_tags else 'None'}"
+        action = f"Setting tags to: {cmd.set_tags or 'None'}"
     else:
         # Add/remove tags incrementally
         new_tag_ids = set(doc.tags)

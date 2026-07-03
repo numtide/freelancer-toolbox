@@ -88,7 +88,7 @@ def get_invoice(quipu_api: QuipuAPI, invoice_id: str) -> None:
     "invoice_data", type=click.Path(exists=True), callback=load_invoice_data
 )
 @click.pass_obj
-def create_invoice(quipu_api: QuipuAPI, invoice_data: dict) -> None:
+def create_invoice(quipu_api: QuipuAPI, invoice_data: dict[str, Any]) -> None:
     """Create a new invoice."""
     pprint(quipu_api.create_invoice(invoice_data))
 
@@ -99,7 +99,9 @@ def create_invoice(quipu_api: QuipuAPI, invoice_data: dict) -> None:
     "invoice_data", type=click.Path(exists=True), callback=load_invoice_data
 )
 @click.pass_obj
-def edit_invoice(quipu_api: QuipuAPI, invoice_id: str, invoice_data: dict) -> None:
+def edit_invoice(
+    quipu_api: QuipuAPI, invoice_id: str, invoice_data: dict[str, Any]
+) -> None:
     """Edit an existing invoice."""
     pprint(quipu_api.update_invoice(invoice_id, invoice_data))
 

@@ -102,7 +102,7 @@ class Accounts:
                     # We only want to return accounts that are not registers (German KASSE)
                     if obj.get("name") == name and obj.get("type") != "register":
                         self.cache[currency] = obj["id"]
-                        return obj["id"]
+                        return int(obj["id"])
         except SevDeskError as e:
             die(f"Failed to get check accounts: {e}")
 

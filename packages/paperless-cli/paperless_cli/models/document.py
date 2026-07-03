@@ -42,12 +42,12 @@ class Document:
             title=data["title"],
             content=data.get("content", ""),
             tags=data.get("tags", []),
-            created=datetime.fromisoformat(data["created"].replace("Z", "+00:00")),
-            created_date=datetime.fromisoformat(data["created_date"].replace("Z", "+00:00"))
+            created=datetime.fromisoformat(data["created"]),
+            created_date=datetime.fromisoformat(data["created_date"])
             if data.get("created_date")
             else None,
-            modified=datetime.fromisoformat(data["modified"].replace("Z", "+00:00")),
-            added=datetime.fromisoformat(data["added"].replace("Z", "+00:00")),
+            modified=datetime.fromisoformat(data["modified"]),
+            added=datetime.fromisoformat(data["added"]),
             archive_serial_number=data.get("archive_serial_number"),
             original_file_name=data["original_file_name"],
             archived_file_name=data.get("archived_file_name"),

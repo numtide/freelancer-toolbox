@@ -1,13 +1,11 @@
 """Base models for Paperless-ngx API."""
 
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
-
-T = TypeVar("T")
+from typing import Any
 
 
 @dataclass
-class PaginatedResponse(Generic[T]):
+class PaginatedResponse[T]:
     """Generic paginated response from the API."""
 
     count: int

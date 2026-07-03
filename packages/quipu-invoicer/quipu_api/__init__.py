@@ -182,7 +182,7 @@ class QuipuAPI:
         self, kind: str | None = None, prefix: str | None = None, page: int = 1
     ) -> QuipuResponse:
         endpoint = "accounting_categories"
-        params = {"page[number]": page}
+        params: dict[str, int | str] = {"page[number]": page}
         if kind:
             params["filter[kind]"] = kind
         if prefix:

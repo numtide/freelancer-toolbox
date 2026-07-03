@@ -1,5 +1,5 @@
-# Shared treefmt-nix module config, evaluated by formatter.nix and
-# checks/formatting.nix. Not part of blueprint's folder mapping.
+# treefmt-nix module config, evaluated by formatter.nix.
+# Not part of blueprint's folder mapping.
 { pkgs, perSystem }:
 {
   # Used to find the project root

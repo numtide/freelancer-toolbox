@@ -253,10 +253,9 @@ def upload_document(client: PaperlessClient, cmd: DocumentsUploadCommand) -> Non
 
                     # Try to extract document ID from result
                     if task.related_document:
-                        # Construct URL based on the known pattern
-                        base_url = client.url.replace(
-                            "-api", ""
-                        )  # Remove -api from URL
+                        # Construct URL based on the known pattern,
+                        # removing -api from the URL
+                        base_url = client.url.replace("-api", "")
                         print(
                             f"  View at: {base_url}/documents/{task.related_document}"
                         )

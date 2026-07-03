@@ -96,3 +96,4 @@ See [Monthly Invoicing Workflow](docs/workflows/monthly-invoicing.md) for the co
 ## License
 
 MIT
+

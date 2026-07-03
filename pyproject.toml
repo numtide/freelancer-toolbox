@@ -1,2 +1,7 @@
+# Workspace root: tool config only. The shared ruff rules live in
+# packages/harvest/pyproject.toml (see [tool.ruff].extend below).
 [tool.ruff]
 extend = "packages/harvest/pyproject.toml"
+
+[tool.uv.workspace]
+members = ["packages/*"]

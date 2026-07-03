@@ -16,6 +16,12 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3.8",
 ]
+dependencies = [
+  "click",
+  "click-option-group",
+  "requests",
+]
+
 [project.urls]
 Homepage = "https://github.com/numtide/numtide-invoice-generator"
 

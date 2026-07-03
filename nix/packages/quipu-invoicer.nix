@@ -12,6 +12,7 @@ pkgs.python3.pkgs.buildPythonApplication rec {
   propagatedBuildInputs = with pkgs.python3.pkgs; [
     click
     click-option-group
+    requests
   ];
 
   nativeBuildInputs = [

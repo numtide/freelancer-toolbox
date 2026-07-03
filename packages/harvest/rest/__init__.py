@@ -2,7 +2,7 @@ import json
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 
 def http_request(
@@ -20,7 +20,7 @@ def http_request(
     headers["User-Agent"] = "Numtide invoice generator"
     req = urllib.request.Request(url, headers=headers, method=method, data=body)
     resp = urllib.request.urlopen(req)
-    return json.load(resp)
+    return cast("dict[str, Any]", json.load(resp))
 
 
 @dataclass

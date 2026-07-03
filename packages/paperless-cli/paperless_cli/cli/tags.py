@@ -101,7 +101,9 @@ def delete_tag(client: PaperlessClient, tag_id: int, force: bool) -> None:
             print(f"Tag with ID {tag_id} not found.")
             return
 
-        confirm = input(f"Are you sure you want to delete tag '{tag.name}' (ID: {tag_id})? [y/N]: ")
+        confirm = input(
+            f"Are you sure you want to delete tag '{tag.name}' (ID: {tag_id})? [y/N]: "
+        )
         if confirm.lower() != "y":
             print("Cancelled.")
             return

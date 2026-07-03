@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import click
 from quipu_api import QuipuAPI
@@ -74,7 +75,7 @@ def main(
 def create_invoice(
     app_id: str,
     app_secret: str,
-    tasks: list[dict],
+    tasks: list[dict[str, Any]],
     customer_id: int,
     invoice_number: str,
     accounting_category_id: int,
@@ -128,7 +129,7 @@ def create_invoice(
     quipu_api.create_invoice(invoice_data)
 
 
-def validate_task(task: dict) -> bool:
+def validate_task(task: dict[str, Any]) -> bool:
     required_keys = ["client", "task", "target_hourly_rate", "rounded_hours"]
     return all(key in task for key in required_keys)
 

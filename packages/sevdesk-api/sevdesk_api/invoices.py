@@ -170,7 +170,7 @@ class InvoiceOperations:
         text: str | None = None,
         cc: str | None = None,
         bcc: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Send invoice by email.
 
         Args:
@@ -205,7 +205,7 @@ class InvoiceOperations:
         date: str,
         check_account_id: int,
         check_account_transaction_id: int | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Book an invoice payment.
 
         Args:
@@ -237,7 +237,7 @@ class InvoiceOperations:
     def create_invoice_from_order(
         self,
         order_id: int,
-        invoice_data: dict | None = None,
+        invoice_data: dict[str, Any] | None = None,
     ) -> Invoice:
         """Create an invoice from an order.
 

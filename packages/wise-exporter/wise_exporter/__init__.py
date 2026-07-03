@@ -10,7 +10,7 @@ import sys
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 import rsa
 
@@ -59,7 +59,7 @@ class WiseClient:
         headers = headers.copy()
         req = urllib.request.Request(url, headers=headers, method=method, data=body)
         resp = urllib.request.urlopen(req)
-        return json.load(resp)
+        return cast("dict[str, Any] | list[dict[str, Any]]", json.load(resp))
 
     def http_request(
         self,
@@ -95,7 +95,7 @@ class WiseClient:
             die(
                 f"Found multiple business profiles: {' '.join(p['id'] for p in r)}.\nSelect one by setting the WISE_PROFILE environment variable."
             )
-        return profiles[0]
+        return int(profiles[0])
 
     def get_balances(self, profile: int) -> list[Balance]:
         r = self.http_request(f"/v4/profiles/{profile}/balances?types=STANDARD")

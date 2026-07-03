@@ -7,7 +7,7 @@ name = "paperless-cli"
 version = "0.1.0"
 description = "CLI tool for managing Paperless-ngx documents, mail accounts, and rules"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 
 [project.scripts]
 paperless-cli = "paperless_cli:main"
@@ -18,10 +18,3 @@ packages = ["paperless_cli"]
 [tool.hatch.build.targets.wheel.force-include]
 "paperless_cli/py.typed" = "paperless_cli/py.typed"
 
-[tool.ruff]
-line-length = 100
-target-version = "py312"
-
-[tool.mypy]
-python_version = "3.12"
-strict = true

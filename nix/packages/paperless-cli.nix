@@ -5,9 +5,9 @@ pkgs.python3.pkgs.buildPythonApplication {
 
   src = ../../packages/paperless-cli;
 
-  format = "pyproject";
+  pyproject = true;
 
-  nativeBuildInputs = with pkgs.python3.pkgs; [
+  build-system = with pkgs.python3.pkgs; [
     hatchling
   ];
 

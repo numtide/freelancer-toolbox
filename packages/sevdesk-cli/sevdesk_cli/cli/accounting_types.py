@@ -38,7 +38,7 @@ def add_accounting_type_subparser(
     )
 
 
-def list_accounting_types(api: SevDeskAPI, cmd: AccountingTypesListCommand) -> None:  # noqa: ARG001
+def list_accounting_types(api: SevDeskAPI, cmd: AccountingTypesListCommand) -> None:
     """List accounting types."""
     try:
         result = api.accounting_types.get_accounting_types()

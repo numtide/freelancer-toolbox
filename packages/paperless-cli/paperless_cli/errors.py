@@ -4,8 +4,6 @@
 class PaperlessCliError(Exception):
     """Base exception for paperless-cli."""
 
-    pass
-
 
 class TagNotFoundError(PaperlessCliError):
     """Raised when one or more tags are not found."""

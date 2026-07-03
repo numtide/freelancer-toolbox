@@ -89,8 +89,12 @@ class MailRule:
             owner=data.get("owner"),
             order=data.get("order", 0),
             attachment_type=data.get("attachment_type", 1),
-            filter_attachment_filename_include=data.get("filter_attachment_filename_include"),
-            filter_attachment_filename_exclude=data.get("filter_attachment_filename_exclude"),
+            filter_attachment_filename_include=data.get(
+                "filter_attachment_filename_include"
+            ),
+            filter_attachment_filename_exclude=data.get(
+                "filter_attachment_filename_exclude"
+            ),
             consumption_scope=data.get("consumption_scope", 1),
             enabled=data.get("enabled", True),
         )
@@ -135,9 +139,13 @@ class MailRule:
         if self.attachment_type != 1:
             data["attachment_type"] = self.attachment_type
         if self.filter_attachment_filename_include is not None:
-            data["filter_attachment_filename_include"] = self.filter_attachment_filename_include
+            data["filter_attachment_filename_include"] = (
+                self.filter_attachment_filename_include
+            )
         if self.filter_attachment_filename_exclude is not None:
-            data["filter_attachment_filename_exclude"] = self.filter_attachment_filename_exclude
+            data["filter_attachment_filename_exclude"] = (
+                self.filter_attachment_filename_exclude
+            )
         if self.consumption_scope != 1:
             data["consumption_scope"] = self.consumption_scope
         if not self.enabled:
@@ -216,9 +224,13 @@ class MailRuleCreateRequest:
         if self.attachment_type != 1:
             data["attachment_type"] = self.attachment_type
         if self.filter_attachment_filename_include is not None:
-            data["filter_attachment_filename_include"] = self.filter_attachment_filename_include
+            data["filter_attachment_filename_include"] = (
+                self.filter_attachment_filename_include
+            )
         if self.filter_attachment_filename_exclude is not None:
-            data["filter_attachment_filename_exclude"] = self.filter_attachment_filename_exclude
+            data["filter_attachment_filename_exclude"] = (
+                self.filter_attachment_filename_exclude
+            )
         if self.consumption_scope != 1:
             data["consumption_scope"] = self.consumption_scope
 
@@ -252,13 +264,22 @@ class MailRuleCreateRequest:
             request.action_parameter = cmd.action_parameter
         if hasattr(cmd, "assign_title_from") and cmd.assign_title_from is not None:
             request.assign_title_from = cmd.assign_title_from
-        if hasattr(cmd, "assign_correspondent_from") and cmd.assign_correspondent_from is not None:
+        if (
+            hasattr(cmd, "assign_correspondent_from")
+            and cmd.assign_correspondent_from is not None
+        ):
             request.assign_correspondent_from = cmd.assign_correspondent_from
         if hasattr(cmd, "assign_tags") and cmd.assign_tags:
             request.assign_tags = [int(tag_id) for tag_id in cmd.assign_tags.split(",")]
-        if hasattr(cmd, "assign_document_type") and cmd.assign_document_type is not None:
+        if (
+            hasattr(cmd, "assign_document_type")
+            and cmd.assign_document_type is not None
+        ):
             request.assign_document_type = cmd.assign_document_type
-        if hasattr(cmd, "assign_correspondent") and cmd.assign_correspondent is not None:
+        if (
+            hasattr(cmd, "assign_correspondent")
+            and cmd.assign_correspondent is not None
+        ):
             request.assign_correspondent = cmd.assign_correspondent
 
         return request
@@ -340,9 +361,13 @@ class MailRuleUpdateRequest:
         if self.attachment_type is not None:
             data["attachment_type"] = self.attachment_type
         if self.filter_attachment_filename_include is not None:
-            data["filter_attachment_filename_include"] = self.filter_attachment_filename_include
+            data["filter_attachment_filename_include"] = (
+                self.filter_attachment_filename_include
+            )
         if self.filter_attachment_filename_exclude is not None:
-            data["filter_attachment_filename_exclude"] = self.filter_attachment_filename_exclude
+            data["filter_attachment_filename_exclude"] = (
+                self.filter_attachment_filename_exclude
+            )
         if self.consumption_scope is not None:
             data["consumption_scope"] = self.consumption_scope
 
@@ -378,13 +403,22 @@ class MailRuleUpdateRequest:
             request.action_parameter = cmd.action_parameter
         if hasattr(cmd, "assign_title_from") and cmd.assign_title_from is not None:
             request.assign_title_from = cmd.assign_title_from
-        if hasattr(cmd, "assign_correspondent_from") and cmd.assign_correspondent_from is not None:
+        if (
+            hasattr(cmd, "assign_correspondent_from")
+            and cmd.assign_correspondent_from is not None
+        ):
             request.assign_correspondent_from = cmd.assign_correspondent_from
         if hasattr(cmd, "assign_tags") and cmd.assign_tags is not None:
             request.assign_tags = [int(tag_id) for tag_id in cmd.assign_tags.split(",")]
-        if hasattr(cmd, "assign_document_type") and cmd.assign_document_type is not None:
+        if (
+            hasattr(cmd, "assign_document_type")
+            and cmd.assign_document_type is not None
+        ):
             request.assign_document_type = cmd.assign_document_type
-        if hasattr(cmd, "assign_correspondent") and cmd.assign_correspondent is not None:
+        if (
+            hasattr(cmd, "assign_correspondent")
+            and cmd.assign_correspondent is not None
+        ):
             request.assign_correspondent = cmd.assign_correspondent
 
         return request

@@ -1,7 +1,7 @@
 { pkgs }:
 pkgs.python3.pkgs.buildPythonApplication {
   pname = "harvest-rounder";
-  version = "0.0.1";
+  version = "0.1.0";
   src = ../../packages/harvest;
 
   pyproject = true;

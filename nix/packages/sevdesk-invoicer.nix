@@ -1,14 +1,14 @@
 { pkgs, perSystem }:
 pkgs.python3.pkgs.buildPythonApplication {
   pname = "sevdesk-invoicer";
-  version = "0.0.1";
+  version = "0.1.0";
   src = ../../packages/sevdesk-invoicer;
   pyproject = true;
-  nativeBuildInputs = [
+  build-system = [
     pkgs.python3.pkgs.hatchling
   ];
 
-  propagatedBuildInputs = [
+  dependencies = [
     perSystem.self.sevdesk-api
   ];
 

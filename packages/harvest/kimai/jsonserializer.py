@@ -8,15 +8,16 @@ T = TypeVar("T", bound="JsonSerializable")
 
 
 class JsonEncoder(json.JSONEncoder):
-    def default(self, obj: Any) -> dict:
+    def default(self, obj: Any) -> dict[str, Any]:
         if isinstance(obj, JsonSerializable):
             return obj.to_dict()
-        return super().default(obj)
+        msg = f"Object of type {type(obj).__name__!r} is not JSON serializable"
+        raise TypeError(msg)
 
 
 class JsonSerializable:
     @classmethod
-    def from_json(cls, data: dict) -> Self:
+    def from_json(cls, data: dict[str, Any]) -> Self:
         # Ensure cls is a dataclass
         if not hasattr(cls, "__dataclass_fields__"):
             msg = f"{cls.__name__} is not a dataclass"
@@ -45,7 +46,7 @@ class JsonSerializable:
         # Call from_json method for object creation
         return cls.from_json(data)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for key, value in self.__dict__.items():
             if isinstance(value, Fraction):

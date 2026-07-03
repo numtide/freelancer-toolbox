@@ -34,7 +34,7 @@ def add_tax_rule_subparser(
     tax_rule_subparsers.add_parser("list", help="List all tax rules")
 
 
-def list_tax_rules(api: SevDeskAPI, cmd: TaxRulesListCommand) -> None:  # noqa: ARG001
+def list_tax_rules(api: SevDeskAPI, cmd: TaxRulesListCommand) -> None:
     """List all available tax rules."""
     try:
         # Get all tax rules using the object resolver

@@ -22,34 +22,6 @@ dev = [
     "pytest",
 ]
 
-[tool.mypy]
-python_version = "3.13"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-
-[tool.ruff]
-target-version = "py313"
-line-length = 88
-
-[tool.ruff.lint]
-select = ["ALL"]
-ignore = [
-    "TD002",  # Missing author in TODO
-    "TD003",  # Missing issue link for TODO
-    "FIX002", # Line contains TODO
-    "PLR0913", # Too many arguments in function definition
-    "D100",  # Missing docstring in public module
-    "D101",  # Missing docstring in public class
-    "D102",  # Missing docstring in public method
-    "D103",  # Missing docstring in public function
-    "D104",  # Missing docstring in public package
-    "D105",  # Missing docstring in magic method
-    "D106",  # Missing docstring in public nested class
-    "D107",  # Missing docstring in __init__
-    "T201",  # print found - OK for CLI tools
-    "T203",  # pprint found - OK for CLI tools
-]
 
 [tool.hatch.build.targets.wheel]
 packages = ["sevdesk_cli"]

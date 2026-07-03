@@ -93,8 +93,8 @@ class QuipuAPI:
         self,
         method: str,
         endpoint: str,
-        data: dict | None = None,
-        params: dict | None = None,
+        data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         max_retries: int = 3,
     ) -> QuipuResponse:
         """Make a request with retries on 401 Unauthorized error."""
@@ -139,13 +139,15 @@ class QuipuAPI:
         msg = "Maximum retry attempts reached"
         raise RuntimeError(msg)
 
-    def _get(self, endpoint: str, params: dict | None = None) -> QuipuResponse:
+    def _get(
+        self, endpoint: str, params: dict[str, Any] | None = None
+    ) -> QuipuResponse:
         return self._make_request("GET", endpoint, params=params)
 
-    def _post(self, endpoint: str, data: dict) -> QuipuResponse | None:
+    def _post(self, endpoint: str, data: dict[str, Any]) -> QuipuResponse | None:
         return self._make_request("POST", endpoint, data=data)
 
-    def _patch(self, endpoint: str, data: dict) -> QuipuResponse | None:
+    def _patch(self, endpoint: str, data: dict[str, Any]) -> QuipuResponse | None:
         return self._make_request("PATCH", endpoint, data=data)
 
     def list_invoices(
@@ -159,12 +161,12 @@ class QuipuAPI:
         endpoint = f"invoices/{invoice_id}"
         return self._get(endpoint)
 
-    def create_invoice(self, invoice_data: dict) -> QuipuResponse | None:
+    def create_invoice(self, invoice_data: dict[str, Any]) -> QuipuResponse | None:
         endpoint = "invoices"
         return self._post(endpoint, invoice_data)
 
     def update_invoice(
-        self, invoice_id: str, update_data: dict
+        self, invoice_id: str, update_data: dict[str, Any]
     ) -> QuipuResponse | None:
         endpoint = f"invoices/{invoice_id}"
         return self._patch(endpoint, data=update_data)

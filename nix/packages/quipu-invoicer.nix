@@ -9,14 +9,14 @@ pkgs.python3.pkgs.buildPythonApplication rec {
 
   src = ../../packages/quipu-invoicer;
 
-  propagatedBuildInputs = with pkgs.python3.pkgs; [
+  build-system = [
+    pkgs.python3.pkgs.hatchling
+  ];
+
+  dependencies = with pkgs.python3.pkgs; [
     click
     click-option-group
     requests
-  ];
-
-  nativeBuildInputs = [
-    pkgs.python3.pkgs.hatchling
   ];
 
   doCheck = false;

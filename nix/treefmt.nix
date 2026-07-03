@@ -17,6 +17,10 @@
           "kimai_exporter"
           "rest"
         ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
       };
       "packages/quipu-invoicer" = {
         modules = [
@@ -28,9 +32,17 @@
           click-option-group
           types-requests
         ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
       };
       "packages/sevdesk-api" = {
         modules = [ "sevdesk_api" ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
       };
       "packages/sevdesk-invoicer" = {
         modules = [
@@ -39,14 +51,31 @@
           "sevdesk_tax_estimator"
         ];
         extraPythonPackages = [ perSystem.self.sevdesk-api ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
       };
       "packages/wise-exporter" = {
         extraPythonPackages = [ pkgs.python3.pkgs.rsa ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
       };
-      "packages/paperless-cli" = { };
+      "packages/paperless-cli" = {
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
       "packages/sevdesk-cli" = {
         modules = [ "sevdesk_cli" ];
         extraPythonPackages = [ perSystem.self.sevdesk-api ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
       };
     };
   };

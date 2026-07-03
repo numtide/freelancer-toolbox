@@ -104,6 +104,6 @@ api.create_invoice(invoice_data)
 
 ## See Also
 
-- [harvest-exporter](../harvest_exporter/) - Export Harvest timesheets
-- [kimai-exporter](../kimai_exporter/) - Export Kimai time entries
-- [Monthly Invoicing Workflow](../docs/workflows/monthly-invoicing.md)
+- [harvest-exporter](../harvest/harvest_exporter/) - Export Harvest timesheets
+- [kimai-exporter](../harvest/kimai_exporter/) - Export Kimai time entries
+- [Monthly Invoicing Workflow](../../docs/workflows/monthly-invoicing.md)

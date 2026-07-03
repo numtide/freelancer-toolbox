@@ -54,3 +54,5 @@ ignore = [
 [tool.hatch.build.targets.wheel]
 packages = ["sevdesk_cli"]
 
+[tool.uv.sources]
+sevdesk-api = { workspace = true }

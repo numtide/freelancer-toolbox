@@ -12,6 +12,7 @@ pkgs.mkShell {
       pkgs.texlive.combined.scheme-small
       pkgs.pandoc
       pkgs.ruff
+      pkgs.uv
     ];
   propagatedBuildInputs =
     perSystem.self.harvest-exporter.propagatedBuildInputs

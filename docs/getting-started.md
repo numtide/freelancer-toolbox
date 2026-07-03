@@ -47,7 +47,7 @@ Open a bank account separate from your private account. This simplifies accounti
 [Wise](https://wise.com) is a popular choice for freelancers:
 - Multi-currency support
 - Competitive exchange rates
-- API access (integrates with this toolbox via [wise-exporter](../wise-exporter/))
+- API access (integrates with this toolbox via [wise-exporter](../packages/wise-exporter/))
 - Debit card available
 - Works internationally
 

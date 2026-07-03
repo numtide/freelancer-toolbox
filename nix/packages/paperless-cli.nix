@@ -3,7 +3,7 @@ pkgs.python3.pkgs.buildPythonApplication {
   pname = "paperless-cli";
   version = "0.1.0";
 
-  src = ../../paperless-cli;
+  src = ../../packages/paperless-cli;
 
   format = "pyproject";
 

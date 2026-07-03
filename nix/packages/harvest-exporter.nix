@@ -2,7 +2,7 @@
 pkgs.python3.pkgs.buildPythonApplication {
   pname = "harvest-exporter";
   version = "0.0.1";
-  src = ../..;
+  src = ../../packages/harvest;
 
   pyproject = true;
   build-system = [ pkgs.python3.pkgs.hatchling ];

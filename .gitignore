@@ -30,4 +30,5 @@ MANIFEST
 result
 .direnv
 .worktrees/
+.venv/
 openapi.yaml

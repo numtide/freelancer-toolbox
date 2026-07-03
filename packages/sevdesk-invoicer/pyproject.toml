@@ -3,28 +3,34 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quipu"
-description = "Generate invoices in Quipu"
-version = "0.1.0"
-authors = [{ name = "Aldo Borrero", email = "aldo@aldoborrero.com" }]
+name = "sevdesk-invoicer"
+description = "Generate invoices in sevdesk"
+version = "0.0.1"
+authors = [{ name = "Jörg Thalheim", email = "joerg@thalheim.io" }]
 license = "MIT"
+dependencies = [
+  "sevdesk-api",
+]
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Topic :: Utilities",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
+  "Programming Language :: Python :: 3.6",
+  "Programming Language :: Python :: 3.7",
   "Programming Language :: Python :: 3.8",
 ]
 [project.urls]
 Homepage = "https://github.com/numtide/numtide-invoice-generator"
 
 [project.scripts]
-quipu-invoicer = "quipu_invoicer:main"
-quipu-cli = "quipu_api.cli:main"
+sevdesk-invoicer = "sevdesk_invoicer:main"
+sevdesk-wise-importer = "sevdesk_wise_importer:main"
+sevdesk-tax-estimator = "sevdesk_tax_estimator:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["quipu_invoicer", "quipu_api"]
+packages = ["sevdesk_invoicer", "sevdesk_wise_importer", "sevdesk_tax_estimator"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -37,6 +43,5 @@ no_implicit_optional = true
 module = "setuptools.*"
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = "quipu.*"
-ignore_missing_imports = true
+[tool.uv.sources]
+sevdesk-api = { workspace = true }

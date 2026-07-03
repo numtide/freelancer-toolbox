@@ -74,10 +74,10 @@ This toolbox provides several tools specifically useful for German freelancers:
 
 | Tool | Description |
 |------|-------------|
-| **[sevdesk-cli](../../sevdesk-cli/)** | Manage vouchers, tax rules, and accounting |
-| **[sevdesk-invoicer](../../sevdesk-invoicer/)** | Generate invoices from time tracking data |
-| **[sevdesk-tax-estimator](../../sevdesk-invoicer/)** | Calculate remaining income tax payments |
-| **[sevdesk-wise-importer](../../sevdesk-invoicer/)** | Import Wise bank transactions |
+| **[sevdesk-cli](../../packages/sevdesk-cli/)** | Manage vouchers, tax rules, and accounting |
+| **[sevdesk-invoicer](../../packages/sevdesk-invoicer/)** | Generate invoices from time tracking data |
+| **[sevdesk-tax-estimator](../../packages/sevdesk-invoicer/)** | Calculate remaining income tax payments |
+| **[sevdesk-wise-importer](../../packages/sevdesk-invoicer/)** | Import Wise bank transactions |
 
 ### Tax Estimation Workflow
 

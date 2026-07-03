@@ -8,6 +8,27 @@
   programs.mypy = {
     enable = true;
     directories = {
+      "packages/harvest" = {
+        modules = [
+          "harvest"
+          "harvest_exporter"
+          "harvest_rounder"
+          "kimai"
+          "kimai_exporter"
+          "rest"
+        ];
+      };
+      "packages/quipu-invoicer" = {
+        modules = [
+          "quipu_api"
+          "quipu_invoicer"
+        ];
+        extraPythonPackages = with pkgs.python3.pkgs; [
+          click
+          click-option-group
+          types-requests
+        ];
+      };
       "packages/sevdesk-api" = {
         modules = [ "sevdesk_api" ];
       };

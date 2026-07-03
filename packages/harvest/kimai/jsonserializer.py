@@ -23,7 +23,7 @@ class JsonSerializable:
             raise TypeError(msg)
 
         # Get the field names and types of the dataclass
-        cls_fields = {f.name: f.type for f in fields(cls)}  # type: ignore[attr-defined]
+        cls_fields = {f.name: f.type for f in fields(cls)}  # type: ignore[arg-type]
 
         # Filter out any fields in the JSON that are not present in the dataclass
         filtered_data = {}
@@ -46,7 +46,7 @@ class JsonSerializable:
         return cls.from_json(data)
 
     def to_dict(self) -> dict:
-        result = {}
+        result: dict[str, Any] = {}
         for key, value in self.__dict__.items():
             if isinstance(value, Fraction):
                 result[key] = round(float(value), 2)

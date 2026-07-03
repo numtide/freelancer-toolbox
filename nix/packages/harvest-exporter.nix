@@ -1,17 +1,13 @@
-{
-  pkgs ? import <nixpkgs> { },
-}:
+{ pkgs }:
 pkgs.python3.pkgs.buildPythonApplication {
-  pname = "wise-exporter";
+  pname = "harvest-exporter";
   version = "0.0.1";
-  src = ./wise-exporter;
+  src = ../..;
 
   pyproject = true;
   build-system = [ pkgs.python3.pkgs.hatchling ];
 
-  dependencies = [
-    pkgs.python3.pkgs.rsa
-  ];
-
   doCheck = false;
+
+  dependencies = [ pkgs.python3.pkgs.rich ];
 }

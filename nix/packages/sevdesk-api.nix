@@ -1,16 +1,15 @@
-{
-  lib,
-  python,
-}:
-
-python.pkgs.buildPythonPackage {
+{ pkgs }:
+let
+  inherit (pkgs) lib python3;
+in
+python3.pkgs.buildPythonPackage {
   pname = "sevdesk-api";
   version = "0.1.0";
   pyproject = true;
 
-  src = ./.;
+  src = ../../sevdesk-api;
 
-  nativeBuildInputs = with python.pkgs; [
+  nativeBuildInputs = with python3.pkgs; [
     hatchling
   ];
 
@@ -18,7 +17,7 @@ python.pkgs.buildPythonPackage {
   propagatedBuildInputs = [ ];
 
   # Optional development dependencies
-  passthru.optional-dependencies = with python.pkgs; {
+  passthru.optional-dependencies = with python3.pkgs; {
     dev = [
       black
       ruff

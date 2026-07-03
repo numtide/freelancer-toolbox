@@ -1,26 +1,20 @@
-{
-  lib,
-  buildPythonApplication,
-  hatchling,
-  sevdesk-api,
-}:
-
-buildPythonApplication {
+{ pkgs, perSystem }:
+pkgs.python3.pkgs.buildPythonApplication {
   pname = "sevdesk-cli";
   version = "0.1.0";
   pyproject = true;
 
-  src = ./.;
+  src = ../../sevdesk-cli;
 
-  build-system = [ hatchling ];
+  build-system = [ pkgs.python3.pkgs.hatchling ];
 
   dependencies = [
-    sevdesk-api
+    perSystem.self.sevdesk-api
   ];
 
   pythonImportsCheck = [ "sevdesk_cli" ];
 
-  meta = with lib; {
+  meta = with pkgs.lib; {
     description = "Command line interface for SevDesk API";
     license = licenses.mit;
     maintainers = [ ];

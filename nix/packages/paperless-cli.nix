@@ -1,23 +1,19 @@
-{
-  lib,
-  python3,
-}:
-
-python3.pkgs.buildPythonApplication {
+{ pkgs }:
+pkgs.python3.pkgs.buildPythonApplication {
   pname = "paperless-cli";
   version = "0.1.0";
 
-  src = ./.;
+  src = ../../paperless-cli;
 
   format = "pyproject";
 
-  nativeBuildInputs = with python3.pkgs; [
+  nativeBuildInputs = with pkgs.python3.pkgs; [
     hatchling
   ];
 
   pythonImportsCheck = [ "paperless_cli" ];
 
-  meta = with lib; {
+  meta = with pkgs.lib; {
     description = "CLI tool for managing Paperless-ngx documents, mail accounts, and rules";
     license = licenses.mit;
     maintainers = [ ];

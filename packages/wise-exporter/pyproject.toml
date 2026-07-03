@@ -1,12 +1,12 @@
 [project]
 name = "wise-exporter"
-version = "0.0.1"
+version = "0.1.0"
 description = "Export Wise bank statements"
 authors = [
     {name = "Jörg Thalheim", email = "joerg@thalheim.io"}
 ]
 license = "MIT"
-requires-python = ">=3.7"
+requires-python = ">=3.13"
 dependencies = [
     "rsa",
 ]
@@ -16,12 +16,6 @@ classifiers = [
     "Topic :: Utilities",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
 

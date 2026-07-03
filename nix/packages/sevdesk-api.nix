@@ -9,12 +9,12 @@ python3.pkgs.buildPythonPackage {
 
   src = ../../packages/sevdesk-api;
 
-  nativeBuildInputs = with python3.pkgs; [
+  build-system = with python3.pkgs; [
     hatchling
   ];
 
   # No runtime dependencies for the base API client
-  propagatedBuildInputs = [ ];
+  dependencies = [ ];
 
   # Optional development dependencies
   passthru.optional-dependencies = with python3.pkgs; {

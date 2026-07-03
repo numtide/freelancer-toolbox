@@ -1,7 +1,7 @@
 { pkgs }:
 pkgs.python3.pkgs.buildPythonApplication {
   pname = "wise-exporter";
-  version = "0.0.1";
+  version = "0.1.0";
   src = ../../packages/wise-exporter;
 
   pyproject = true;

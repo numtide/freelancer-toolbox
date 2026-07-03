@@ -8,13 +8,14 @@ description = "Generate invoices in Quipu"
 version = "0.1.0"
 authors = [{ name = "Aldo Borrero", email = "aldo@aldoborrero.com" }]
 license = "MIT"
+requires-python = ">=3.13"
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Topic :: Utilities",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
   "click",

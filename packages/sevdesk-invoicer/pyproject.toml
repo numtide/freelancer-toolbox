@@ -5,9 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "sevdesk-invoicer"
 description = "Generate invoices in sevdesk"
-version = "0.0.1"
+version = "0.1.0"
 authors = [{ name = "Jörg Thalheim", email = "joerg@thalheim.io" }]
 license = "MIT"
+requires-python = ">=3.13"
 dependencies = [
   "sevdesk-api",
 ]
@@ -17,9 +18,7 @@ classifiers = [
   "Topic :: Utilities",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
-  "Programming Language :: Python :: 3.6",
-  "Programming Language :: Python :: 3.7",
-  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.13",
 ]
 [project.urls]
 Homepage = "https://github.com/numtide/numtide-invoice-generator"

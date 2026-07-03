@@ -159,7 +159,7 @@ wheels = [
 
 [[package]]
 name = "harvest-exporter"
-version = "0.0.1"
+version = "0.1.0"
 source = { editable = "packages/harvest" }
 dependencies = [
     { name = "rich" },
@@ -496,7 +496,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "sevdesk-invoicer"
-version = "0.0.1"
+version = "0.1.0"
 source = { editable = "packages/sevdesk-invoicer" }
 dependencies = [
     { name = "sevdesk-api" },
@@ -525,7 +525,7 @@ wheels = [
 
 [[package]]
 name = "wise-exporter"
-version = "0.0.1"
+version = "0.1.0"
 source = { editable = "packages/wise-exporter" }
 dependencies = [
     { name = "rsa" },

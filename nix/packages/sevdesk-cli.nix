@@ -4,7 +4,7 @@ pkgs.python3.pkgs.buildPythonApplication {
   version = "0.1.0";
   pyproject = true;
 
-  src = ../../sevdesk-cli;
+  src = ../../packages/sevdesk-cli;
 
   build-system = [ pkgs.python3.pkgs.hatchling ];
 

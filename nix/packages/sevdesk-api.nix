@@ -7,7 +7,7 @@ python3.pkgs.buildPythonPackage {
   version = "0.1.0";
   pyproject = true;
 
-  src = ../../sevdesk-api;
+  src = ../../packages/sevdesk-api;
 
   nativeBuildInputs = with python3.pkgs; [
     hatchling

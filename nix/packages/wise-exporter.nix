@@ -2,7 +2,7 @@
 pkgs.python3.pkgs.buildPythonApplication {
   pname = "wise-exporter";
   version = "0.0.1";
-  src = ../../wise-exporter;
+  src = ../../packages/wise-exporter;
 
   pyproject = true;
   build-system = [ pkgs.python3.pkgs.hatchling ];

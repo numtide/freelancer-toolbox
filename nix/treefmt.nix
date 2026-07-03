@@ -8,19 +8,10 @@
   programs.mypy = {
     enable = true;
     directories = {
-      ".".modules = [
-        "harvest"
-        "harvest_exporter"
-        "harvest_report"
-        "harvest_rounder"
-        "rest"
-        "kimai"
-        "kimai_exporter"
-      ];
-      "sevdesk-api" = {
+      "packages/sevdesk-api" = {
         modules = [ "sevdesk_api" ];
       };
-      "sevdesk-invoicer" = {
+      "packages/sevdesk-invoicer" = {
         modules = [
           "sevdesk_invoicer"
           "sevdesk_wise_importer"
@@ -28,12 +19,11 @@
         ];
         extraPythonPackages = [ perSystem.self.sevdesk-api ];
       };
-      "wise-exporter" = {
+      "packages/wise-exporter" = {
         extraPythonPackages = [ pkgs.python3.pkgs.rsa ];
       };
-      "quipu-invoicer" = { };
-      "paperless-cli" = { };
-      "sevdesk-cli" = {
+      "packages/paperless-cli" = { };
+      "packages/sevdesk-cli" = {
         modules = [ "sevdesk_cli" ];
         extraPythonPackages = [ perSystem.self.sevdesk-api ];
       };

@@ -22,30 +22,30 @@ Step-by-step guides for common tasks:
 
 | Tool | Description |
 |------|-------------|
-| **[harvest-exporter](harvest_exporter/README.md)** | Export timesheets from [Harvest](https://getharvest.com) with currency conversion |
-| **[harvest-rounder](harvest_rounder/README.md)** | Round Harvest time entries up to the nearest increment |
-| **[kimai-exporter](kimai_exporter/README.md)** | Export time entries from [Kimai](https://www.kimai.org) |
+| **[harvest-exporter](packages/harvest/harvest_exporter/README.md)** | Export timesheets from [Harvest](https://getharvest.com) with currency conversion |
+| **[harvest-rounder](packages/harvest/harvest_rounder/README.md)** | Round Harvest time entries up to the nearest increment |
+| **[kimai-exporter](packages/harvest/kimai_exporter/README.md)** | Export time entries from [Kimai](https://www.kimai.org) |
 
 ### Invoicing & Accounting
 
 | Tool | Description |
 |------|-------------|
-| **[sevdesk-cli](sevdesk-cli/README.md)** | CLI for [SevDesk](https://sevdesk.com) - manage vouchers, tax rules, transactions |
-| **[sevdesk-api](sevdesk-api/README.md)** | Python client library for SevDesk API |
-| **[sevdesk-invoicer](sevdesk-invoicer/README.md)** | Generate SevDesk invoices, import Wise transactions, estimate taxes |
-| **[quipu](quipu/README.md)** | Generate invoices in [Quipu](https://getquipu.com) |
+| **[sevdesk-cli](packages/sevdesk-cli/README.md)** | CLI for [SevDesk](https://sevdesk.com) - manage vouchers, tax rules, transactions |
+| **[sevdesk-api](packages/sevdesk-api/README.md)** | Python client library for SevDesk API |
+| **[sevdesk-invoicer](packages/sevdesk-invoicer/README.md)** | Generate SevDesk invoices, import Wise transactions, estimate taxes |
+| **[quipu](packages/quipu-invoicer/README.md)** | Generate invoices in [Quipu](https://getquipu.com) |
 
 ### Banking
 
 | Tool | Description |
 |------|-------------|
-| **[wise-exporter](wise-exporter/README.md)** | Download bank statements from [Wise](https://wise.com) |
+| **[wise-exporter](packages/wise-exporter/README.md)** | Download bank statements from [Wise](https://wise.com) |
 
 ### Document Management
 
 | Tool | Description |
 |------|-------------|
-| **[paperless-cli](paperless-cli/README.md)** | CLI for [Paperless-ngx](https://docs.paperless-ngx.com) - document management |
+| **[paperless-cli](packages/paperless-cli/README.md)** | CLI for [Paperless-ngx](https://docs.paperless-ngx.com) - document management |
 
 ## Quick Start
 

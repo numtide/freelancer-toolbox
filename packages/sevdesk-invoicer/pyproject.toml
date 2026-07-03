@@ -32,16 +32,6 @@ sevdesk-tax-estimator = "sevdesk_tax_estimator:main"
 [tool.hatch.build.targets.wheel]
 packages = ["sevdesk_invoicer", "sevdesk_wise_importer", "sevdesk_tax_estimator"]
 
-[tool.mypy]
-python_version = "3.12"
-warn_redundant_casts = true
-disallow_untyped_calls = true
-disallow_untyped_defs = true
-no_implicit_optional = true
-
-[[tool.mypy.overrides]]
-module = "setuptools.*"
-ignore_missing_imports = true
 
 [tool.uv.sources]
 sevdesk-api = { workspace = true }

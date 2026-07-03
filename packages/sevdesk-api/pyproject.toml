@@ -17,24 +17,6 @@ dev = [
     "pytest",
 ]
 
-[tool.mypy]
-python_version = "3.13"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-
-[tool.ruff]
-target-version = "py313"
-line-length = 88
-
-[tool.ruff.lint]
-select = ["ALL"]
-ignore = [
-    "TD002",  # Missing author in TODO
-    "TD003",  # Missing issue link for TODO
-    "FIX002", # Line contains TODO
-    "PLR0913", # Too many arguments in function definition
-]
 
 [tool.hatch.build.targets.wheel]
 packages = ["sevdesk_api"]

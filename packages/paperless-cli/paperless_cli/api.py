@@ -46,7 +46,9 @@ class PaperlessClient:
 
         # Validate base URL
         parsed = urllib.parse.urlparse(self.url)
-        assert parsed.scheme in ("http", "https"), f"Invalid URL scheme: {parsed.scheme}"
+        assert parsed.scheme in ("http", "https"), (
+            f"Invalid URL scheme: {parsed.scheme}"
+        )
         assert parsed.netloc, "URL must have a valid netloc"
 
     def _request(
@@ -61,7 +63,9 @@ class PaperlessClient:
 
         # Validate URL scheme for security
         parsed_url = urllib.parse.urlparse(url)
-        assert parsed_url.scheme in ("http", "https"), f"Invalid URL scheme: {parsed_url.scheme}"
+        assert parsed_url.scheme in ("http", "https"), (
+            f"Invalid URL scheme: {parsed_url.scheme}"
+        )
         assert parsed_url.netloc, "URL must have a valid netloc"
 
         if params:
@@ -126,7 +130,10 @@ class PaperlessClient:
         return MailRule.from_api(response)
 
     def update_mail_rule(
-        self, rule_id: int, update_request: MailRuleUpdateRequest, current_rule: MailRule
+        self,
+        rule_id: int,
+        update_request: MailRuleUpdateRequest,
+        current_rule: MailRule,
     ) -> MailRule:
         """Update an existing mail rule."""
         data = update_request.apply_to_rule(current_rule)
@@ -162,7 +169,9 @@ class PaperlessClient:
         response = self._request("GET", "/api/document_types/")
         return [DocumentType.from_api(dt) for dt in response["results"]]
 
-    def search_documents(self, search_params: DocumentSearchParams) -> DocumentListResponse:
+    def search_documents(
+        self, search_params: DocumentSearchParams
+    ) -> DocumentListResponse:
         """Search documents."""
         params = search_params.to_params()
         response = self._request("GET", "/api/documents/", params=params)
@@ -273,7 +282,9 @@ class PaperlessClient:
 
         return Task.from_api(tasks[0])
 
-    def update_document(self, document_id: int, update_request: DocumentUpdateRequest) -> Document:
+    def update_document(
+        self, document_id: int, update_request: DocumentUpdateRequest
+    ) -> Document:
         """Update a document's metadata including tags."""
         data = update_request.to_dict()
         response = self._request("PATCH", f"/api/documents/{document_id}/", data=data)
@@ -287,4 +298,6 @@ class PaperlessClient:
         # Return the document IDs that were requested as affected
         if response.get("result") == "OK":
             return BulkEditResponse(affected_documents=bulk_request.documents)
-        return BulkEditResponse(affected_documents=response.get("affected_documents", []))
+        return BulkEditResponse(
+            affected_documents=response.get("affected_documents", [])
+        )

@@ -78,7 +78,9 @@ class DocumentSearchParams:
         if self.query:
             params["query"] = self.query
         if self.tags__id__in:
-            params["tags__id__in"] = ",".join(str(tag_id) for tag_id in self.tags__id__in)
+            params["tags__id__in"] = ",".join(
+                str(tag_id) for tag_id in self.tags__id__in
+            )
         if self.ordering:
             params["ordering"] = self.ordering
         return params

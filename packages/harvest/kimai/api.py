@@ -5,13 +5,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from rest import http_request2
+
 from kimai.data import (
     ActivityInfo,
     CustomerInfo,
     TimeEntryFull,
     UserInfo,
 )
-from rest import http_request2
 
 
 class KimaiError(Exception):

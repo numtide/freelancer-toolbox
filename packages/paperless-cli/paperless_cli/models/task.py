@@ -26,7 +26,9 @@ class Task:
             task_id=data["task_id"],
             task_file_name=data.get("task_file_name"),
             date_created=datetime.fromisoformat(data["date_created"]),
-            date_done=datetime.fromisoformat(data["date_done"]) if data.get("date_done") else None,
+            date_done=datetime.fromisoformat(data["date_done"])
+            if data.get("date_done")
+            else None,
             type=data["type"],
             status=data["status"],
             result=data.get("result"),

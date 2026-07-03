@@ -106,7 +106,9 @@ def search_documents(client: PaperlessClient, cmd: DocumentsSearchCommand) -> No
         tag_names = [tag_dict.get(tag_id, str(tag_id)) for tag_id in doc.tags]
 
         # Get correspondent name
-        correspondent = corr_dict.get(doc.correspondent, "") if doc.correspondent else ""
+        correspondent = (
+            corr_dict.get(doc.correspondent, "") if doc.correspondent else ""
+        )
 
         rows.append(
             [
@@ -122,7 +124,9 @@ def search_documents(client: PaperlessClient, cmd: DocumentsSearchCommand) -> No
 
     # Print pagination info
     if result.count > cmd.page_size:
-        print(f"\nShowing page {cmd.page} of {(result.count + cmd.page_size - 1) // cmd.page_size}")
+        print(
+            f"\nShowing page {cmd.page} of {(result.count + cmd.page_size - 1) // cmd.page_size}"
+        )
         print(f"Total documents: {result.count}")
 
 
@@ -175,7 +179,9 @@ def get_document(client: PaperlessClient, cmd: DocumentsGetCommand) -> None:
         # Document type
         if doc.document_type:
             doc_types = client.get_document_types()
-            doc_type = next((dt for dt in doc_types if dt.id == doc.document_type), None)
+            doc_type = next(
+                (dt for dt in doc_types if dt.id == doc.document_type), None
+            )
             if doc_type:
                 print(f"Document type: {doc_type.name}")
 
@@ -248,8 +254,12 @@ def upload_document(client: PaperlessClient, cmd: DocumentsUploadCommand) -> Non
                     # Try to extract document ID from result
                     if task.related_document:
                         # Construct URL based on the known pattern
-                        base_url = client.url.replace("-api", "")  # Remove -api from URL
-                        print(f"  View at: {base_url}/documents/{task.related_document}")
+                        base_url = client.url.replace(
+                            "-api", ""
+                        )  # Remove -api from URL
+                        print(
+                            f"  View at: {base_url}/documents/{task.related_document}"
+                        )
                 else:
                     print("✗ Document processing failed!")
                     result_msg = task.result or "Unknown error"
@@ -293,7 +303,9 @@ def update_document(client: PaperlessClient, cmd: DocumentsUpdateCommand) -> Non
     current_tag_names = [tag_dict.get(tag_id, str(tag_id)) for tag_id in doc.tags]
 
     print(f"Updating document: {doc.title}")
-    print(f"Current tags: {', '.join(current_tag_names) if current_tag_names else 'None'}")
+    print(
+        f"Current tags: {', '.join(current_tag_names) if current_tag_names else 'None'}"
+    )
 
     # Build update request
     update_request = DocumentUpdateRequest()

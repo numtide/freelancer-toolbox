@@ -226,7 +226,7 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     return options
 
 
-def handle_command(api: SevDeskAPI, command: Command) -> None:  # noqa: C901, PLR0912
+def handle_command(api: SevDeskAPI, command: Command) -> None:
     """Handle the execution of a command."""
     match command:
         # Accounting type commands

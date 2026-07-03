@@ -1,2 +1,1 @@
-{ perSystem }:
-perSystem.self.harvest-exporter
+{ perSystem }: perSystem.self.harvest-exporter

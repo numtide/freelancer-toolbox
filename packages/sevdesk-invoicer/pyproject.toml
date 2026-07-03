@@ -29,7 +29,7 @@ sevdesk-wise-importer = "sevdesk_wise_importer:main"
 sevdesk-tax-estimator = "sevdesk_tax_estimator:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["sevdesk_invoicer", "sevdesk_wise_importer", "sevdesk_tax_estimator"]
+packages = ["src/sevdesk_invoicer", "src/sevdesk_wise_importer", "src/sevdesk_tax_estimator"]
 
 
 [tool.uv.sources]

@@ -22,9 +22,9 @@ Step-by-step guides for common tasks:
 
 | Tool | Description |
 |------|-------------|
-| **[harvest-exporter](packages/harvest/harvest_exporter/README.md)** | Export timesheets from [Harvest](https://getharvest.com) with currency conversion |
-| **[harvest-rounder](packages/harvest/harvest_rounder/README.md)** | Round Harvest time entries up to the nearest increment |
-| **[kimai-exporter](packages/harvest/kimai_exporter/README.md)** | Export time entries from [Kimai](https://www.kimai.org) |
+| **[harvest-exporter](packages/harvest/src/harvest_exporter/README.md)** | Export timesheets from [Harvest](https://getharvest.com) with currency conversion |
+| **[harvest-rounder](packages/harvest/src/harvest_rounder/README.md)** | Round Harvest time entries up to the nearest increment |
+| **[kimai-exporter](packages/harvest/src/kimai_exporter/README.md)** | Export time entries from [Kimai](https://www.kimai.org) |
 
 ### Invoicing & Accounting
 
@@ -58,6 +58,8 @@ cp .envrc.local-template .envrc.local
 
 ### Generate an Invoice
 
+The examples below assume the tools are on your PATH — prefix with `uv run` (see Development) or use `nix run .#<package>`.
+
 1. Export your time tracking data:
 
 ```console
@@ -71,6 +73,17 @@ sevdesk-invoicer --customer "CUSTOMER_ID" harvest.json
 ```
 
 See [Monthly Invoicing Workflow](docs/workflows/monthly-invoicing.md) for the complete guide.
+
+## Development
+
+Run any workspace tool directly from source:
+
+```console
+uv sync                          # materialise .venv (one-time)
+uv run harvest-exporter --help   # or any other console script
+```
+
+`nix develop` drops you into a shell with uv and the project formatters available. For a hermetic build of a specific tool use `nix run .#harvest-exporter` (or any other package name).
 
 ## Configuration
 

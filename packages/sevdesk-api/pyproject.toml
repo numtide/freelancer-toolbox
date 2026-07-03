@@ -19,5 +19,5 @@ dev = [
 
 
 [tool.hatch.build.targets.wheel]
-packages = ["sevdesk_api"]
+packages = ["src/sevdesk_api"]
 

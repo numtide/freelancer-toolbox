@@ -24,7 +24,7 @@ dev = [
 
 
 [tool.hatch.build.targets.wheel]
-packages = ["sevdesk_cli"]
+packages = ["src/sevdesk_cli"]
 
 [tool.uv.sources]
 sevdesk-api = { workspace = true }

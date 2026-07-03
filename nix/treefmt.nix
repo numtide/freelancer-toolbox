@@ -10,12 +10,12 @@
     directories = {
       "packages/harvest" = {
         modules = [
-          "harvest"
-          "harvest_exporter"
-          "harvest_rounder"
-          "kimai"
-          "kimai_exporter"
-          "rest"
+          "src/harvest"
+          "src/harvest_exporter"
+          "src/harvest_rounder"
+          "src/kimai"
+          "src/kimai_exporter"
+          "src/rest"
         ];
         options = [
           "--config-file"
@@ -24,8 +24,8 @@
       };
       "packages/quipu-invoicer" = {
         modules = [
-          "quipu_api"
-          "quipu_invoicer"
+          "src/quipu_api"
+          "src/quipu_invoicer"
         ];
         extraPythonPackages = with pkgs.python3.pkgs; [
           click
@@ -38,7 +38,7 @@
         ];
       };
       "packages/sevdesk-api" = {
-        modules = [ "sevdesk_api" ];
+        modules = [ "src/sevdesk_api" ];
         options = [
           "--config-file"
           "../../pyproject.toml"
@@ -46,9 +46,9 @@
       };
       "packages/sevdesk-invoicer" = {
         modules = [
-          "sevdesk_invoicer"
-          "sevdesk_wise_importer"
-          "sevdesk_tax_estimator"
+          "src/sevdesk_invoicer"
+          "src/sevdesk_wise_importer"
+          "src/sevdesk_tax_estimator"
         ];
         extraPythonPackages = [ perSystem.self.sevdesk-api ];
         options = [
@@ -64,13 +64,14 @@
         ];
       };
       "packages/paperless-cli" = {
+        modules = [ "src/paperless_cli" ];
         options = [
           "--config-file"
           "../../pyproject.toml"
         ];
       };
       "packages/sevdesk-cli" = {
-        modules = [ "sevdesk_cli" ];
+        modules = [ "src/sevdesk_cli" ];
         extraPythonPackages = [ perSystem.self.sevdesk-api ];
         options = [
           "--config-file"

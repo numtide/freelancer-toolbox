@@ -28,7 +28,7 @@ Homepage = "https://github.com/numtide/numtide-invoice-generator"
 
 [project.scripts]
 quipu-invoicer = "quipu_invoicer:main"
-quipu-cli = "quipu_api.cli:main"
+quipu-cli = "quipu_api.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["quipu_invoicer", "quipu_api"]

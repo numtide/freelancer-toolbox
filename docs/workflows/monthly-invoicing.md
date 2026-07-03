@@ -2,6 +2,8 @@
 
 This guide walks through generating monthly invoices from time tracking data.
 
+The commands below assume the tools are on your PATH — prefix with `uv run` or use `nix run .#<package>` if they are not.
+
 ## Overview
 
 ```

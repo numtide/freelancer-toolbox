@@ -8,10 +8,6 @@ export HARVEST_BEARER_TOKEN=<TODO>
 # optional: sevdesk credentials
 #export SEVDESK_API_TOKEN=<TODO>
 
-# To use havest-submit-week
-export HARVEST_EMAIL=""
-export HARVEST_PASSWORD=""
-
 # optional: for wise exporter
 # export WISE_API_TOKEN=<TODO>
 # export WISE_PRIVATE_KEY=$(cat <<EOF

@@ -1,8 +1,5 @@
 { pkgs, perSystem }:
 pkgs.mkShell {
-  shellHook = ''
-    export PATH=$PATH:$(pwd)/bin
-  '';
   packages =
     perSystem.self.harvest-exporter.nativeBuildInputs
     ++ perSystem.self.quipu-invoicer.nativeBuildInputs

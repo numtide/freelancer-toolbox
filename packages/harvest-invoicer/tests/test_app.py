@@ -373,6 +373,64 @@ class TestFetchFromEditor:
         assert len(inv.lines) == 2
 
 
+class TestUndo:
+    """Single-level undo for line-item mutations (second undo = redo)."""
+
+    def test_undo_restores_dropped_line(self, client: FlaskClient) -> None:
+        client.post("/lines/drop/0")
+        resp = client.post("/lines/undo")
+        assert resp.status_code == 200
+        assert b"Backend Development" in resp.data
+        assert resp.data.count(b'type="checkbox"') == 2
+
+    def test_undo_twice_is_redo(self, client: FlaskClient) -> None:
+        client.post("/lines/drop/0")
+        client.post("/lines/undo")  # restore
+        resp = client.post("/lines/undo")  # redo the drop
+        assert b"Backend Development" not in resp.data
+
+    def test_undo_without_history_is_noop(self, client: FlaskClient) -> None:
+        resp = client.post("/lines/undo")
+        assert resp.status_code == 200
+        assert b"Backend Development" in resp.data
+        assert resp.data.count(b'type="checkbox"') == 2
+
+    def test_undo_restores_lines_after_fetch(self, tmp_path: Path) -> None:
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            fetch_callback=lambda *_args: [
+                InvoiceLine(concept="Fetched", unit_price=1.0, quantity=1.0)
+            ],
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            c.post(
+                "/lines/fetch",
+                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+            )
+            resp = c.post("/lines/undo")
+        assert b"Backend Development" in resp.data
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert len(inv.lines) == 2
+
+    def test_undo_restores_edited_line(self, client: FlaskClient) -> None:
+        client.post(
+            "/lines/update/0",
+            data={"concept": "Changed", "quantity": "40", "unit_price": "120"},
+        )
+        resp = client.post("/lines/undo")
+        assert b"Backend Development" in resp.data
+        assert b"Changed" not in resp.data
+
+    def test_editor_has_undo_button(self, client: FlaskClient) -> None:
+        resp = client.get("/")
+        assert b"/lines/undo" in resp.data
+
+
 class TestMergeDuplicates:
     """One-click consolidation of per-user duplicate lines."""
 

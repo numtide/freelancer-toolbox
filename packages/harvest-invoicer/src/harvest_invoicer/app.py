@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import os
 import threading
 from datetime import date, timedelta
@@ -97,12 +98,16 @@ def create_app(
     )
 
     # Mutable state bag on the app object — ephemeral, single-user.
+    # "undo" holds a single-level snapshot of the line items taken before
+    # the most recent mutation; undoing swaps it with the current lines,
+    # so pressing Undo twice acts as redo.
     app.state = {  # type: ignore[attr-defined]
         "invoice": invoice,
         "issuer": issuer,
         "client": client,
         "output_path": output_path,
         "user_templates_dir": user_templates_dir,
+        "undo": None,
     }
 
     date_format = str(issuer.get("date_format") or "%Y-%m-%d")
@@ -125,6 +130,10 @@ def create_app(
             invoice=inv,
             fmt_money=fmt_money,
         )
+
+    def _snapshot_lines(inv: Invoice) -> None:
+        """Remember the current lines so the next Undo can restore them."""
+        app.state["undo"] = copy.deepcopy(inv.lines)  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
     # Routes
@@ -205,6 +214,7 @@ def create_app(
     def update_line(idx: int) -> Response:
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         if 0 <= idx < len(inv.lines):
+            _snapshot_lines(inv)
             line = inv.lines[idx]
             line.concept = request.form.get("concept", line.concept)
             with contextlib.suppress(ValueError):
@@ -224,6 +234,7 @@ def create_app(
     def drop_line(idx: int) -> Response:
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         if 0 <= idx < len(inv.lines):
+            _snapshot_lines(inv)
             inv.lines.pop(idx)
         rows_html = _render_rows(inv)
         totals_html = _render_totals(inv)
@@ -232,6 +243,7 @@ def create_app(
     @app.post("/lines/add")
     def add_line() -> Response:
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        _snapshot_lines(inv)
         inv.lines.append(InvoiceLine(concept="New item", unit_price=0.0, quantity=1.0))
         rows_html = _render_rows(inv)
         totals_html = _render_totals(inv)
@@ -264,6 +276,7 @@ def create_app(
             quantity=round(total_hours, 4),
             vat_rate=first_line.vat_rate,
         )
+        _snapshot_lines(inv)
         # Remove selected (highest index first to preserve positions)
         for i in sorted(selected_idx, reverse=True):
             if i < len(inv.lines):
@@ -321,6 +334,7 @@ def create_app(
             if len(new_lines) != raw_count:
                 merged_note = f" ({raw_count} before merging duplicates)"
 
+        _snapshot_lines(inv)
         inv.lines[:] = new_lines
         inv.period_start = ps
         inv.period_end = pe
@@ -332,7 +346,24 @@ def create_app(
     def merge_duplicates_route() -> Response:
         """Collapse lines with identical concept, rate, and VAT into one."""
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        _snapshot_lines(inv)
         inv.lines[:] = merge_duplicate_lines(inv.lines)
+        rows_html = _render_rows(inv)
+        totals_html = _render_totals(inv)
+        return Response(rows_html + totals_html, content_type="text/html")
+
+    @app.post("/lines/undo")
+    def undo_lines() -> Response:
+        """Restore the line items from before the last change.
+
+        The current lines become the new snapshot, so a second Undo
+        re-applies the change (acts as redo).  No-op without history.
+        """
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        snapshot = app.state["undo"]  # type: ignore[attr-defined]
+        if snapshot is not None:
+            app.state["undo"] = copy.deepcopy(inv.lines)  # type: ignore[attr-defined]
+            inv.lines[:] = snapshot
         rows_html = _render_rows(inv)
         totals_html = _render_totals(inv)
         return Response(rows_html + totals_html, content_type="text/html")

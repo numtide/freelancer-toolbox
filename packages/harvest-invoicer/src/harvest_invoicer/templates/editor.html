@@ -387,6 +387,11 @@
               title="Combine rows with the same description, rate, and VAT into one line"
               hx-post="/lines/merge-duplicates"
               hx-target="#line-rows" hx-swap="outerHTML">Merge duplicates</button>
+
+            <button type="button" class="secondary"
+              title="Restore the line items from before the last change (press again to redo)"
+              hx-post="/lines/undo"
+              hx-target="#line-rows" hx-swap="outerHTML">Undo</button>
           </div>
         </section>
 

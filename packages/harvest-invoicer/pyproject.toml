@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "harvest-invoicer"
+version = "0.1.0"
+description = "Interactive invoice editor and PDF renderer backed by Harvest time data"
+authors = [{ name = "Aldo Borrero", email = "aldo@aldoborrero.com" }]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "harvest-exporter",
+  "flask",
+  "jinja2",
+  "weasyprint",
+  "click",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Topic :: Utilities",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/numtide/harvest-invoice-calculator"
+
+[project.scripts]
+harvest-invoicer = "harvest_invoicer.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/harvest_invoicer"]
+
+[tool.uv.sources]
+harvest-exporter = { workspace = true }

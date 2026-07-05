@@ -1,0 +1,40 @@
+<div id="meta-block" class="field-grid">
+  <label class="field">
+    <span class="field-label">Invoice no.</span>
+    <input type="text" name="number" value="{{ invoice.number }}"
+      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+      hx-target="#meta-block" hx-swap="outerHTML">
+  </label>
+  <label class="field">
+    <span class="field-label">Issue date</span>
+    <input type="date" name="issue_date" value="{{ fmt_date(invoice.issue_date) }}"
+      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+      hx-target="#meta-block" hx-swap="outerHTML">
+  </label>
+  <label class="field">
+    <span class="field-label">Due date</span>
+    <input type="date" name="due_date" value="{{ fmt_date(invoice.due_date) }}"
+      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+      hx-target="#meta-block" hx-swap="outerHTML">
+  </label>
+  <label class="field">
+    <span class="field-label">Period start</span>
+    <input type="date" name="period_start"
+      value="{{ invoice.period_start.isoformat() if invoice.period_start else '' }}"
+      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+      hx-target="#meta-block" hx-swap="outerHTML">
+  </label>
+  <label class="field">
+    <span class="field-label">Period end</span>
+    <input type="date" name="period_end"
+      value="{{ invoice.period_end.isoformat() if invoice.period_end else '' }}"
+      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+      hx-target="#meta-block" hx-swap="outerHTML">
+  </label>
+  <label class="field field-wide">
+    <span class="field-label">Legal note</span>
+    <input type="text" name="legal_note" value="{{ invoice.legal_note or '' }}"
+      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+      hx-target="#meta-block" hx-swap="outerHTML">
+  </label>
+</div>

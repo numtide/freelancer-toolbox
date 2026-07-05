@@ -1,0 +1,302 @@
+/* ============================================================
+   Invoice template — stylesheet
+   Tokens from DESIGN.md: ink #1D1E1C, blaze orange #FA5D00,
+   hairline borders, tabular numerals, Schibsted Grotesk.
+   ============================================================ */
+
+@page {
+  size: A4 portrait;
+  margin: 18mm 16mm 16mm 16mm;
+
+  @bottom-center {
+    content: "Página " counter(page) " de " counter(pages);
+    font-family: "Schibsted Grotesk", system-ui, sans-serif;
+    font-size: 8pt;
+    color: rgba(29, 30, 28, 0.4);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Schibsted Grotesk", system-ui, sans-serif;
+  font-size: 10pt;
+  color: #1D1E1C;
+  line-height: 1.45;
+}
+
+p {
+  margin: 0 0 2pt 0;
+}
+
+.label {
+  color: rgba(29, 30, 28, 0.5);
+}
+
+.muted {
+  color: rgba(29, 30, 28, 0.5);
+}
+
+.strong {
+  font-weight: 600;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.text-left {
+  text-align: left;
+}
+
+/* ===== Cabecera ===== */
+
+.invoice-header {
+  width: 100%;
+  display: table;
+  margin-bottom: 6pt;
+}
+
+.invoice-header .sender,
+.invoice-header .meta {
+  display: table-cell;
+  vertical-align: top;
+}
+
+.invoice-header .sender {
+  width: 55%;
+}
+
+.invoice-header .meta {
+  width: 45%;
+  text-align: right;
+}
+
+.sender h1 {
+  font-size: 13pt;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin: 0 0 5pt 0;
+  color: #1D1E1C;
+}
+
+.meta h2 {
+  font-size: 22pt;
+  font-weight: 800;
+  color: #1D1E1C;
+  margin: 0 0 8pt 0;
+  letter-spacing: -0.025em;
+}
+
+.meta table {
+  margin-left: auto;
+  border-collapse: collapse;
+}
+
+.meta td {
+  padding: 1pt 0 1pt 10pt;
+  font-size: 10pt;
+  font-variant-numeric: tabular-nums;
+}
+
+.meta td.label {
+  font-weight: normal;
+}
+
+/* ===== Línea ===== */
+
+.rule {
+  border: none;
+  border-top: 1.5pt solid #FA5D00;
+  margin: 10pt 0 12pt 0;
+}
+
+/* ===== Cliente ===== */
+
+.client-block {
+  margin-bottom: 16pt;
+}
+
+.section-heading {
+  font-size: 8pt;
+  font-weight: 700;
+  color: rgba(29, 30, 28, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 5pt 0;
+}
+
+.client-name {
+  font-size: 12pt;
+  font-weight: 600;
+  margin: 0 0 3pt 0;
+}
+
+/* ===== Tabla de items ===== */
+
+table.items {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 4pt;
+  table-layout: fixed;
+}
+
+/* Anchos explícitos por columna: 38 / 13 / 9 / 14 / 13 / 13 = 100% */
+table.items col.c-concept {
+  width: 38%;
+}
+
+table.items col.c-price {
+  width: 13%;
+}
+
+table.items col.c-quantity {
+  width: 9%;
+}
+
+table.items col.c-base {
+  width: 14%;
+}
+
+table.items col.c-vat {
+  width: 13%;
+}
+
+table.items col.c-total {
+  width: 13%;
+}
+
+table.items thead th {
+  font-size: 8pt;
+  font-weight: 700;
+  color: rgba(29, 30, 28, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 7pt 6pt;
+  border-bottom: 1pt solid rgba(29, 30, 28, 0.14);
+  text-align: left;
+}
+
+table.items thead th.text-right {
+  text-align: right;
+}
+
+table.items tbody td {
+  padding: 7pt 6pt;
+  border-bottom: 0.5pt solid rgba(29, 30, 28, 0.08);
+  vertical-align: top;
+  word-wrap: break-word;
+}
+
+table.items tbody td.text-right {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+table.items tbody tr:last-child td {
+  border-bottom: 1pt solid rgba(29, 30, 28, 0.14);
+}
+
+/* ===== Totales ===== */
+
+table.totals {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4pt;
+  margin-bottom: 14pt;
+}
+
+table.totals td {
+  padding: 3pt 8pt;
+  font-size: 10pt;
+  font-variant-numeric: tabular-nums;
+}
+
+table.totals td.spacer {
+  width: 60%;
+}
+
+table.totals td.label {
+  width: 22%;
+  text-align: right;
+  color: rgba(29, 30, 28, 0.5);
+}
+
+table.totals td.value {
+  width: 18%;
+  text-align: right;
+}
+
+table.totals tr.grand-total td {
+  font-weight: 700;
+  padding-top: 6pt;
+  padding-bottom: 6pt;
+  font-size: 11pt;
+}
+
+table.totals tr.grand-total td.label,
+table.totals tr.grand-total td.value {
+  border-top: 1pt solid rgba(29, 30, 28, 0.14);
+}
+
+table.totals tr.grand-total td.label {
+  color: #1D1E1C;
+}
+
+table.totals tr.grand-total td.value {
+  color: #FA5D00;
+}
+
+/* ===== Nota legal ===== */
+
+.legal-note {
+  font-style: italic;
+  color: rgba(29, 30, 28, 0.5);
+  font-size: 9pt;
+  margin: 12pt 0 16pt 0;
+}
+
+/* ===== Pago ===== */
+
+.payment-block {
+  margin-top: 8pt;
+}
+
+.payment-block .section-heading {
+  border-bottom: 0.5pt solid rgba(29, 30, 28, 0.14);
+  padding-bottom: 3pt;
+  margin-bottom: 7pt;
+}
+
+table.payment {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+table.payment td {
+  padding: 3pt 0;
+  vertical-align: top;
+  font-size: 10pt;
+}
+
+table.payment td.label {
+  width: 28%;
+  color: rgba(29, 30, 28, 0.5);
+}
+
+/* ===== Footer ===== */
+
+.footer-note {
+  text-align: center;
+  font-size: 8pt;
+  color: rgba(29, 30, 28, 0.4);
+  margin-top: 28pt;
+}

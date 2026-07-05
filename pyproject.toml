@@ -66,7 +66,7 @@ python_version = "3.13"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["setuptools.*", "pytest.*", "rich.*", "quipu.*"]
+module = ["setuptools.*", "pytest.*", "rich.*", "quipu.*", "weasyprint.*", "harvest_exporter.*"]
 ignore_missing_imports = true
 
 [tool.uv.workspace]

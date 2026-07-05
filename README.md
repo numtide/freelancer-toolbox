@@ -30,6 +30,7 @@ Step-by-step guides for common tasks:
 
 | Tool | Description |
 |------|-------------|
+| **[harvest-invoicer](packages/harvest-invoicer/README.md)** | Fetch Harvest time data, edit line items in a browser, generate invoice PDFs |
 | **[sevdesk-cli](packages/sevdesk-cli/README.md)** | CLI for [SevDesk](https://sevdesk.com) - manage vouchers, tax rules, transactions |
 | **[sevdesk-api](packages/sevdesk-api/README.md)** | Python client library for SevDesk API |
 | **[sevdesk-invoicer](packages/sevdesk-invoicer/README.md)** | Generate SevDesk invoices, import Wise transactions, estimate taxes |

@@ -1,0 +1,27 @@
+<tbody id="line-rows" hx-target="this" hx-swap="outerHTML">
+  {% for line in invoice.lines %}
+  <tr>
+    <td><input type="checkbox" name="selected" value="{{ loop.index0 }}" form="merge-form"></td>
+    <td>
+      <input type="text" name="concept" value="{{ line.concept }}"
+        hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest tr"
+        hx-target="#line-rows" hx-swap="outerHTML">
+    </td>
+    <td>
+      <input type="number" name="quantity" value="{{ fmt_qty(line.quantity) }}" step="0.01"
+        hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest tr"
+        hx-target="#line-rows" hx-swap="outerHTML">
+    </td>
+    <td>
+      <input type="number" name="unit_price" value="{{ fmt_money(line.unit_price) }}" step="0.01"
+        hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest tr"
+        hx-target="#line-rows" hx-swap="outerHTML">
+    </td>
+    <td class="num">{{ fmt_money(line.base) }}</td>
+    <td>
+      <button type="button" class="text-btn" hx-post="/lines/drop/{{ loop.index0 }}"
+        hx-target="#line-rows" hx-swap="outerHTML">Drop</button>
+    </td>
+  </tr>
+  {% endfor %}
+</tbody>

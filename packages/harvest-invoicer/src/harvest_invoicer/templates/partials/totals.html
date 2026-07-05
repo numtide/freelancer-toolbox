@@ -1,0 +1,7 @@
+<div id="totals-block">
+  <table class="totals-editor">
+    <tr><td>Subtotal</td><td class="num">{{ fmt_money(invoice.subtotal) }} {{ invoice.currency }}</td></tr>
+    <tr><td>VAT</td><td class="num">{{ fmt_money(invoice.vat_total) }} {{ invoice.currency }}</td></tr>
+    <tr class="grand"><td>Total</td><td class="num">{{ fmt_money(invoice.grand_total) }} {{ invoice.currency }}</td></tr>
+  </table>
+</div>

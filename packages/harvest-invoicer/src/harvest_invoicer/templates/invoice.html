@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Invoice {{ invoice.number }}</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <header class="invoice-header">
+    <div class="sender">
+      <h1>{{ issuer.name }}</h1>
+      <p>{{ issuer.address_line1 }}</p>
+      <p>{{ issuer.address_line2 }}</p>
+      <p>{{ issuer.country }}</p>
+      <p><span class="muted">{{ issuer.tax_id_label | default("Tax ID") }}</span> {{ issuer.tax_id }}</p>
+      <p><span class="muted">Tel.</span> {{ issuer.phone }}</p>
+      <p><span class="muted">Email</span> {{ issuer.email }}</p>
+    </div>
+    <div class="meta">
+      <h2>INVOICE</h2>
+      <table>
+        <tr>
+          <td class="muted">No.</td>
+          <td class="strong">{{ invoice.number }}</td>
+        </tr>
+        <tr>
+          <td class="muted">Issued</td>
+          <td>{{ invoice.issue_date | fmtdate }}</td>
+        </tr>
+        <tr>
+          <td class="muted">Due</td>
+          <td>{{ invoice.due_date | fmtdate }}</td>
+        </tr>
+        {% if invoice.period_start and invoice.period_end %}
+        <tr>
+          <td class="muted">Period</td>
+          <td>{{ invoice.period_start | fmtdate }} – {{ invoice.period_end | fmtdate }}</td>
+        </tr>
+        {% endif %}
+      </table>
+    </div>
+  </header>
+
+  <hr class="rule">
+
+  <section class="client-block">
+    <p class="section-heading">Bill to</p>
+    <p class="client-name">{{ client.name }}</p>
+    <p>{{ client.address_line1 }}</p>
+    <p>{{ client.address_line2 }}</p>
+    <p>{{ client.country }}</p>
+    <p><span class="muted">{{ client.tax_id_label | default("Tax ID") }}</span> {{ client.tax_id }}</p>
+  </section>
+
+  <table class="items">
+    <colgroup>
+      <col class="c-concept">
+      <col class="c-price">
+      <col class="c-quantity">
+      <col class="c-base">
+      <col class="c-vat">
+      <col class="c-total">
+    </colgroup>
+    <thead>
+      <tr>
+        <th class="text-left">Description</th>
+        <th class="text-right">Unit Price ({{ invoice.currency }})</th>
+        <th class="text-right">Qty</th>
+        <th class="text-right">Subtotal ({{ invoice.currency }})</th>
+        <th class="text-right">VAT ({{ invoice.currency }})</th>
+        <th class="text-right">Total ({{ invoice.currency }})</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in invoice.lines %}
+      <tr>
+        <td>{{ line.concept }}</td>
+        <td class="text-right">{{ line.unit_price | money }}</td>
+        <td class="text-right">{{ line.quantity | qty }}</td>
+        <td class="text-right">{{ line.base | money }}</td>
+        <td class="text-right">{{ line | vat_cell }}</td>
+        <td class="text-right">{{ line.total | money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr>
+      <td class="spacer"></td>
+      <td class="label">Subtotal</td>
+      <td class="value">{{ invoice.subtotal | money }} {{ invoice.currency }}</td>
+    </tr>
+    <tr>
+      <td class="spacer"></td>
+      <td class="label">VAT</td>
+      <td class="value">{{ invoice.vat_total | money }} {{ invoice.currency }}</td>
+    </tr>
+    <tr class="grand-total">
+      <td class="spacer"></td>
+      <td class="label">Total</td>
+      <td class="value">{{ invoice.grand_total | money }} {{ invoice.currency }}</td>
+    </tr>
+  </table>
+
+  <section class="payment-block">
+    <p class="section-heading">Payment</p>
+    <table class="payment">
+      <tr>
+        <td class="label">Method</td>
+        <td>Bank Transfer</td>
+      </tr>
+      <tr>
+        <td class="label">IBAN</td>
+        <td>{{ issuer.bank.iban }}</td>
+      </tr>
+      <tr>
+        <td class="label">BIC / SWIFT</td>
+        <td>{{ issuer.bank.bic }}</td>
+      </tr>
+      <tr>
+        <td class="label">Account Holder</td>
+        <td>{{ issuer.name }}</td>
+      </tr>
+      <tr>
+        <td class="label">Reference</td>
+        <td>Invoice {{ invoice.number }}</td>
+      </tr>
+    </table>
+  </section>
+
+  {% if invoice.legal_note %}
+  <p class="legal-note">{{ invoice.legal_note }}</p>
+  {% endif %}
+
+</body>
+
+</html>

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from click.testing import CliRunner
 from harvest_invoicer.cli import _resolve_period, main
+from harvest_invoicer.render import _PACKAGED_TEMPLATES_DIR
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_generate_demo_invalid_month() -> None:
@@ -58,3 +63,40 @@ def test_generate_period_flags_require_single_month() -> None:
     )
     assert result.exit_code != 0
     assert "single --month" in result.output
+
+
+class TestTemplatesInit:
+    def test_creates_folder_with_packaged_copies(self, tmp_path: Path) -> None:
+        """templates init scaffolds the directory with both template files."""
+        target = tmp_path / "my-templates"
+        runner = CliRunner()
+        result = runner.invoke(main, ["templates", "init", str(target)])
+        assert result.exit_code == 0
+        for name in ("invoice.html", "style.css"):
+            copied = target / name
+            assert copied.exists()
+            assert copied.read_bytes() == (_PACKAGED_TEMPLATES_DIR / name).read_bytes()
+        assert "--templates-dir" in result.output
+
+    def test_existing_files_preserved_without_force(self, tmp_path: Path) -> None:
+        """A second run must not clobber user edits."""
+        target = tmp_path / "my-templates"
+        runner = CliRunner()
+        runner.invoke(main, ["templates", "init", str(target)])
+        (target / "style.css").write_text("/* customized */")
+        result = runner.invoke(main, ["templates", "init", str(target)])
+        assert result.exit_code == 0
+        assert "skipped" in result.output
+        assert (target / "style.css").read_text() == "/* customized */"
+
+    def test_force_overwrites(self, tmp_path: Path) -> None:
+        """--force restores the packaged versions."""
+        target = tmp_path / "my-templates"
+        runner = CliRunner()
+        runner.invoke(main, ["templates", "init", str(target)])
+        (target / "style.css").write_text("/* customized */")
+        result = runner.invoke(main, ["templates", "init", str(target), "--force"])
+        assert result.exit_code == 0
+        assert (target / "style.css").read_bytes() == (
+            _PACKAGED_TEMPLATES_DIR / "style.css"
+        ).read_bytes()

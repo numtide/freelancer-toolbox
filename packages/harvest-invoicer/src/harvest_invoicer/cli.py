@@ -394,3 +394,52 @@ def generate(
 
     if errors:
         raise SystemExit(1)
+
+
+# ---------------------------------------------------------------------------
+# templates commands
+# ---------------------------------------------------------------------------
+
+
+@main.group("templates")
+def templates() -> None:
+    """Manage custom invoice templates."""
+
+
+@templates.command("init")
+@click.argument(
+    "directory",
+    default="invoice-templates",
+    type=click.Path(file_okay=False, path_type=Path),
+)
+@click.option("--force", is_flag=True, help="Overwrite existing files.")
+def templates_init(directory: Path, force: bool) -> None:
+    """Scaffold DIRECTORY with editable copies of the packaged templates.
+
+    Copies ``invoice.html`` and ``style.css`` as a starting point for
+    customization.  Point the tool at the directory with ``--templates-dir``
+    (or ``INVOICE_TEMPLATES_DIR``); any file you delete falls back to the
+    packaged version, so you can keep only what you change.
+    """
+    from harvest_invoicer.render import _PACKAGED_TEMPLATES_DIR  # noqa: PLC0415
+
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in ("invoice.html", "style.css"):
+        dest = directory / name
+        if dest.exists() and not force:
+            click.echo(f"  skipped {dest} (exists; use --force to overwrite)")
+            continue
+        dest.write_bytes((_PACKAGED_TEMPLATES_DIR / name).read_bytes())
+        click.echo(f"  created {dest}")
+
+    click.echo(
+        f"\nEdit the files, then use them with:\n"
+        f"  harvest-invoicer edit --templates-dir {directory} ...\n"
+        f"  harvest-invoicer generate --templates-dir {directory} ...\n"
+        f"or set INVOICE_TEMPLATES_DIR={directory}.\n"
+        f"Missing files fall back to the packaged templates per-file."
+    )
+
+
+if __name__ == "__main__":
+    main()

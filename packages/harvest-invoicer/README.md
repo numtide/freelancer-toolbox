@@ -180,21 +180,22 @@ The default invoice number is the invoiced month string `YYYY-MM`
 ## Custom templates
 
 The packaged `invoice.html` and `style.css` are sensible defaults.  To customise
-the invoice layout, copy them as a starting point and point the tool at your
-directory:
+the invoice layout, scaffold a templates folder and point the tool at it:
 
 ```console
-# Copy packaged templates to a local directory
-OUT=$(nix build .#harvest-invoicer --no-link --print-out-paths)
-cp -r "$OUT/lib/python3.13/site-packages/harvest_invoicer/templates" ./my-templates
+# Create ./invoice-templates (or pass a directory name) with editable
+# copies of the packaged invoice.html and style.css
+harvest-invoicer templates init
 
 # Use your custom templates (packaged files act as per-file fallback)
-harvest-invoicer edit   --templates-dir ./my-templates ...
-harvest-invoicer generate --templates-dir ./my-templates ...
+harvest-invoicer edit   --templates-dir ./invoice-templates ...
+harvest-invoicer generate --templates-dir ./invoice-templates ...
 ```
 
-You can override just one file — for example, only `invoice.html` — and the
-packaged `style.css` is still used as the fallback.
+`templates init` never overwrites existing files unless you pass `--force`,
+so re-running it is safe.  You can override just one file — for example, only
+`invoice.html` — and the packaged `style.css` is still used as the fallback;
+delete whichever file you don't customise.
 
 ## Security
 

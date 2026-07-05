@@ -25,6 +25,7 @@ Step-by-step guides for common tasks:
 | **[harvest-exporter](packages/harvest/src/harvest_exporter/README.md)** | Export timesheets from [Harvest](https://getharvest.com) with currency conversion |
 | **[harvest-rounder](packages/harvest/src/harvest_rounder/README.md)** | Round Harvest time entries up to the nearest increment |
 | **[kimai-exporter](packages/harvest/src/kimai_exporter/README.md)** | Export time entries from [Kimai](https://www.kimai.org) |
+| **[working-days-calculator](packages/working-days-calculator/README.md)** | Count unique working days from a Harvest time report CSV |
 
 ### Invoicing & Accounting
 

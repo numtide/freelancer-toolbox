@@ -70,6 +70,17 @@
           "../../pyproject.toml"
         ];
       };
+      "packages/working-days-calculator" = {
+        modules = [ "src/working_days_calculator" ];
+        extraPythonPackages = with pkgs.python3.pkgs; [
+          pandas
+          pandas-stubs
+        ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
       "packages/sevdesk-cli" = {
         modules = [ "src/sevdesk_cli" ];
         extraPythonPackages = [ perSystem.self.sevdesk-api ];

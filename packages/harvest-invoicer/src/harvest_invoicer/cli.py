@@ -18,7 +18,12 @@ from harvest_invoicer.fetch import (
     resolve_client,
     resolve_invoice_number,
 )
-from harvest_invoicer.model import DEFAULT_PAYMENT_TERM_DAYS, Invoice, InvoiceLine
+from harvest_invoicer.model import (
+    DEFAULT_PAYMENT_TERM_DAYS,
+    Invoice,
+    InvoiceLine,
+    merge_duplicate_lines,
+)
 
 _DEFAULT_PORT = 8321
 
@@ -35,6 +40,16 @@ _TEMPLATES_DIR_OPTION = click.option(
     help=(
         "Custom templates directory (invoice.html, style.css). "
         "Packaged defaults are used as fallback on a per-file basis."
+    ),
+)
+
+_MERGE_DUPLICATES_OPTION = click.option(
+    "--merge-duplicates",
+    "merge_duplicates",
+    is_flag=True,
+    help=(
+        "Collapse lines with identical description, rate, and VAT after "
+        "import (sums quantities across team members)."
     ),
 )
 
@@ -178,6 +193,7 @@ def main() -> None:
     help="Use synthetic data (no Harvest credentials required).",
 )
 @_period_options
+@_MERGE_DUPLICATES_OPTION
 def edit(
     month: str | None,
     client_filter: str | None,
@@ -194,6 +210,7 @@ def edit(
     demo: bool,
     period_start: datetime | None,
     period_end: datetime | None,
+    merge_duplicates: bool,
 ) -> None:
     """Launch the interactive invoice editor in a local browser."""
     month = month or _previous_month()
@@ -224,6 +241,8 @@ def edit(
             )
 
     lines = _fetch(p_start, p_end)
+    if merge_duplicates:
+        lines = merge_duplicate_lines(lines)
 
     client_entry = resolve_client(client_filter, clients, lines)
     number = resolve_invoice_number(
@@ -327,6 +346,7 @@ def edit(
     help="Use synthetic data (no Harvest credentials required).",
 )
 @_period_options
+@_MERGE_DUPLICATES_OPTION
 def generate(
     months: tuple[str, ...],
     client_filter: str | None,
@@ -341,6 +361,7 @@ def generate(
     demo: bool,
     period_start: datetime | None,
     period_end: datetime | None,
+    merge_duplicates: bool,
 ) -> None:
     """Headless: fetch → render → PDF for one or more months (no browser)."""
     from harvest_invoicer.render import render_pdf  # noqa: PLC0415
@@ -380,6 +401,8 @@ def generate(
                     currency=currency,
                     use_agency=not no_agency,
                 )
+            if merge_duplicates:
+                lines = merge_duplicate_lines(lines)
             client_entry = resolve_client(client_filter, clients, lines)
             number = resolve_invoice_number(
                 month,

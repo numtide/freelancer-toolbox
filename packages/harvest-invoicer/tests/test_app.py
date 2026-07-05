@@ -330,6 +330,47 @@ class TestFetchFromEditor:
         resp = client.get("/")
         assert b"Fetch from Harvest" in resp.data
         assert b'id="fetch-status"' in resp.data
+        assert b'id="merge-on-fetch"' in resp.data
+        assert b'id="fetch-indicator"' in resp.data
+
+    def test_fetch_merges_duplicates_when_checked(self, tmp_path: Path) -> None:
+        def dup_fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            return [
+                InvoiceLine(concept="Programming", unit_price=172.5, quantity=92.0),
+                InvoiceLine(concept="Programming", unit_price=172.5, quantity=160.0),
+                InvoiceLine(concept="Infra", unit_price=172.5, quantity=47.5),
+            ]
+
+        app = self._make_app(tmp_path, dup_fetch)
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={
+                    "period_start": "2026-06-01",
+                    "period_end": "2026-06-30",
+                    "merge_duplicates": "on",
+                },
+            )
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert len(inv.lines) == 2
+        assert inv.lines[0].quantity == pytest.approx(252.0)
+        assert b"Imported 2 lines (3 before merging duplicates)" in resp.data
+
+    def test_fetch_keeps_raw_lines_when_unchecked(self, tmp_path: Path) -> None:
+        def dup_fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            return [
+                InvoiceLine(concept="Programming", unit_price=172.5, quantity=92.0),
+                InvoiceLine(concept="Programming", unit_price=172.5, quantity=160.0),
+            ]
+
+        app = self._make_app(tmp_path, dup_fetch)
+        with app.test_client() as c:
+            c.post(
+                "/lines/fetch",
+                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+            )
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert len(inv.lines) == 2
 
 
 class TestMergeDuplicates:

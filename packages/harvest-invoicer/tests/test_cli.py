@@ -65,6 +65,15 @@ def test_generate_period_flags_require_single_month() -> None:
     assert "single --month" in result.output
 
 
+def test_merge_duplicates_flag_available() -> None:
+    """Both commands expose --merge-duplicates."""
+    runner = CliRunner()
+    for cmd in ("edit", "generate"):
+        result = runner.invoke(main, [cmd, "--help"])
+        assert result.exit_code == 0
+        assert "--merge-duplicates" in result.output
+
+
 class TestTemplatesInit:
     def test_creates_folder_with_packaged_copies(self, tmp_path: Path) -> None:
         """templates init scaffolds the directory with both template files."""

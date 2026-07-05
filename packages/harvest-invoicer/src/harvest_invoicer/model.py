@@ -95,6 +95,34 @@ class Invoice:
 
 
 # --------------------------------------------------------------------------
+# Line transforms
+# --------------------------------------------------------------------------
+
+
+def merge_duplicate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
+    """Collapse lines with identical concept, rate, and VAT into one.
+
+    Harvest aggregation is per team member, so several people logging the
+    same task at the same rate yield visually identical rows.  Quantities
+    are summed; order of first occurrence is preserved.
+    """
+    grouped: dict[tuple[str, float, float], InvoiceLine] = {}
+    for line in lines:
+        key = (line.concept, line.unit_price, line.vat_rate)
+        existing = grouped.get(key)
+        if existing is None:
+            grouped[key] = InvoiceLine(
+                concept=line.concept,
+                unit_price=line.unit_price,
+                quantity=line.quantity,
+                vat_rate=line.vat_rate,
+            )
+        else:
+            existing.quantity = round(existing.quantity + line.quantity, 4)
+    return list(grouped.values())
+
+
+# --------------------------------------------------------------------------
 # Formatting helpers
 # --------------------------------------------------------------------------
 

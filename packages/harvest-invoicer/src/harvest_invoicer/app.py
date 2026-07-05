@@ -22,6 +22,7 @@ from harvest_invoicer.model import (
     fmt_date,
     fmt_money,
     fmt_qty,
+    merge_duplicate_lines,
 )
 from harvest_invoicer.render import _effective_base_url, render_html
 
@@ -313,34 +314,25 @@ def create_app(
         except Exception as exc:  # noqa: BLE001 — surface fetch errors inline
             return _respond(str(exc), error=True)
 
+        raw_count = len(new_lines)
+        merged_note = ""
+        if request.form.get("merge_duplicates") == "on":
+            new_lines = merge_duplicate_lines(new_lines)
+            if len(new_lines) != raw_count:
+                merged_note = f" ({raw_count} before merging duplicates)"
+
         inv.lines[:] = new_lines
         inv.period_start = ps
         inv.period_end = pe
-        return _respond(f"Imported {len(new_lines)} lines for {ps} to {pe}.")
+        return _respond(
+            f"Imported {len(new_lines)} lines{merged_note} for {ps} to {pe}."
+        )
 
     @app.post("/lines/merge-duplicates")
-    def merge_duplicate_lines() -> Response:
-        """Collapse lines with identical concept, rate, and VAT into one.
-
-        Harvest aggregation is per team member, so several people logging the
-        same task at the same rate yield visually identical rows.  Quantities
-        are summed; original order of first occurrence is preserved.
-        """
+    def merge_duplicates_route() -> Response:
+        """Collapse lines with identical concept, rate, and VAT into one."""
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
-        grouped: dict[tuple[str, float, float], InvoiceLine] = {}
-        for line in inv.lines:
-            key = (line.concept, line.unit_price, line.vat_rate)
-            existing = grouped.get(key)
-            if existing is None:
-                grouped[key] = InvoiceLine(
-                    concept=line.concept,
-                    unit_price=line.unit_price,
-                    quantity=line.quantity,
-                    vat_rate=line.vat_rate,
-                )
-            else:
-                existing.quantity = round(existing.quantity + line.quantity, 4)
-        inv.lines[:] = list(grouped.values())
+        inv.lines[:] = merge_duplicate_lines(inv.lines)
         rows_html = _render_rows(inv)
         totals_html = _render_totals(inv)
         return Response(rows_html + totals_html, content_type="text/html")

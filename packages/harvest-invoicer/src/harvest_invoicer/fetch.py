@@ -235,8 +235,38 @@ def load_clients(clients_file: str) -> dict[str, dict[str, str]]:
         if not isinstance(entry, dict):
             msg = f"clients.json entry for '{key}' must be an object."
             raise click.ClickException(msg)
+        vat = entry.get("vat_rate")
+        if vat is not None:
+            try:
+                vat_val = float(vat)
+            except (TypeError, ValueError):
+                vat_val = -1.0
+            if not 0.0 <= vat_val <= 1.0:
+                msg = (
+                    f"clients.json entry for '{key}': vat_rate must be a number "
+                    f"between 0 and 1 (e.g. 0.21 for 21%), got {vat!r}."
+                )
+                raise click.ClickException(msg)
         result[key] = entry
     return result
+
+
+def apply_client_vat(
+    lines: list[InvoiceLine],
+    client_entry: dict[str, str],
+) -> list[InvoiceLine]:
+    """Apply the client's optional ``vat_rate`` (clients.json) to every line.
+
+    Lines keep their existing rate when the client entry has no
+    ``vat_rate``.  Returns the same list for chaining.
+    """
+    vat_raw = client_entry.get("vat_rate")
+    if vat_raw is None:
+        return lines
+    vat = float(vat_raw)
+    for line in lines:
+        line.vat_rate = vat
+    return lines
 
 
 def resolve_client(

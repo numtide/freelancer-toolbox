@@ -10,6 +10,7 @@ from pathlib import Path
 import click
 
 from harvest_invoicer.fetch import (
+    apply_client_vat,
     fetch_lines,
     load_clients,
     load_issuer,
@@ -245,6 +246,12 @@ def edit(
         lines = merge_duplicate_lines(lines)
 
     client_entry = resolve_client(client_filter, clients, lines)
+    lines = apply_client_vat(lines, client_entry)
+
+    def _fetch_with_vat(ps: date, pe: date) -> list[InvoiceLine]:
+        """Editor re-fetches get the client's vat_rate applied too."""
+        return apply_client_vat(_fetch(ps, pe), client_entry)
+
     number = resolve_invoice_number(
         month,
         number_override=number_override,
@@ -264,7 +271,7 @@ def edit(
         currency,
         period_start=p_start,
         period_end=p_end,
-        fetch_callback=_fetch,
+        fetch_callback=_fetch_with_vat,
     )
 
     url = f"http://127.0.0.1:{port}/"
@@ -404,6 +411,7 @@ def generate(
             if merge_duplicates:
                 lines = merge_duplicate_lines(lines)
             client_entry = resolve_client(client_filter, clients, lines)
+            lines = apply_client_vat(lines, client_entry)
             number = resolve_invoice_number(
                 month,
                 number_override=number_override,

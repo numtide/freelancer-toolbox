@@ -168,10 +168,17 @@ A JSON object keyed by the exact Harvest client name:
     "address_line2": "Postal code and city",
     "country": "Country",
     "tax_id": "Client tax identifier",
-    "tax_id_label": "VAT No."
+    "tax_id_label": "VAT No.",
+    "vat_rate": 0.21
   }
 }
 ```
+
+**Optional `vat_rate`** (number between 0 and 1, e.g. `0.21` for 21%): applied
+to every imported line for that client — use it for domestic clients that
+must be charged VAT.  Omit it for reverse-charge / VAT-exempt invoicing
+(lines default to 0%).  The rate can still be adjusted per line via the
+invoice model if needed.
 
 See `src/harvest_invoicer/examples/` for full working examples with fake data.
 

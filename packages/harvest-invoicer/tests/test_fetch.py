@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import click
 import pytest
 from harvest_exporter.cli import NUMTIDE_RATE
-from harvest_invoicer.fetch import fetch_lines
+from harvest_invoicer.fetch import apply_client_vat, fetch_lines, load_clients
+from harvest_invoicer.model import InvoiceLine
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _JUNE = (date(2026, 6, 1), date(2026, 6, 30))
 
@@ -126,3 +132,41 @@ class TestIsExternalFiltering:
         assert len(lines) == 1
         # Project-based grouping: concept starts with project name, not client name
         assert "Website" in lines[0].concept
+
+
+class TestClientVat:
+    """Per-client vat_rate from clients.json."""
+
+    def test_apply_client_vat_sets_rate(self) -> None:
+        lines = [
+            InvoiceLine(concept="Dev", unit_price=100.0, quantity=10.0),
+            InvoiceLine(concept="Review", unit_price=100.0, quantity=2.0),
+        ]
+        entry = {"name": "Domestic Client", "vat_rate": 0.21}
+        result = apply_client_vat(lines, entry)  # type: ignore[arg-type]
+        assert all(line.vat_rate == 0.21 for line in result)
+        # Totals reflect VAT: 1200 base + 21%
+        assert sum(line.total for line in result) == pytest.approx(1452.0)
+
+    def test_apply_client_vat_absent_keeps_rate(self) -> None:
+        lines = [InvoiceLine(concept="Dev", unit_price=100.0, quantity=10.0)]
+        result = apply_client_vat(lines, {"name": "Reverse Charge Client"})
+        assert result[0].vat_rate == 0.0
+
+    def test_load_clients_accepts_valid_vat_rate(self, tmp_path: Path) -> None:
+        p = tmp_path / "clients.json"
+        p.write_text(json.dumps({"Acme": {"name": "Acme Ltd", "vat_rate": 0.21}}))
+        clients = load_clients(str(p))
+        assert clients["Acme"]["vat_rate"] == 0.21
+
+    def test_load_clients_rejects_out_of_range_vat(self, tmp_path: Path) -> None:
+        p = tmp_path / "clients.json"
+        p.write_text(json.dumps({"Acme": {"name": "Acme Ltd", "vat_rate": 21}}))
+        with pytest.raises(click.ClickException, match="vat_rate"):
+            load_clients(str(p))
+
+    def test_load_clients_rejects_non_numeric_vat(self, tmp_path: Path) -> None:
+        p = tmp_path / "clients.json"
+        p.write_text(json.dumps({"Acme": {"name": "Acme Ltd", "vat_rate": "lots"}}))
+        with pytest.raises(click.ClickException, match="vat_rate"):
+            load_clients(str(p))

@@ -260,6 +260,29 @@
 
     /* ===== Preview ===== */
     .preview-col .card { padding: 16px; }
+    .preview-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .preview-head h2 { margin: 0; }
+    .seg { display: flex; gap: 10px; }
+    .seg-btn {
+      padding: 6px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--line-strong);
+      color: var(--ink);
+    }
+    .seg-btn.active {
+      background: var(--orange);
+      border-color: var(--orange);
+      color: #fff;
+    }
     iframe {
       display: block;
       width: 100%;
@@ -338,7 +361,15 @@
 
       <div class="preview-col">
         <section class="card">
-          <h2>Live preview</h2>
+          <div class="preview-head">
+            <h2>Live preview</h2>
+            <div class="seg" role="tablist" aria-label="Preview mode">
+              <button type="button" id="mode-html" class="seg-btn active"
+                title="Instant HTML preview (same template and stylesheet as the PDF)">HTML</button>
+              <button type="button" id="mode-pdf" class="seg-btn"
+                title="Exact PDF preview — byte-identical to the generated file">PDF</button>
+            </div>
+          </div>
           <iframe id="preview-frame" src="/preview" title="Invoice preview"></iframe>
         </section>
       </div>
@@ -347,15 +378,43 @@
   </main>
 
   <script>
-    // Reload the preview iframe after every successful htmx edit, so the
-    // rendered invoice always reflects the current state.
-    document.body.addEventListener("htmx:afterRequest", function (evt) {
-      if (!evt.detail.successful) return;
+    // Preview refresh. HTML mode reloads instantly after each edit; PDF mode
+    // re-renders through WeasyPrint (~0.5-1s), so refreshes are debounced.
+    (function () {
       var frame = document.getElementById("preview-frame");
-      if (frame && frame.contentWindow) {
-        frame.contentWindow.location.reload();
+      var htmlBtn = document.getElementById("mode-html");
+      var pdfBtn = document.getElementById("mode-pdf");
+      var mode = "html";
+      var debounce = null;
+
+      function srcFor(m) {
+        // Cache-busting query so assigning src always re-renders the PDF.
+        return m === "pdf" ? "/preview.pdf?t=" + Date.now() + "#toolbar=0" : "/preview";
       }
-    });
+
+      function setMode(m) {
+        mode = m;
+        htmlBtn.classList.toggle("active", m === "html");
+        pdfBtn.classList.toggle("active", m === "pdf");
+        frame.src = srcFor(m);
+      }
+      htmlBtn.addEventListener("click", function () { setMode("html"); });
+      pdfBtn.addEventListener("click", function () { setMode("pdf"); });
+
+      function refresh() {
+        if (mode === "pdf") {
+          frame.src = srcFor("pdf");
+        } else if (frame.contentWindow) {
+          frame.contentWindow.location.reload();
+        }
+      }
+
+      document.body.addEventListener("htmx:afterRequest", function (evt) {
+        if (!evt.detail.successful) return;
+        clearTimeout(debounce);
+        debounce = setTimeout(refresh, mode === "pdf" ? 600 : 0);
+      });
+    })();
   </script>
 </body>
 </html>

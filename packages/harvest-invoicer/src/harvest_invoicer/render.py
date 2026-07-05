@@ -89,14 +89,13 @@ def render_html(
     return template.render(invoice=invoice, issuer=issuer, client=client)
 
 
-def render_pdf(
+def render_pdf_bytes(
     invoice: Invoice,
     issuer: dict[str, object],
     client: dict[str, str],
-    output_path: Path,
     user_templates_dir: Path | None = None,
-) -> None:
-    """Render invoice to PDF via WeasyPrint, writing to ``output_path``.
+) -> bytes:
+    """Render invoice to PDF via WeasyPrint and return the bytes.
 
     The HTML is rendered first via :func:`render_html`; WeasyPrint then
     converts it using ``base_url`` so that relative ``style.css`` links
@@ -109,7 +108,25 @@ def render_pdf(
     html_str = render_html(invoice, issuer, client, user_templates_dir)
     base_url = _effective_base_url(user_templates_dir)
     font_config = FontConfiguration()
-    HTML(string=html_str, base_url=base_url).write_pdf(
-        target=str(output_path),
+    pdf = HTML(string=html_str, base_url=base_url).write_pdf(
         font_config=font_config,
+    )
+    # write_pdf returns bytes when no target is given; guard narrows the
+    # untyped return for mypy and catches API changes.
+    if not isinstance(pdf, bytes):  # pragma: no cover
+        msg = "WeasyPrint returned no PDF data"
+        raise TypeError(msg)
+    return pdf
+
+
+def render_pdf(
+    invoice: Invoice,
+    issuer: dict[str, object],
+    client: dict[str, str],
+    output_path: Path,
+    user_templates_dir: Path | None = None,
+) -> None:
+    """Render invoice to PDF via WeasyPrint, writing to ``output_path``."""
+    output_path.write_bytes(
+        render_pdf_bytes(invoice, issuer, client, user_templates_dir)
     )

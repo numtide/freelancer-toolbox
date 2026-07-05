@@ -151,8 +151,27 @@ def run() -> None:
             print(f"  [FAIL] GET /preview    -> {status}")
             ok = False
 
+        # ------------------------------------------------------------------
+        # 7. /preview.pdf — 200 + %PDF magic (503 when WeasyPrint native
+        #    libraries are unavailable; the nix run path below still covers
+        #    real PDF rendering in that case)
+        # ------------------------------------------------------------------
+        status, data = _get(f"{base}/preview.pdf")
+        if status == 200 and data.startswith(b"%PDF"):
+            print(
+                f"  [PASS] GET /preview.pdf -> {status}, %PDF magic, {len(data)} bytes"
+            )
+        elif status == 503:
+            print(
+                "  [SKIP] GET /preview.pdf -> 503 "
+                "(WeasyPrint native libs unavailable in this environment)"
+            )
+        else:
+            print(f"  [FAIL] GET /preview.pdf -> status={status}, head={data[:8]!r}")
+            ok = False
+
     # ------------------------------------------------------------------
-    # 7. PDF generation via nix run (demo mode, no Harvest credentials)
+    # 8. PDF generation via nix run (demo mode, no Harvest credentials)
     # ------------------------------------------------------------------
     print("Running headless PDF generation in demo mode via nix run…")
     with tempfile.TemporaryDirectory() as out_dir:
@@ -188,7 +207,7 @@ def run() -> None:
             ok = False
 
     # ------------------------------------------------------------------
-    # 8. Wheel content: NOTICE + js present
+    # 9. Wheel content: NOTICE + js present
     # ------------------------------------------------------------------
     notice = _STATIC_DIR / "htmx.min.js.NOTICE"
     js = _STATIC_DIR / "htmx.min.js"

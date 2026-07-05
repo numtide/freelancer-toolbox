@@ -9,6 +9,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from flask import Flask, Response, render_template, request
+from markupsafe import escape
 
 from harvest_invoicer.model import (
     DEFAULT_PAYMENT_TERM_DAYS,
@@ -142,6 +143,34 @@ def create_app(
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         utd: Path | None = app.state["user_templates_dir"]  # type: ignore[attr-defined]
         return render_html(inv, issuer, client, utd)
+
+    @app.get("/preview.pdf")
+    def preview_pdf() -> Response:
+        """True-to-output preview: the exact WeasyPrint render, in memory.
+
+        Byte-identical to what the Generate PDF button writes, so the PDF
+        preview shows real pagination, fonts, and page footers.
+        """
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        utd: Path | None = app.state["user_templates_dir"]  # type: ignore[attr-defined]
+        from harvest_invoicer.render import render_pdf_bytes  # noqa: PLC0415
+
+        try:
+            pdf = render_pdf_bytes(inv, issuer, client, utd)
+        except Exception as exc:  # noqa: BLE001 — surface render errors in the pane
+            return Response(
+                f"<p>PDF preview unavailable: {escape(str(exc))}</p>",
+                status=503,
+                mimetype="text/html",
+            )
+        return Response(
+            pdf,
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": "inline; filename=preview.pdf",
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.get("/style.css")
     def style_css() -> Response:

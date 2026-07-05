@@ -160,6 +160,40 @@ class TestStaticAssets:
         )
 
 
+def _weasyprint_available() -> bool:
+    """WeasyPrint imports its native libs (pango, gobject) at import time."""
+    try:
+        import weasyprint  # noqa: F401, PLC0415
+    except Exception:  # noqa: BLE001 — raises OSError/Exception on missing libs
+        return False
+    return True
+
+
+class TestPreviewPdf:
+    def test_preview_pdf_is_real_pdf(self, client: FlaskClient) -> None:
+        """/preview.pdf serves the WeasyPrint render with the PDF magic bytes."""
+        if not _weasyprint_available():
+            pytest.skip("WeasyPrint native libraries unavailable in this environment")
+        resp = client.get("/preview.pdf")
+        assert resp.status_code == 200
+        assert resp.mimetype == "application/pdf"
+        assert resp.data.startswith(b"%PDF")
+
+    def test_preview_pdf_unavailable_returns_503(self, client: FlaskClient) -> None:
+        """When WeasyPrint cannot render, the route degrades to a 503 message."""
+        if _weasyprint_available():
+            pytest.skip("WeasyPrint works here; failure path not reachable")
+        resp = client.get("/preview.pdf")
+        assert resp.status_code == 503
+        assert b"PDF preview unavailable" in resp.data
+
+    def test_editor_has_preview_toggle(self, client: FlaskClient) -> None:
+        resp = client.get("/")
+        assert b'id="mode-html"' in resp.data
+        assert b'id="mode-pdf"' in resp.data
+        assert b"/preview.pdf" in resp.data
+
+
 class TestServicePeriod:
     """Service period: month-derived default, customizable in the editor."""
 

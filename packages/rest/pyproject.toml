@@ -1,3 +1,5 @@
+# Internal workspace library (not intended for PyPI publication;
+# the generic dist name is safe within this uv workspace).
 [project]
 name = "rest"
 version = "0.1.0"

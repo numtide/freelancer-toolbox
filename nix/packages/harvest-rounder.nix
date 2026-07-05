@@ -10,6 +10,8 @@ pkgs.python3.pkgs.buildPythonApplication {
   doCheck = false;
 
   dependencies = [
+    # Rich is a dependency of the shared pyproject.toml even though
+    # harvest-rounder doesn't use it directly
     pkgs.python3.pkgs.rich
     perSystem.self.rest
     perSystem.self.transferwise

@@ -11,9 +11,9 @@ from fractions import Fraction
 
 import kimai
 import kimai.api
-from harvest_exporter.transferwise import exchange_rate as get_exchange_rate
 from kimai.data import JsonSerializable, ProjectInfo, TimeEntry, UserInfo
 from kimai.jsonserializer import JsonEncoder
+from transferwise import exchange_rate as get_exchange_rate
 
 from . import ProjectReport
 

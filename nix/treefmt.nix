@@ -8,6 +8,21 @@
   programs.mypy = {
     enable = true;
     directories = {
+      "packages/rest" = {
+        modules = [ "src/rest" ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
+      "packages/transferwise" = {
+        modules = [ "src/transferwise" ];
+        extraPythonPackages = [ perSystem.self.rest ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
       "packages/harvest" = {
         modules = [
           "src/harvest"
@@ -15,7 +30,11 @@
           "src/harvest_rounder"
           "src/kimai"
           "src/kimai_exporter"
-          "src/rest"
+        ];
+        extraPythonPackages = [
+          perSystem.self.rest
+          perSystem.self.transferwise
+          pkgs.python3.pkgs.rich
         ];
         options = [
           "--config-file"

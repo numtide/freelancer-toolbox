@@ -11,9 +11,11 @@ members = [
     "harvest-exporter",
     "paperless-cli",
     "quipu",
+    "rest",
     "sevdesk-api",
     "sevdesk-cli",
     "sevdesk-invoicer",
+    "transferwise",
     "wise-exporter",
 ]
 
@@ -162,11 +164,17 @@ name = "harvest-exporter"
 version = "0.1.0"
 source = { editable = "packages/harvest" }
 dependencies = [
+    { name = "rest" },
     { name = "rich" },
+    { name = "transferwise" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "rich" }]
+requires-dist = [
+    { name = "rest", editable = "packages/rest" },
+    { name = "rich" },
+    { name = "transferwise", editable = "packages/transferwise" },
+]
 
 [[package]]
 name = "idna"
@@ -401,6 +409,11 @@ wheels = [
 ]
 
 [[package]]
+name = "rest"
+version = "0.1.0"
+source = { editable = "packages/rest" }
+
+[[package]]
 name = "rich"
 version = "15.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -504,6 +517,17 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "sevdesk-api", editable = "packages/sevdesk-api" }]
+
+[[package]]
+name = "transferwise"
+version = "0.1.0"
+source = { editable = "packages/transferwise" }
+dependencies = [
+    { name = "rest" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "rest", editable = "packages/rest" }]
 
 [[package]]
 name = "typing-extensions"

@@ -35,6 +35,12 @@ Step-by-step guides for common tasks:
 | **[sevdesk-invoicer](packages/sevdesk-invoicer/README.md)** | Generate SevDesk invoices, import Wise transactions, estimate taxes |
 | **[quipu](packages/quipu-invoicer/README.md)** | Generate invoices in [Quipu](https://getquipu.com) |
 
+### Currency & Rates
+
+| Tool | Description |
+|------|-------------|
+| **[ecbx](packages/ecbx/README.md)** | Fetch and query exchange rates from the [European Central Bank](https://www.ecb.europa.eu) |
+
 ### Banking
 
 | Tool | Description |

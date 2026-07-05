@@ -208,15 +208,22 @@ def edit(
     clients = load_clients(clients_path)
 
     if demo:
-        lines = make_demo_lines()
+
+        def _fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            return make_demo_lines()
     else:
-        lines = fetch_lines(
-            month,
-            client_filter=client_filter,
-            user_filter=user_filter,
-            currency=currency,
-            use_agency=not no_agency,
-        )
+
+        def _fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            return fetch_lines(
+                ps,
+                pe,
+                client_filter=client_filter,
+                user_filter=user_filter,
+                currency=currency,
+                use_agency=not no_agency,
+            )
+
+    lines = _fetch(p_start, p_end)
 
     client_entry = resolve_client(client_filter, clients, lines)
     number = resolve_invoice_number(
@@ -238,6 +245,7 @@ def edit(
         currency,
         period_start=p_start,
         period_end=p_end,
+        fetch_callback=_fetch,
     )
 
     url = f"http://127.0.0.1:{port}/"
@@ -360,11 +368,13 @@ def generate(
     for month in resolved_months:
         try:
             parse_month(month)  # validate format before demo branch
+            p_start, p_end = _resolve_period(month, period_start, period_end)
             if demo:
                 lines = make_demo_lines()
             else:
                 lines = fetch_lines(
-                    month,
+                    p_start,
+                    p_end,
                     client_filter=client_filter,
                     user_filter=user_filter,
                     currency=currency,
@@ -376,7 +386,6 @@ def generate(
                 number_override=number_override,
                 number_template=str(issuer.get("number_template") or ""),
             )
-            p_start, p_end = _resolve_period(month, period_start, period_end)
             invoice = _build_invoice(
                 lines,
                 number,

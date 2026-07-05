@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import date
 from unittest.mock import patch
 
 import click
 import pytest
 from harvest_exporter.cli import NUMTIDE_RATE
 from harvest_invoicer.fetch import fetch_lines
+
+_JUNE = (date(2026, 6, 1), date(2026, 6, 30))
 
 
 def _entry(
@@ -49,7 +52,7 @@ class TestAgencyModeWiring:
         ):
             mock_agg.return_value = {}
             with pytest.raises(click.ClickException):
-                fetch_lines("2026-06")
+                fetch_lines(*_JUNE)
             mock_agg.assert_called_once()
             _args, kwargs = mock_agg.call_args
             assert kwargs["agency_rate"] == NUMTIDE_RATE
@@ -63,7 +66,7 @@ class TestAgencyModeWiring:
         ):
             mock_agg.return_value = {}
             with pytest.raises(click.ClickException):
-                fetch_lines("2026-06", use_agency=False)
+                fetch_lines(*_JUNE, use_agency=False)
             mock_agg.assert_called_once()
             _args, kwargs = mock_agg.call_args
             assert kwargs["agency_rate"] is None
@@ -84,7 +87,7 @@ class TestIsExternalFiltering:
             ),
         ]
         with patch("harvest.get_time_entries", return_value=entries):
-            lines = fetch_lines("2026-06", use_agency=True)
+            lines = fetch_lines(*_JUNE, use_agency=True)
 
         # Only the internal Acme Corp entry should appear
         assert len(lines) == 1
@@ -105,7 +108,7 @@ class TestIsExternalFiltering:
         ]
         with patch("harvest.get_time_entries", return_value=entries):
             # In agency mode, external clients use project name as client key
-            lines = fetch_lines("2026-06", use_agency=True, client_filter="OSS Project")
+            lines = fetch_lines(*_JUNE, use_agency=True, client_filter="OSS Project")
 
         assert len(lines) == 1
         assert "OSS Project" in lines[0].concept
@@ -118,7 +121,7 @@ class TestIsExternalFiltering:
             ),
         ]
         with patch("harvest.get_time_entries", return_value=entries):
-            lines = fetch_lines("2026-06", use_agency=False, client_filter="Website")
+            lines = fetch_lines(*_JUNE, use_agency=False, client_filter="Website")
 
         assert len(lines) == 1
         # Project-based grouping: concept starts with project name, not client name

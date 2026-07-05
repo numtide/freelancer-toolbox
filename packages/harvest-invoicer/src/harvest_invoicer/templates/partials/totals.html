@@ -1,4 +1,7 @@
-<div id="totals-block">
+{# hx-swap-oob: when this fragment rides along in a line-mutation response,
+   htmx swaps it into the existing #totals-block instead of inserting it at
+   the swap target. Inert in the initially rendered page. #}
+<div id="totals-block" hx-swap-oob="outerHTML">
   <table class="totals-editor">
     <tr><td>Subtotal</td><td class="num">{{ fmt_money(invoice.subtotal) }} {{ invoice.currency }}</td></tr>
     <tr><td>VAT</td><td class="num">{{ fmt_money(invoice.vat_total) }} {{ invoice.currency }}</td></tr>

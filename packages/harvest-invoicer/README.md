@@ -75,12 +75,19 @@ harvest-invoicer generate [--month YYYY-MM]... [--client NAME] [--user NAME]
 `--month` is repeatable; one PDF is produced per month.  Exits non-zero if any
 month has no entries.
 
-### Service period
+### Service period and import range
 
-Each invoice shows a **Period** row (the service period it covers), defaulting
-to the first and last day of `--month`.  Customize it with
-`--period-start` / `--period-end` (single-month only), or edit the period
-directly in the interactive editor — clearing both fields removes the row.
+The service period drives **both** the Harvest import range and the
+**Period** row shown on the invoice.  It defaults to the first and last day
+of `--month`; customize it with `--period-start` / `--period-end`
+(single-month only) to import and bill a partial month.
+
+In the interactive editor the period is editable, and **Fetch from Harvest**
+re-imports the line items for the selected range on the spot — change the
+dates, click the button, and the table, totals, and preview update (a
+confirmation guards against overwriting manual edits).  Editing the period
+fields alone only relabels the invoice; clearing both removes the Period
+row.
 
 ### Agency mode and `--no-agency`
 

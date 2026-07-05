@@ -248,6 +248,90 @@ class TestServicePeriod:
         assert b"Period" not in resp.data
 
 
+class TestFetchFromEditor:
+    """POST /lines/fetch re-imports lines for the selected period."""
+
+    def _make_app(self, tmp_path: Path, fetch_callback=None):  # noqa: ANN001, ANN202
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            period_start=date(2026, 6, 1),
+            period_end=date(2026, 6, 30),
+            fetch_callback=fetch_callback,
+        )
+        app.config["TESTING"] = True
+        return app
+
+    def test_fetch_replaces_lines_and_period(self, tmp_path: Path) -> None:
+        def fake_fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            assert ps == date(2026, 5, 1)
+            assert pe == date(2026, 5, 31)
+            return [InvoiceLine(concept="May Work", unit_price=100.0, quantity=10.0)]
+
+        app = self._make_app(tmp_path, fake_fetch)
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"period_start": "2026-05-01", "period_end": "2026-05-31"},
+            )
+        assert resp.status_code == 200
+        assert b"May Work" in resp.data
+        assert b"Imported 1 lines" in resp.data
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert len(inv.lines) == 1
+        assert inv.period_start == date(2026, 5, 1)
+        assert inv.period_end == date(2026, 5, 31)
+
+    def test_fetch_error_keeps_lines(self, tmp_path: Path) -> None:
+        def failing_fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            msg = "No time entries found between 2026-05-01 and 2026-05-31."
+            raise RuntimeError(msg)
+
+        app = self._make_app(tmp_path, failing_fetch)
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"period_start": "2026-05-01", "period_end": "2026-05-31"},
+            )
+        assert resp.status_code == 200
+        assert b"No time entries found" in resp.data
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert len(inv.lines) == 2  # original lines untouched
+        assert inv.period_start == date(2026, 6, 1)  # period untouched
+
+    def test_fetch_invalid_dates_rejected(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path, lambda *_args: [])
+        with app.test_client() as c:
+            resp = c.post("/lines/fetch", data={"period_start": "", "period_end": ""})
+        assert b"valid period" in resp.data
+
+    def test_fetch_end_before_start_rejected(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path, lambda *_args: [])
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"period_start": "2026-06-30", "period_end": "2026-06-01"},
+            )
+        assert b"must not be before" in resp.data
+
+    def test_fetch_without_callback_reports_unavailable(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path, None)
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+            )
+        assert b"not available" in resp.data
+
+    def test_editor_has_fetch_button(self, client: FlaskClient) -> None:
+        resp = client.get("/")
+        assert b"Fetch from Harvest" in resp.data
+        assert b'id="fetch-status"' in resp.data
+
+
 class TestMergeDuplicates:
     """One-click consolidation of per-user duplicate lines."""
 

@@ -7,9 +7,13 @@ import os
 import threading
 from datetime import date, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from flask import Flask, Response, render_template, request
 from markupsafe import escape
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from harvest_invoicer.model import (
     DEFAULT_PAYMENT_TERM_DAYS,
@@ -60,6 +64,7 @@ def create_app(
     currency: str = "EUR",
     period_start: date | None = None,
     period_end: date | None = None,
+    fetch_callback: Callable[[date, date], list[InvoiceLine]] | None = None,
 ) -> Flask:
     """Create and configure the Flask editor application.
 
@@ -69,6 +74,10 @@ def create_app(
 
     When *user_templates_dir* is supplied the ChoiceLoader (in render.py)
     checks that directory first, falling back to the packaged templates.
+
+    ``fetch_callback`` re-imports line items for a (start, end) date range —
+    the editor's "Fetch from Harvest" button.  When ``None`` the button
+    reports that re-fetching is unavailable.
     """
     app = Flask(
         __name__,
@@ -262,6 +271,52 @@ def create_app(
         rows_html = _render_rows(inv)
         totals_html = _render_totals(inv)
         return Response(rows_html + totals_html, content_type="text/html")
+
+    def _fetch_status(message: str, *, error: bool = False) -> str:
+        """OOB status span swapped into #fetch-status next to the button."""
+        css = "fetch-err" if error else "fetch-ok"
+        return (
+            f'<span id="fetch-status" hx-swap-oob="outerHTML" class="{css}">'
+            f"{escape(message)}</span>"
+        )
+
+    @app.post("/lines/fetch")
+    def fetch_lines_route() -> Response:
+        """Re-import line items from Harvest for the selected period.
+
+        Reads period_start/period_end from the form, replaces the invoice
+        lines with freshly fetched data, and updates the invoice period.
+        Errors are reported inline without touching the current lines.
+        """
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+
+        def _respond(status: str, *, error: bool = False) -> Response:
+            rows_html = _render_rows(inv)
+            totals_html = _render_totals(inv)
+            return Response(
+                rows_html + totals_html + _fetch_status(status, error=error),
+                content_type="text/html",
+            )
+
+        try:
+            ps = date.fromisoformat(request.form.get("period_start", "").strip())
+            pe = date.fromisoformat(request.form.get("period_end", "").strip())
+        except ValueError:
+            return _respond("Select a valid period start and end first.", error=True)
+        if pe < ps:
+            return _respond("Period end must not be before period start.", error=True)
+        if fetch_callback is None:
+            return _respond("Re-fetching is not available in this session.", error=True)
+
+        try:
+            new_lines = fetch_callback(ps, pe)
+        except Exception as exc:  # noqa: BLE001 — surface fetch errors inline
+            return _respond(str(exc), error=True)
+
+        inv.lines[:] = new_lines
+        inv.period_start = ps
+        inv.period_end = pe
+        return _respond(f"Imported {len(new_lines)} lines for {ps} to {pe}.")
 
     @app.post("/lines/merge-duplicates")
     def merge_duplicate_lines() -> Response:

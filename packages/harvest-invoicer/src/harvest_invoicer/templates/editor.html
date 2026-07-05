@@ -257,6 +257,12 @@
       font-size: 14px;
       margin: 0;
     }
+    #fetch-status {
+      font-size: 14px;
+      align-self: center;
+    }
+    .fetch-ok { color: var(--ok); font-weight: 600; }
+    .fetch-err { color: var(--danger); font-weight: 600; }
 
     /* ===== Preview ===== */
     .preview-col .card { padding: 16px; }
@@ -317,6 +323,14 @@
           <form id="meta-form">
             {% include "partials/meta.html" %}
           </form>
+          <div class="toolbar">
+            <button type="button" class="secondary"
+              title="Import time entries from Harvest for the selected period (replaces current line items)"
+              hx-post="/lines/fetch" hx-include="#meta-form"
+              hx-confirm="Replace the current line items with data fetched for the selected period?"
+              hx-target="#line-rows" hx-swap="outerHTML">Fetch from Harvest</button>
+            <span id="fetch-status"></span>
+          </div>
         </section>
 
         <section class="card">

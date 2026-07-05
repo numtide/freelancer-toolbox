@@ -36,7 +36,8 @@ def parse_month(month_str: str) -> tuple[str, str]:
 
 
 def fetch_lines(
-    month: str,
+    period_start: date,
+    period_end: date,
     *,
     client_filter: str | None = None,
     user_filter: str | None = None,
@@ -44,7 +45,10 @@ def fetch_lines(
     vat_rate: float = 0.0,
     use_agency: bool = True,
 ) -> list[InvoiceLine]:
-    """Fetch Harvest entries for *month* and return a list of InvoiceLine.
+    """Fetch Harvest entries between the two dates and return InvoiceLines.
+
+    The inclusive date range drives the Harvest API query directly, so the
+    imported data always matches the invoice's service period.
 
     Requires the ``HARVEST_ACCOUNT_ID`` and ``HARVEST_BEARER_TOKEN``
     environment variables.  Both a ``--client`` filter and a ``--user``
@@ -74,10 +78,10 @@ def fetch_lines(
         msg = "HARVEST_ACCOUNT_ID and HARVEST_BEARER_TOKEN environment variables are required."
         raise click.ClickException(msg)
 
-    start, end = parse_month(month)
+    start, end = period_start.isoformat(), period_end.isoformat()
     entries = get_time_entries(account_id, token, start, end)
     if not entries:
-        msg = f"No time entries found for month {month}."
+        msg = f"No time entries found between {start} and {end}."
         raise click.ClickException(msg)
 
     agency_rate = NUMTIDE_RATE if use_agency else None
@@ -120,7 +124,10 @@ def fetch_lines(
     if not lines:
         client_info = f" (client={client_filter})" if client_filter else ""
         user_info = f" (user={user_filter})" if user_filter else ""
-        msg = f"No billable entries found for month {month}{client_info}{user_info}."
+        msg = (
+            f"No billable entries found between {start} and {end}"
+            f"{client_info}{user_info}."
+        )
         raise click.ClickException(msg)
     return lines
 

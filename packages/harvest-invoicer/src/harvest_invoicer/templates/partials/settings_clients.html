@@ -38,6 +38,15 @@
         <div class="help">For sending the invoice; optional</div>
       </div>
       <div>
+        <label class="slabel">Invoice language</label>
+        <select name="language">
+          <option value="" {% if not entry.get('language') %}selected{% endif %}>Issuer default</option>
+          <option value="en" {% if entry.get('language') == 'en' %}selected{% endif %}>English</option>
+          <option value="es" {% if entry.get('language') == 'es' %}selected{% endif %}>Español</option>
+        </select>
+        <div class="help">Language of invoices for this client</div>
+      </div>
+      <div>
         <label class="slabel">VAT rate</label>
         <input type="number" name="vat_rate" step="0.01" min="0" max="1"
           value="{{ entry.get('vat_rate', '') }}">

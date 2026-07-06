@@ -9,7 +9,9 @@
   margin: 18mm 16mm 16mm 16mm;
 
   @bottom-center {
-    content: "Página " counter(page) " de " counter(pages);
+    /* English default; invoice.html overrides this with the invoice's
+       resolved language. */
+    content: "Page " counter(page) " of " counter(pages);
     font-family: "Schibsted Grotesk", system-ui, sans-serif;
     font-size: 8pt;
     color: rgba(29, 30, 28, 0.4);

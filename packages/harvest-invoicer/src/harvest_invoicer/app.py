@@ -17,6 +17,7 @@ from flask import Flask, Response, render_template, request
 from markupsafe import escape
 
 from harvest_invoicer.fetch import apply_client_vat, client_extra_lines
+from harvest_invoicer.i18n import SUPPORTED_LANGUAGES
 from harvest_invoicer.model import (
     DEFAULT_PAYMENT_TERM_DAYS,
     Invoice,
@@ -313,11 +314,20 @@ def create_app(
         return app.send_static_file("htmx.min.js")
 
     @app.get("/preview")
-    def preview() -> str:
+    def preview() -> Response:
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         utd: Path | None = app.state["user_templates_dir"]  # type: ignore[attr-defined]
         cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
-        return render_html(inv, issuer, cur_client, utd)
+        try:
+            return Response(render_html(inv, issuer, cur_client, utd))
+        except Exception as exc:  # noqa: BLE001 — a broken custom template
+            # must degrade to a readable message in the preview pane, not a
+            # crash (essential once templates become editable from the UI).
+            return Response(
+                f"<pre>Template error: {escape(str(exc))}</pre>",
+                status=500,
+                mimetype="text/html",
+            )
 
     @app.get("/preview.pdf")
     def preview_pdf() -> Response:
@@ -782,6 +792,7 @@ def create_app(
             "number_template",
             "harvest_user",
             "default_bill_to",
+            "language",
         )
         values = {f: request.form.get(f, "").strip() for f in text_fields}
         iban = request.form.get("iban", "").strip()
@@ -803,6 +814,12 @@ def create_app(
             missing.append("bic")
         if missing:
             return _status("Missing required fields: " + ", ".join(missing), error=True)
+        if values["language"] and values["language"] not in SUPPORTED_LANGUAGES:
+            return _status(
+                f"Unsupported language '{values['language']}'. "
+                f"Supported: {', '.join(SUPPORTED_LANGUAGES)}.",
+                error=True,
+            )
         dbt = values["default_bill_to"]
         clients_map_i: dict[str, dict[str, object]] = app.state["clients"]  # type: ignore[attr-defined]
         if dbt and dbt not in clients_map_i:
@@ -879,6 +896,7 @@ def create_app(
             "tax_id",
             "tax_id_label",
             "email",
+            "language",
         )
         values = {f: request.form.get(f, "").strip() for f in fields}
         required = ("name", "address_line1", "address_line2", "country", "tax_id")
@@ -890,6 +908,12 @@ def create_app(
         if values["email"] and "@" not in values["email"]:
             return _render_clients_block(
                 "Email must be a valid address (missing '@').", error=True
+            )
+        if values["language"] and values["language"] not in SUPPORTED_LANGUAGES:
+            return _render_clients_block(
+                f"Unsupported language '{values['language']}'. "
+                f"Supported: {', '.join(SUPPORTED_LANGUAGES)}.",
+                error=True,
             )
 
         vat_raw = request.form.get("vat_rate", "").strip()

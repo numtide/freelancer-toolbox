@@ -751,6 +751,7 @@ class TestSettings:
             "country": "Norway",
             "tax_id": "NO000",
             "tax_id_label": "",
+            "language": "",
             "vat_rate": "",
         }
         base.update(overrides)
@@ -826,6 +827,26 @@ class TestSettings:
             )
         assert b"Cannot delete" in resp.data
         assert "Acme Corp" in json.loads(clients_path.read_text())
+
+    def test_client_language_saved_and_validated(self, tmp_path: Path) -> None:
+        app, _, clients_path = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/clients/save",
+                data=self._client_form(
+                    original_key="Acme Corp", key="Acme Corp", language="es"
+                ),
+            )
+            assert b"saved" in resp.data
+            resp = c.post(
+                "/settings/clients/save",
+                data=self._client_form(
+                    original_key="Acme Corp", key="Acme Corp", language="xx"
+                ),
+            )
+            assert b"Unsupported language" in resp.data
+        saved = json.loads(clients_path.read_text())
+        assert saved["Acme Corp"]["language"] == "es"
 
     def test_client_invalid_vat_rejected(self, tmp_path: Path) -> None:
         app, _, _ = self._make_app(tmp_path)

@@ -12,6 +12,7 @@ from jinja2 import (
     select_autoescape,
 )
 
+from harvest_invoicer.i18n import resolve_language, translator
 from harvest_invoicer.model import (
     Invoice,
     fmt_date,
@@ -86,7 +87,14 @@ def render_html(
     date_format = str(issuer.get("date_format") or "%Y-%m-%d")
     env = _build_jinja_env(date_format, user_templates_dir)
     template = env.get_template("invoice.html")
-    return template.render(invoice=invoice, issuer=issuer, client=client)
+    lang = resolve_language(client, issuer)
+    return template.render(
+        invoice=invoice,
+        issuer=issuer,
+        client=client,
+        lang=lang,
+        t=translator(lang),
+    )
 
 
 def render_pdf_bytes(

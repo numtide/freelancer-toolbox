@@ -137,6 +137,15 @@
                 <input type="text" name="default_bill_to" value="{{ issuer.get('default_bill_to', '') }}" placeholder="numtide">
                 <div class="help">Pre-selected in the "Bill to" field</div>
               </div>
+              <div>
+                <label class="slabel">Invoice language</label>
+                <select name="language">
+                  <option value="" {% if not issuer.get('language') %}selected{% endif %}>English (default)</option>
+                  <option value="en" {% if issuer.get('language') == 'en' %}selected{% endif %}>English</option>
+                  <option value="es" {% if issuer.get('language') == 'es' %}selected{% endif %}>Español</option>
+                </select>
+                <div class="help">Language of the rendered invoice; clients can override it</div>
+              </div>
               <div class="wide">
                 <label class="slabel">Legal note</label>
                 <textarea name="legal_note" rows="2" placeholder="e.g. Reverse charge — VAT exempt under art. 196">{{ issuer.get('legal_note', '') }}</textarea>

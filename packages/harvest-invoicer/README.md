@@ -252,6 +252,13 @@ invoice model if needed.
 **Optional `email`**: the recipient's billing address — not printed on the
 invoice; reserved for sending the invoice by email.
 
+**Optional `language`** (`en` or `es`): the language of invoices rendered
+for this client — headings, column labels, payment block, and the PDF page
+footer.  Defaults to the issuer-level `language`, then English.  Dates keep
+following `date_format` and amounts keep one consistent notation regardless
+of language; `tax_id_label` still overrides the translated default.  Custom
+templates receive the same `t(key)` helper and `lang` variable.
+
 **Optional `extra_lines`**: recurring non-Harvest items (fixed retainer,
 license pass-through, …) automatically appended to every import for that
 client:

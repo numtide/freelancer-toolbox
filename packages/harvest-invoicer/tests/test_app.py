@@ -1173,6 +1173,24 @@ class TestImportRoster:
             assert b"2 of 2 selected" in resp.data
         assert len(app.state["invoice"].lines) == 2  # type: ignore[attr-defined]
 
+    def test_note_renders_once_and_top_level(self, tmp_path: Path) -> None:
+        """Regression: the roster note is a single top-level OOB fragment.
+
+        An earlier build nested a second copy inside the fetch-status span,
+        which htmx materialised as a duplicated note in the editor.
+        """
+        app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+        body = resp.data.decode()
+        assert body.count('id="import-note"') == 1
+        status = body[body.index('id="fetch-status"') :]
+        status = status[: status.index("</span>")]
+        assert "import-note" not in status
+
     def test_manual_row_survives_rederive(self, tmp_path: Path) -> None:
         """H1: rows added by hand are preserved when chips re-slice."""
         app = self._make_app(tmp_path, fetch_callback=self._team_fetch)

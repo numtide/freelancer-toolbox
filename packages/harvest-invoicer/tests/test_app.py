@@ -206,6 +206,8 @@ class TestPreviewPdf:
         assert b'aria-label="Settings"' in resp.data
         assert b"Send invoice" in resp.data
         assert b'class="split-main"' in resp.data
+        # Generate PDF lives only on the primary button, not in the dropdown
+        assert resp.data.count(b"Generate PDF") == 1
         assert b'rel="icon"' in resp.data
         # Dark totals bar and ghost add button per the design handoff
         assert b'class="totals-bar"' in resp.data

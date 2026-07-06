@@ -12,167 +12,201 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
+    <div class="topbar-inner">
       <a class="brand-link" href="/" title="Back to the editor">
         <img class="logo" src="/static/harvest-logo.svg" alt="Harvest">
       </a>
       <h1>Invoicer</h1>
-    </div>
-    <div class="actions">
-      <div id="render-status"></div>
-      <button type="button" class="secondary icon-btn" id="preview-toggle"
-        title="Hide the preview pane" aria-label="Hide or show the preview pane"><svg id="eye-on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg><svg id="eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg></button>
-      <a class="button icon-btn" href="/settings" title="Settings" aria-label="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></a>
-      <div class="split">
-        <button class="primary" title="Output: {{ output_path }}"
-          hx-post="/render" hx-target="#render-status" hx-swap="outerHTML"
-          hx-disabled-elt="this">
-          Generate PDF
+      <span class="crumb">/ Invoice {{ invoice.number }}</span>
+      <div class="actions">
+        <div id="render-status"></div>
+        <button type="button" class="icon-btn active" id="preview-toggle"
+          title="Toggle live preview" aria-label="Toggle live preview">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
         </button>
-        <details class="menu">
-          <summary class="menu-caret" aria-label="More invoice actions">&#9662;</summary>
-          <div class="menu-items">
-            <button type="button" disabled
-              title="Coming soon: email the generated PDF to the client">Send Invoice</button>
-          </div>
-        </details>
+        <a class="icon-btn" href="/settings" title="Settings" aria-label="Settings">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </a>
+        <div class="split">
+          <button type="button" class="split-main" title="Output: {{ output_path }}"
+            hx-post="/render" hx-target="#render-status" hx-swap="outerHTML"
+            hx-disabled-elt="this">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+            Generate PDF
+          </button>
+          <details class="menu">
+            <summary class="menu-caret" aria-label="More invoice actions">&#9662;</summary>
+            <div class="menu-items">
+              <button type="button"
+                hx-post="/render" hx-target="#render-status" hx-swap="outerHTML">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+                Generate PDF
+              </button>
+              <button type="button" class="send-row" disabled
+                title="Coming soon: email the generated PDF to the client">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FA5D00" stroke-width="1.8"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4z"></path></svg>
+                Send invoice
+              </button>
+            </div>
+          </details>
+        </div>
       </div>
     </div>
   </header>
 
-  <main>
-    <div class="layout">
-      <div class="editor-col">
+  <main class="editor-grid" id="layout">
 
-        <section class="card">
-          <h2>Invoice details</h2>
-          {% if clients %}
-          <label class="field field-wide bill-to">
-            <span class="field-label">Bill to</span>
-            <select name="client_key"
-              title="Switch the invoiced client: keeps the current lines, swaps recurring extras, applies the client's VAT"
-              hx-post="/invoice/client" hx-trigger="change"
-              hx-target="#line-rows" hx-swap="outerHTML">
-              {% for key, entry in clients.items() %}
-              <option value="{{ key }}" {% if key == current_client_key %}selected{% endif %}>
-                {{ entry.get('name', key) }} ({{ key }})
-              </option>
-              {% endfor %}
-            </select>
+    <!-- ============ Invoice details ============ -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Invoice details</h2>
+        <span id="inv-no-head" class="hv-num card-meta">Invoice {{ invoice.number }}</span>
+      </div>
+      <form id="meta-form">
+        <div class="card-sec">
+          <div class="eyebrow">Client &amp; dates</div>
+          <label class="field-label">Bill to</label>
+          {% include "partials/client_picker.html" %}
+          {% include "partials/client_inset.html" %}
+          {% include "partials/meta.html" %}
+        </div>
+        <div class="card-sec">
+          {% include "partials/period.html" %}
+        </div>
+      </form>
+      <div class="card-sec">
+        <div class="eyebrow">Import from Harvest</div>
+        <div class="import-panel">
+          <label class="chk-label">
+            <input type="checkbox" id="use-period" checked>
+            Use the invoice billing period
           </label>
-          {% else %}
-          <p class="config-note">No clients configured yet — add one in
-            <a href="/settings">Settings</a>.</p>
-          {% endif %}
-          <form id="meta-form">
-            {% include "partials/meta.html" %}
-          </form>
-          <div class="field-grid fetch-range">
-            <label class="field">
-              <span class="field-label">Import from Harvest — start</span>
-              <input type="date" id="fetch-start" name="fetch_start"
+          <div id="fetch-range" class="grid2" style="margin-top:16px;" hidden>
+            <div>
+              <label class="field-label" style="font-size:13px;color:rgba(29,30,28,0.7);">Range start</label>
+              <input type="date" class="hv-num" id="fetch-start" name="fetch_start"
                 value="{{ invoice.period_start.isoformat() if invoice.period_start else '' }}">
-            </label>
-            <label class="field">
-              <span class="field-label">Import from Harvest — end</span>
-              <input type="date" id="fetch-end" name="fetch_end"
+            </div>
+            <div>
+              <label class="field-label" style="font-size:13px;color:rgba(29,30,28,0.7);">Range end</label>
+              <input type="date" class="hv-num" id="fetch-end" name="fetch_end"
                 value="{{ invoice.period_end.isoformat() if invoice.period_end else '' }}">
-            </label>
-          </div>
-          <div class="toolbar">
-            <button type="button" class="secondary"
-              title="Import time entries from Harvest for the import range (replaces current line items; the invoice period fields above are independent)"
-              hx-post="/lines/fetch" hx-include="#fetch-start, #fetch-end, #merge-on-fetch"
-              hx-confirm="Replace the current line items with data fetched for the import range?"
-              hx-indicator="#fetch-indicator" hx-disabled-elt="this"
-              hx-target="#line-rows" hx-swap="outerHTML">Fetch from Harvest</button>
-            <label class="check-inline"
-              title="Collapse rows with the same description, rate, and VAT after importing">
-              <input type="checkbox" id="merge-on-fetch" name="merge_duplicates" checked>
-              Merge duplicates
-            </label>
-            <span id="fetch-indicator" class="htmx-indicator">Fetching…</span>
-            <span id="fetch-status"
-              class="{{ 'fetch-err' if startup_notice else '' }}">{{ startup_notice or '' }}
-              {%- for name in startup_people %}
-              <button type="button" class="user-pick"
-                hx-post="/settings/harvest-user"
-                hx-vals='{{ {"user": name} | tojson }}'
-                hx-target="#line-rows" hx-swap="outerHTML">{{ name }}</button>
-              {%- endfor %}</span>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>Line items</h2>
-          <table class="lines">
-            <thead>
-              <tr>
-                <th style="width:24px"></th>
-                <th>Description</th>
-                <th class="num">Qty</th>
-                <th class="num">Unit price ({{ invoice.currency }})</th>
-                <th class="num">Subtotal ({{ invoice.currency }})</th>
-                <th></th>
-              </tr>
-            </thead>
-            {% include "partials/rows.html" %}
-          </table>
-
-          <div class="toolbar">
-            <button type="button" class="secondary" hx-post="/lines/add"
-              hx-target="#line-rows" hx-swap="outerHTML">Add row</button>
-
-            <form id="merge-form" style="display:inline">
-              <button type="button" class="secondary"
-                hx-post="/lines/merge" hx-include="#merge-form"
-                hx-target="#line-rows" hx-swap="outerHTML">Merge selected</button>
-            </form>
-
-            <button type="button" class="secondary"
-              title="Combine rows with the same description, rate, and VAT into one line"
-              hx-post="/lines/merge-duplicates"
-              hx-target="#line-rows" hx-swap="outerHTML">Merge duplicates</button>
-
-            <button type="button" class="secondary"
-              title="Restore the line items from before the last change (press again to redo)"
-              hx-post="/lines/undo"
-              hx-target="#line-rows" hx-swap="outerHTML">Undo</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>Totals</h2>
-          {% include "partials/totals.html" %}
-        </section>
-
-      </div><!-- editor-col -->
-
-      <div class="preview-col">
-        <section class="card">
-          <div class="preview-head">
-            <h2>Live preview</h2>
-            <div class="preview-actions">
-              <div class="seg" role="tablist" aria-label="Preview mode">
-                <button type="button" id="mode-html" class="seg-btn"
-                  title="Instant HTML preview (same template and stylesheet as the PDF)">HTML</button>
-                <button type="button" id="mode-pdf" class="seg-btn active"
-                  title="Exact PDF preview — byte-identical to the generated file">PDF</button>
-              </div>
-              <button type="button" id="preview-open" class="seg-btn"
-                title="Open the preview in a separate window">Open</button>
             </div>
           </div>
-          <iframe id="preview-frame" src="/preview.pdf#toolbar=0" title="Invoice preview"></iframe>
-        </section>
+          <div class="import-actions">
+            <button type="button" class="btn-orange"
+              title="Import time entries from Harvest for the range (replaces current line items)"
+              hx-post="/lines/fetch" hx-include="#fetch-start, #fetch-end, #merge-on-fetch"
+              hx-confirm="Replace the current line items with data fetched from Harvest?"
+              hx-indicator="#fetch-indicator" hx-disabled-elt="this"
+              hx-target="#line-rows" hx-swap="outerHTML">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-6.2-8.5"></path><path d="M21 3v6h-6"></path></svg>
+              Fetch from Harvest
+            </button>
+            <label class="chk-label light">
+              <input type="checkbox" id="merge-on-fetch" name="merge_duplicates" checked>
+              Auto-merge duplicate entries
+            </label>
+          </div>
+          <span id="fetch-indicator" class="htmx-indicator">Fetching…</span>
+          <span id="fetch-status"
+            class="{{ 'fetch-err' if startup_notice else '' }}">{{ startup_notice or '' }}
+            {%- for name in startup_people %}
+            <button type="button" class="user-pick"
+              hx-post="/settings/harvest-user"
+              hx-vals='{{ {"user": name} | tojson }}'
+              hx-target="#line-rows" hx-swap="outerHTML">{{ name }}</button>
+            {%- endfor %}</span>
+        </div>
       </div>
+    </section>
 
-    </div><!-- layout -->
+    <!-- ============ Live preview ============ -->
+    <div class="preview-col">
+      <div class="preview-head">
+        <h2>Live preview</h2>
+        <span class="pill-draft"><span class="dot"></span>DRAFT</span>
+        <div class="preview-actions">
+          <div class="seg" role="tablist" aria-label="Preview mode">
+            <button type="button" id="mode-html" class="seg-btn"
+              title="Instant HTML preview (same template and stylesheet as the PDF)">HTML</button>
+            <button type="button" id="mode-pdf" class="seg-btn active"
+              title="Exact PDF preview — byte-identical to the generated file">PDF</button>
+          </div>
+          <button type="button" id="preview-open" class="btn-outline"
+            title="Open the preview in a separate window">
+            Open
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path></svg>
+          </button>
+        </div>
+      </div>
+      <iframe id="preview-frame" src="/preview.pdf#toolbar=0" title="Invoice preview"></iframe>
+      <span id="preview-count" class="hv-num preview-count">{{ invoice.lines | length }} line items</span>
+    </div>
+
+    <!-- ============ Line items (full width) ============ -->
+    <section class="card span-full">
+      <div class="li-head">
+        <h2>Line items</h2>
+        <span id="items-meta" class="hv-num card-meta">{{ invoice.lines | length }} · {{ fmt_money(invoice.grand_total) }} {{ invoice.currency }}</span>
+        <div class="li-actions">
+          <button type="button" class="icon-btn-sm" title="Merge duplicate lines"
+            hx-post="/lines/merge-duplicates" hx-target="#line-rows" hx-swap="outerHTML">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 2 9 5-9 5-9-5 9-5z"></path><path d="m3 12 9 5 9-5"></path><path d="m3 17 9 5 9-5"></path></svg>
+          </button>
+          <button id="undo-btn" type="button"
+            class="icon-btn-sm{{ '' if has_undo else ' is-disabled' }}" title="Undo last change"
+            hx-post="/lines/undo" hx-target="#line-rows" hx-swap="outerHTML">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7v6h6"></path><path d="M3.5 13a9 9 0 1 0 2.3-7.7L3 8"></path></svg>
+          </button>
+        </div>
+      </div>
+      <div id="sel-bar" class="sel-bar" hidden>
+        <span class="hv-num sel-count"><span id="sel-count-n">0</span> selected</span>
+        <div class="sel-actions">
+          <button type="button" id="merge-sel-btn" class="btn-orange-sm is-dim"
+            title="Combine into one line"
+            hx-post="/lines/merge" hx-include="#merge-form"
+            hx-target="#line-rows" hx-swap="outerHTML">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 3v6a5 5 0 0 0 5 5 5 5 0 0 1 5 5v2"></path><path d="M17 3v2a5 5 0 0 1-5 5"></path></svg>
+            Merge
+          </button>
+          <button type="button" class="btn-danger-sm"
+            hx-post="/lines/delete-selected" hx-include="#merge-form"
+            hx-target="#line-rows" hx-swap="outerHTML">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m1 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path></svg>
+            Delete
+          </button>
+          <button type="button" class="text-btn" id="sel-clear">Clear</button>
+        </div>
+      </div>
+      <div class="li-body">
+        <div class="li-grid-head">
+          <span></span><span></span>
+          <span>Description</span>
+          <span class="num">Qty</span>
+          <span class="num">Unit price</span>
+          <span class="num">Subtotal</span>
+          <span></span>
+        </div>
+        {% include "partials/rows.html" %}
+        <form id="merge-form" hidden></form>
+        <button type="button" class="ghost-add"
+          hx-post="/lines/add" hx-target="#line-rows" hx-swap="outerHTML">
+          <span style="font-size:16px;line-height:1;">＋</span> Add line item
+        </button>
+      </div>
+    </section>
+
+    <!-- ============ Totals bar (full width) ============ -->
+    <div class="span-full">
+      {% include "partials/totals.html" %}
+    </div>
+
   </main>
 
   <script>
-    // Preview control. PDF mode (default) shows the exact WeasyPrint render
-    // and debounces refreshes (~0.5-1s per render); HTML mode is instant.
+    // ---- Preview control: PDF mode default, Open in window, eye toggle ----
     (function () {
       var frame = document.getElementById("preview-frame");
       var htmlBtn = document.getElementById("mode-html");
@@ -185,19 +219,13 @@
       var debounce = null;
 
       function srcFor(m) {
-        // Cache-busting query so assigning src always re-renders the PDF.
         return m === "pdf" ? "/preview.pdf?t=" + Date.now() + "#toolbar=0" : "/preview";
       }
-
       function refresh() {
         if (hidden) { stale = true; return; }
-        if (mode === "pdf") {
-          frame.src = srcFor("pdf");
-        } else if (frame.contentWindow) {
-          frame.contentWindow.location.reload();
-        }
+        if (mode === "pdf") { frame.src = srcFor("pdf"); }
+        else if (frame.contentWindow) { frame.contentWindow.location.reload(); }
       }
-
       function setMode(m) {
         mode = m;
         htmlBtn.classList.toggle("active", m === "html");
@@ -206,23 +234,15 @@
       }
       htmlBtn.addEventListener("click", function () { setMode("html"); });
       pdfBtn.addEventListener("click", function () { setMode("pdf"); });
-
       openBtn.addEventListener("click", function () {
         window.open(srcFor(mode), "invoice-preview", "width=880,height=1100");
       });
-
       toggleBtn.addEventListener("click", function () {
         hidden = !hidden;
-        document.querySelector(".layout").classList.toggle("preview-hidden", hidden);
-        document.getElementById("eye-on").style.display = hidden ? "none" : "block";
-        document.getElementById("eye-off").style.display = hidden ? "block" : "none";
-        toggleBtn.title = hidden ? "Show the preview pane" : "Hide the preview pane";
-        if (!hidden && stale) {
-          stale = false;
-          refresh();
-        }
+        document.getElementById("layout").classList.toggle("preview-hidden", hidden);
+        toggleBtn.classList.toggle("active", !hidden);
+        if (!hidden && stale) { stale = false; refresh(); }
       });
-
       document.body.addEventListener("htmx:afterRequest", function (evt) {
         if (!evt.detail.successful) return;
         clearTimeout(debounce);
@@ -230,37 +250,157 @@
       });
     })();
 
-    // Drag-and-drop reordering of line items. Document-level delegation so
-    // the handlers survive htmx swaps of the tbody.
+    // ---- Dropdowns (client picker, payment terms), delegated ----
+    (function () {
+      function closeAll(except) {
+        document.querySelectorAll(".dd-panel").forEach(function (p) {
+          if (p !== except) {
+            p.hidden = true;
+            var b = p.parentElement.querySelector(".dd-btn");
+            if (b) b.classList.remove("open");
+          }
+        });
+        document.querySelectorAll("details.menu[open]").forEach(function (d) {
+          d.removeAttribute("open");
+        });
+      }
+      document.addEventListener("click", function (e) {
+        var btn = e.target.closest(".dd-btn");
+        if (btn) {
+          var panel = btn.parentElement.querySelector(".dd-panel");
+          var willOpen = panel.hidden;
+          closeAll(null);
+          panel.hidden = !willOpen;
+          btn.classList.toggle("open", willOpen);
+          if (willOpen) {
+            var s = panel.querySelector(".dd-search");
+            if (s) { s.value = ""; s.focus(); filterClients(panel, ""); }
+          }
+          return;
+        }
+        if (e.target.closest(".client-row") || e.target.closest(".terms-row")) {
+          closeAll(null);
+        }
+        if (!e.target.closest(".dd") && !e.target.closest(".menu")) closeAll(null);
+      });
+      function filterClients(panel, q) {
+        panel.querySelectorAll(".client-row").forEach(function (r) {
+          r.hidden = q !== "" && r.dataset.name.indexOf(q) === -1;
+        });
+      }
+      document.addEventListener("input", function (e) {
+        if (!e.target.classList.contains("dd-search")) return;
+        filterClients(e.target.closest(".dd-panel"), e.target.value.toLowerCase());
+      });
+    })();
+
+    // ---- Payment terms -> due date (derived, local time) ----
+    (function () {
+      function addDays(iso, days) {
+        var p = iso.split("-").map(Number);
+        var d = new Date(p[0], p[1] - 1, p[2] + days);
+        var mm = String(d.getMonth() + 1).padStart(2, "0");
+        var dd = String(d.getDate()).padStart(2, "0");
+        return d.getFullYear() + "-" + mm + "-" + dd;
+      }
+      document.addEventListener("click", function (e) {
+        var row = e.target.closest(".terms-row");
+        if (!row) return;
+        var mb = document.getElementById("meta-block");
+        mb.dataset.termsDays = row.dataset.days;
+        var due = document.getElementById("due-input");
+        htmx.trigger(due, "change");
+      });
+      // Every meta update recomputes due = issue + terms (due is derived).
+      document.body.addEventListener("htmx:configRequest", function (evt) {
+        if (evt.detail.path !== "/meta/update") return;
+        var mb = document.getElementById("meta-block");
+        var days = parseInt(mb.dataset.termsDays || "15", 10);
+        var issue = evt.detail.parameters.issue_date;
+        if (issue) evt.detail.parameters.due_date = addDays(issue, days);
+      });
+    })();
+
+    // ---- Legal note collapse/expand ----
+    document.addEventListener("click", function (e) {
+      if (e.target.id === "legal-add") {
+        document.getElementById("legal-expanded").hidden = false;
+        e.target.hidden = true;
+        document.getElementById("legal-input").focus();
+      }
+      if (e.target.id === "legal-remove") {
+        var inp = document.getElementById("legal-input");
+        inp.value = "";
+        htmx.trigger(inp, "change");
+      }
+    });
+
+    // ---- Import range: follow the billing period unless unchecked ----
+    (function () {
+      document.addEventListener("change", function (e) {
+        if (e.target.id !== "use-period") return;
+        document.getElementById("fetch-range").hidden = e.target.checked;
+      });
+      document.body.addEventListener("htmx:configRequest", function (evt) {
+        if (evt.detail.path !== "/lines/fetch") return;
+        var use = document.getElementById("use-period");
+        if (use && use.checked) {
+          var ps = document.querySelector('[name="period_start"]');
+          var pe = document.querySelector('[name="period_end"]');
+          if (ps && ps.value) evt.detail.parameters.fetch_start = ps.value;
+          if (pe && pe.value) evt.detail.parameters.fetch_end = pe.value;
+        }
+      });
+    })();
+
+    // ---- Row selection bar ----
+    (function () {
+      function recount() {
+        var checks = document.querySelectorAll(".row-check:checked");
+        var bar = document.getElementById("sel-bar");
+        bar.hidden = checks.length === 0;
+        document.getElementById("sel-count-n").textContent = checks.length;
+        document.getElementById("merge-sel-btn").classList.toggle("is-dim", checks.length < 2);
+      }
+      document.addEventListener("change", function (e) {
+        if (e.target.classList.contains("row-check")) recount();
+      });
+      document.getElementById("sel-clear").addEventListener("click", function () {
+        document.querySelectorAll(".row-check:checked").forEach(function (c) { c.checked = false; });
+        recount();
+      });
+      document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.target && evt.target.id === "line-rows") recount();
+      });
+    })();
+
+    // ---- Drag-and-drop reordering (delegated; survives htmx swaps) ----
     (function () {
       var dragRow = null;
-
       document.addEventListener("dragstart", function (e) {
         var handle = e.target.closest && e.target.closest(".drag-handle");
         if (!handle) return;
-        dragRow = handle.closest("tr");
+        dragRow = handle.closest(".li-row");
         dragRow.classList.add("dragging");
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", "");
       });
-
       document.addEventListener("dragover", function (e) {
         if (!dragRow) return;
-        var row = e.target.closest && e.target.closest("#line-rows tr");
+        var row = e.target.closest && e.target.closest("#line-rows .li-row");
         if (!row || row === dragRow) return;
         e.preventDefault();
         var rect = row.getBoundingClientRect();
         var after = e.clientY > rect.top + rect.height / 2;
         row.parentNode.insertBefore(dragRow, after ? row.nextSibling : row);
       });
-
       document.addEventListener("dragend", function () {
         if (!dragRow) return;
         dragRow.classList.remove("dragging");
         dragRow = null;
         var order = Array.prototype.map.call(
-          document.querySelectorAll("#line-rows tr"),
-          function (tr) { return tr.dataset.idx; }
+          document.querySelectorAll("#line-rows .li-row"),
+          function (r) { return r.dataset.idx; }
         ).join(",");
         htmx.ajax("POST", "/lines/reorder", {
           target: "#line-rows",

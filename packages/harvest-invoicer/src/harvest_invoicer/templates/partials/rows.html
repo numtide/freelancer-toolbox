@@ -1,36 +1,29 @@
-<tbody id="line-rows" hx-target="this" hx-swap="outerHTML">
+<div id="line-rows" hx-target="this" hx-swap="outerHTML">
   {% for line in invoice.lines %}
-  <tr data-idx="{{ loop.index0 }}">
-    <td class="grab-cell">
-      <span class="drag-handle" draggable="true" title="Drag to reorder">&#8942;&#8942;</span>
-      <input type="checkbox" name="selected" value="{{ loop.index0 }}" form="merge-form">
-    </td>
-    <td>
-      <div class="cell-desc">
-        <input type="text" name="concept" value="{{ line.concept }}"
-          hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest tr"
-          hx-target="#line-rows" hx-swap="outerHTML">
-        {% if line.origin == 'extra' %}
-        <span class="pill-extra"
-          title="Recurring line from clients.json (re-added on every import)">extra</span>
-        {% endif %}
-      </div>
-    </td>
-    <td>
-      <input type="number" name="quantity" value="{{ fmt_qty(line.quantity) }}" step="0.01"
-        hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest tr"
+  <div class="li-row" data-idx="{{ loop.index0 }}">
+    <span class="drag-handle" draggable="true" title="Drag to reorder">&#10303;</span>
+    <input type="checkbox" class="row-check" name="selected" value="{{ loop.index0 }}"
+      form="merge-form" aria-label="Select row">
+    <div class="cell-desc">
+      <input type="text" name="concept" value="{{ line.concept }}" placeholder="Description"
+        hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest .li-row"
         hx-target="#line-rows" hx-swap="outerHTML">
-    </td>
-    <td>
-      <input type="number" name="unit_price" value="{{ fmt_money(line.unit_price) }}" step="0.01"
-        hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest tr"
-        hx-target="#line-rows" hx-swap="outerHTML">
-    </td>
-    <td class="num">{{ fmt_money(line.base) }}</td>
-    <td>
-      <button type="button" class="text-btn" hx-post="/lines/drop/{{ loop.index0 }}"
-        hx-target="#line-rows" hx-swap="outerHTML">Drop</button>
-    </td>
-  </tr>
+      {% if line.origin == 'extra' %}
+      <span class="pill-extra"
+        title="Recurring line from clients.json (re-added on every import)">extra</span>
+      {% endif %}
+    </div>
+    <input type="number" class="hv-num" name="quantity" value="{{ '%.2f' | format(line.quantity) }}" step="0.01"
+      hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest .li-row"
+      hx-target="#line-rows" hx-swap="outerHTML" aria-label="Quantity">
+    <input type="number" class="hv-num" name="unit_price" value="{{ '%.2f' | format(line.unit_price) }}" step="0.01"
+      hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest .li-row"
+      hx-target="#line-rows" hx-swap="outerHTML" aria-label="Unit price">
+    <span class="hv-num li-sub">{{ fmt_money(line.base) }}</span>
+    <button type="button" class="row-x" title="Remove line"
+      hx-post="/lines/drop/{{ loop.index0 }}" hx-target="#line-rows" hx-swap="outerHTML">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+    </button>
+  </div>
   {% endfor %}
-</tbody>
+</div>

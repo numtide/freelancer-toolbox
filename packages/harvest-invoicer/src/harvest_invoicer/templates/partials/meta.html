@@ -1,40 +1,59 @@
-<div id="meta-block" class="field-grid">
-  <label class="field">
-    <span class="field-label">Invoice no.</span>
-    <input type="text" name="number" value="{{ invoice.number }}"
-      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
-      hx-target="#meta-block" hx-swap="outerHTML">
-  </label>
-  <label class="field">
-    <span class="field-label">Issue date</span>
-    <input type="date" name="issue_date" value="{{ fmt_date(invoice.issue_date) }}"
-      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
-      hx-target="#meta-block" hx-swap="outerHTML">
-  </label>
-  <label class="field">
-    <span class="field-label">Due date</span>
-    <input type="date" name="due_date" value="{{ fmt_date(invoice.due_date) }}"
-      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
-      hx-target="#meta-block" hx-swap="outerHTML">
-  </label>
-  <label class="field">
-    <span class="field-label">Period start</span>
-    <input type="date" name="period_start"
-      value="{{ invoice.period_start.isoformat() if invoice.period_start else '' }}"
-      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
-      hx-target="#meta-block" hx-swap="outerHTML">
-  </label>
-  <label class="field">
-    <span class="field-label">Period end</span>
-    <input type="date" name="period_end"
-      value="{{ invoice.period_end.isoformat() if invoice.period_end else '' }}"
-      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
-      hx-target="#meta-block" hx-swap="outerHTML">
-  </label>
-  <label class="field field-wide">
-    <span class="field-label">Legal note</span>
-    <input type="text" name="legal_note" value="{{ invoice.legal_note or '' }}"
-      hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
-      hx-target="#meta-block" hx-swap="outerHTML">
-  </label>
+{% set known_terms = {0: "Due on receipt", 15: "Net 15", 30: "Net 30", 45: "Net 45"} %}
+{% set terms_days = (invoice.due_date - invoice.issue_date).days %}
+{% set terms_label = known_terms.get(terms_days, "Net " ~ terms_days) %}
+<div id="meta-block" data-terms-days="{{ terms_days }}">
+  <div class="grid2 field-gap">
+    <div>
+      <label class="field-label">Invoice no.</label>
+      <input type="text" class="hv-num" name="number" value="{{ invoice.number }}"
+        hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+        hx-target="#meta-block" hx-swap="outerHTML">
+    </div>
+    <div>
+      <label class="field-label">Issue date</label>
+      <input type="date" class="hv-num" name="issue_date" value="{{ invoice.issue_date.isoformat() }}"
+        hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+        hx-target="#meta-block" hx-swap="outerHTML">
+    </div>
+  </div>
+  <div class="grid2">
+    <div>
+      <label class="field-label">Payment terms</label>
+      <div class="dd" id="terms-dd">
+        <button type="button" class="input-like dd-btn">
+          <span id="terms-label">{{ terms_label }}</span><span class="dd-caret">&#9662;</span>
+        </button>
+        <div class="dd-panel" hidden>
+          {% for days, label in known_terms.items() %}
+          <div class="dd-row terms-row" data-days="{{ days }}">{{ label }}
+            {%- if days == terms_days %}<span class="dd-check">&#10003;</span>{% endif %}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div>
+      <label class="field-label">Due date</label>
+      <div class="computed hv-num">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(29,30,28,0.45)" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>
+        {{ invoice.due_date.isoformat() }}
+        <span class="hint">{% if terms_days == 0 %}on issue{% else %}in {{ terms_days }} days{% endif %}</span>
+      </div>
+      <input type="hidden" id="due-input" name="due_date" value="{{ invoice.due_date.isoformat() }}"
+        hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+        hx-target="#meta-block" hx-swap="outerHTML">
+    </div>
+  </div>
+  <div style="margin-top:16px;">
+    <div id="legal-expanded"{% if not invoice.legal_note %} hidden{% endif %}>
+      <div class="legal-head">
+        <label class="field-label" style="margin-bottom:0;">Legal note</label>
+        <button type="button" class="legal-remove" id="legal-remove">Remove</button>
+      </div>
+      <input type="text" name="legal_note" id="legal-input" value="{{ invoice.legal_note or '' }}"
+        placeholder="e.g. Reverse charge — VAT exempt under art. 196"
+        hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+        hx-target="#meta-block" hx-swap="outerHTML">
+    </div>
+    <button type="button" class="legal-add" id="legal-add"{% if invoice.legal_note %} hidden{% endif %}>＋ Add legal note</button>
+  </div>
 </div>

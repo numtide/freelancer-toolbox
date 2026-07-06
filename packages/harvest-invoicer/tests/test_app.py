@@ -96,7 +96,8 @@ class TestLineEdits:
     def test_add_line(self, client: FlaskClient) -> None:
         resp = client.post("/lines/add")
         assert resp.status_code == 200
-        assert b"New item" in resp.data
+        # A blank row is appended (2 fixture rows + 1 new)
+        assert resp.data.count(b'type="checkbox"') == 3
 
     def test_merge_lines(self, client: FlaskClient) -> None:
         resp = client.post("/lines/merge", data={"selected": ["0", "1"]})
@@ -199,14 +200,16 @@ class TestPreviewPdf:
 
     def test_editor_chrome(self, client: FlaskClient) -> None:
         resp = client.get("/")
-        # No invoice number in the header title
-        assert b"invoice-no" not in resp.data
         # Logo links back to the editor
         assert b'class="brand-link" href="/"' in resp.data
-        # Settings is an icon button; Send Invoice placeholder exists
+        # Settings icon button, split-button dropdown with Send invoice
         assert b'aria-label="Settings"' in resp.data
-        assert b"Send Invoice" in resp.data
+        assert b"Send invoice" in resp.data
+        assert b'class="split-main"' in resp.data
         assert b'rel="icon"' in resp.data
+        # Dark totals bar and ghost add button per the design handoff
+        assert b'class="totals-bar"' in resp.data
+        assert b"Add line item" in resp.data
 
 
 class TestServicePeriod:
@@ -499,7 +502,8 @@ class TestBillToSwitch:
         app = self._make_app(tmp_path)
         with app.test_client() as c:
             resp = c.get("/")
-        assert b'name="client_key"' in resp.data
+        assert b'id="client-picker"' in resp.data
+        assert b"client_key" in resp.data  # picker rows post the key
         assert b"Numtide Sarl" in resp.data
         assert b"Domestic S.L." in resp.data
 

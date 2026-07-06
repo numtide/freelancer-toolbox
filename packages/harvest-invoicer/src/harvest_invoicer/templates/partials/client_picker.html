@@ -1,0 +1,39 @@
+{%- macro initials(name) -%}
+{{ name.split()[:2] | map('first') | join('') | upper }}
+{%- endmacro -%}
+<div id="client-picker" class="dd bill-to-wrap"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
+  {% if clients %}
+  {% set cur = clients.get(current_client_key, client) %}
+  {% set cur_name = cur.get('name', current_client_key or 'Select a client') %}
+  <button type="button" class="input-like dd-btn client-btn">
+    <span class="cp-left">
+      <span class="avatar">{{ initials(cur_name) }}</span>
+      <span class="cp-name">{{ cur_name }}</span>
+    </span>
+    <span class="dd-caret">&#9662;</span>
+  </button>
+  <div class="dd-panel" hidden>
+    <input type="text" class="dd-search" placeholder="Search clients…" aria-label="Search clients">
+    <div class="dd-list">
+      {% for key, entry in clients.items() %}
+      {% set name = entry.get('name', key) %}
+      {% set city = (entry.get('address_line2', '').split(',')[-1]).strip().split(' ')[-1] %}
+      <div class="dd-row client-row" data-name="{{ (name ~ ' ' ~ key) | lower }}"
+        hx-post="/invoice/client" hx-vals='{{ {"client_key": key} | tojson }}'
+        hx-target="#line-rows" hx-swap="outerHTML">
+        <span class="avatar">{{ initials(name) }}</span>
+        <span class="dd-col">
+          <span class="dd-name">{{ name }}</span>
+          <span class="dd-meta">{{ invoice.currency }}{% if city %} · {{ city }}{% endif %}</span>
+        </span>
+        {% if key == current_client_key %}<span class="dd-check">&#10003;</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <a class="dd-new" href="/settings">＋ New client</a>
+  </div>
+  {% else %}
+  <p class="config-note">No clients configured yet — add one in
+    <a href="/settings">Settings</a>.</p>
+  {% endif %}
+</div>

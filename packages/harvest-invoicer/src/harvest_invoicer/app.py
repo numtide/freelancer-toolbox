@@ -166,6 +166,49 @@ def create_app(
         """Remember the current lines so the next Undo can restore them."""
         app.state["undo"] = copy.deepcopy(inv.lines)  # type: ignore[attr-defined]
 
+    _undo_svg = (
+        '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+        'stroke="currentColor" stroke-width="1.7"><path d="M3 7v6h6"></path>'
+        '<path d="M3.5 13a9 9 0 1 0 2.3-7.7L3 8"></path></svg>'
+    )
+
+    def _oob_extras(inv: Invoice) -> str:
+        """OOB fragments riding along with every line mutation response:
+        the line-items header meta, the preview count, and the undo button
+        (greyed out while there is no history)."""
+        count = len(inv.lines)
+        meta = (
+            f'<span id="items-meta" hx-swap-oob="outerHTML" class="hv-num card-meta">'
+            f"{count} · {fmt_money(inv.grand_total)} {escape(inv.currency)} EUR"
+            f"</span>"
+        )
+        # currency displayed once; strip duplicate token
+        meta = (
+            f'<span id="items-meta" hx-swap-oob="outerHTML" class="hv-num card-meta">'
+            f"{count} · {fmt_money(inv.grand_total)} {escape(inv.currency)}"
+            f"</span>"
+        )
+        pcount = (
+            f'<span id="preview-count" hx-swap-oob="outerHTML" class="hv-num preview-count">'
+            f"{count} line items</span>"
+        )
+        has_undo = app.state["undo"] is not None  # type: ignore[attr-defined]
+        undo_cls = "icon-btn-sm" if has_undo else "icon-btn-sm is-disabled"
+        undo = (
+            f'<button id="undo-btn" hx-swap-oob="outerHTML" type="button" '
+            f'class="{undo_cls}" title="Undo last change" '
+            f'hx-post="/lines/undo" hx-target="#line-rows" hx-swap="outerHTML">'
+            f"{_undo_svg}</button>"
+        )
+        return meta + pcount + undo
+
+    def _lines_response(inv: Invoice, status_html: str = "") -> Response:
+        """Standard response for line mutations: rows + totals + OOB extras."""
+        return Response(
+            _render_rows(inv) + _render_totals(inv) + _oob_extras(inv) + status_html,
+            content_type="text/html",
+        )
+
     # ------------------------------------------------------------------
     # Routes
     # ------------------------------------------------------------------
@@ -186,6 +229,7 @@ def create_app(
             output_path=str(output_path),
             startup_notice=startup_notice,
             startup_people=startup_people or [],
+            has_undo=app.state["undo"] is not None,  # type: ignore[attr-defined]
         )
 
     @app.get("/static/htmx.min.js")
@@ -287,12 +331,7 @@ def create_app(
                 line.unit_price = float(
                     request.form.get("unit_price", str(line.unit_price))
                 )
-        rows_html = _render_rows(inv)
-        totals_html = _render_totals(inv)
-        return Response(
-            rows_html + totals_html,
-            content_type="text/html",
-        )
+        return _lines_response(inv)
 
     @app.post("/lines/drop/<int:idx>")
     def drop_line(idx: int) -> Response:
@@ -300,18 +339,26 @@ def create_app(
         if 0 <= idx < len(inv.lines):
             _snapshot_lines(inv)
             inv.lines.pop(idx)
-        rows_html = _render_rows(inv)
-        totals_html = _render_totals(inv)
-        return Response(rows_html + totals_html, content_type="text/html")
+        return _lines_response(inv)
 
     @app.post("/lines/add")
     def add_line() -> Response:
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         _snapshot_lines(inv)
-        inv.lines.append(InvoiceLine(concept="New item", unit_price=0.0, quantity=1.0))
-        rows_html = _render_rows(inv)
-        totals_html = _render_totals(inv)
-        return Response(rows_html + totals_html, content_type="text/html")
+        inv.lines.append(InvoiceLine(concept="", unit_price=0.0, quantity=0.0))
+        return _lines_response(inv)
+
+    @app.post("/lines/delete-selected")
+    def delete_selected_lines() -> Response:
+        """Remove all checked rows (the selection bar's Delete action)."""
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        selected = {int(s) for s in request.form.getlist("selected") if s.isdigit()}
+        valid = sorted((i for i in selected if i < len(inv.lines)), reverse=True)
+        if valid:
+            _snapshot_lines(inv)
+            for i in valid:
+                inv.lines.pop(i)
+        return _lines_response(inv)
 
     @app.post("/lines/merge")
     def merge_lines() -> Response:
@@ -320,9 +367,7 @@ def create_app(
         selected_str = request.form.getlist("selected")
         selected_idx = {int(s) for s in selected_str if s.isdigit()}
         if len(selected_idx) < 2:
-            rows_html = _render_rows(inv)
-            totals_html = _render_totals(inv)
-            return Response(rows_html + totals_html, content_type="text/html")
+            return _lines_response(inv)
 
         to_merge = [
             (i, inv.lines[i]) for i in sorted(selected_idx) if i < len(inv.lines)
@@ -346,9 +391,7 @@ def create_app(
             if i < len(inv.lines):
                 inv.lines.pop(i)
         inv.lines.insert(first_idx, merged)
-        rows_html = _render_rows(inv)
-        totals_html = _render_totals(inv)
-        return Response(rows_html + totals_html, content_type="text/html")
+        return _lines_response(inv)
 
     def _fetch_status(
         message: str, *, error: bool = False, extra_html: str = ""
@@ -395,13 +438,8 @@ def create_app(
         def _respond(
             status: str, *, error: bool = False, extra_html: str = ""
         ) -> Response:
-            rows_html = _render_rows(inv)
-            totals_html = _render_totals(inv)
-            return Response(
-                rows_html
-                + totals_html
-                + _fetch_status(status, error=error, extra_html=extra_html),
-                content_type="text/html",
+            return _lines_response(
+                inv, _fetch_status(status, error=error, extra_html=extra_html)
             )
 
         try:
@@ -461,12 +499,7 @@ def create_app(
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
 
         def _respond2(status: str, *, error: bool = False) -> Response:
-            rows_html = _render_rows(inv)
-            totals_html = _render_totals(inv)
-            return Response(
-                rows_html + totals_html + _fetch_status(status, error=error),
-                content_type="text/html",
-            )
+            return _lines_response(inv, _fetch_status(status, error=error))
 
         name = request.form.get("user", "").strip()
         if not name:
@@ -494,6 +527,19 @@ def create_app(
             f"{len(new_lines)} lines for {ps} to {pe}."
         )
 
+    def _client_inset_oob() -> str:
+        """OOB re-render of the client picker and details inset."""
+        ctx = {
+            "client": app.state["client"],  # type: ignore[attr-defined]
+            "clients": app.state["clients"],  # type: ignore[attr-defined]
+            "current_client_key": app.state["current_client_key"],  # type: ignore[attr-defined]
+            "invoice": app.state["invoice"],  # type: ignore[attr-defined]
+            "oob": True,
+        }
+        return render_template("partials/client_inset.html", **ctx) + render_template(
+            "partials/client_picker.html", **ctx
+        )
+
     @app.post("/invoice/client")
     def switch_client() -> Response:
         """Switch the invoice's bill-to client (from the editor dropdown).
@@ -507,13 +553,8 @@ def create_app(
         key = request.form.get("client_key", "").strip()
         entry = clients_map.get(key)
 
-        def rows_and_totals() -> Response:
-            return Response(
-                _render_rows(inv) + _render_totals(inv), content_type="text/html"
-            )
-
         if entry is None:
-            return rows_and_totals()
+            return _lines_response(inv)
 
         _snapshot_lines(inv)
         app.state["client"] = entry  # type: ignore[attr-defined]
@@ -527,7 +568,7 @@ def create_app(
         vat = float(str(entry.get("vat_rate") or 0.0))
         for line in inv.lines:
             line.vat_rate = vat
-        return rows_and_totals()
+        return _lines_response(inv, _client_inset_oob())
 
     @app.post("/lines/merge-duplicates")
     def merge_duplicates_route() -> Response:
@@ -535,9 +576,7 @@ def create_app(
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         _snapshot_lines(inv)
         inv.lines[:] = merge_duplicate_lines(inv.lines)
-        rows_html = _render_rows(inv)
-        totals_html = _render_totals(inv)
-        return Response(rows_html + totals_html, content_type="text/html")
+        return _lines_response(inv)
 
     @app.post("/lines/undo")
     def undo_lines() -> Response:
@@ -551,9 +590,7 @@ def create_app(
         if snapshot is not None:
             app.state["undo"] = copy.deepcopy(inv.lines)  # type: ignore[attr-defined]
             inv.lines[:] = snapshot
-        rows_html = _render_rows(inv)
-        totals_html = _render_totals(inv)
-        return Response(rows_html + totals_html, content_type="text/html")
+        return _lines_response(inv)
 
     @app.post("/lines/reorder")
     def reorder_lines() -> Response:
@@ -572,9 +609,7 @@ def create_app(
         if order and sorted(order) == list(range(len(inv.lines))):
             _snapshot_lines(inv)
             inv.lines[:] = [inv.lines[i] for i in order]
-        rows_html = _render_rows(inv)
-        totals_html = _render_totals(inv)
-        return Response(rows_html + totals_html, content_type="text/html")
+        return _lines_response(inv)
 
     # --- Metadata edits ---
 
@@ -609,10 +644,14 @@ def create_app(
                 inv.period_end = None
         legal_val = request.form.get("legal_note", "").strip()
         inv.legal_note = legal_val or None
-        return render_template(
-            "partials/meta.html",
-            invoice=inv,
-            fmt_date=lambda d: fmt_date(d, date_format),
+        head_oob = (
+            f'<span id="inv-no-head" hx-swap-oob="outerHTML" class="hv-num card-meta">'
+            f"Invoice {escape(inv.number)}</span>"
+        )
+        return (
+            render_template("partials/meta.html", invoice=inv)
+            + render_template("partials/period.html", invoice=inv)
+            + head_oob
         )
 
     # --- Settings ---

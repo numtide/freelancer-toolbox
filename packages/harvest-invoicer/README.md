@@ -125,7 +125,10 @@ The name must match your Harvest user name exactly.  On a mismatch the
 error lists the user names that do have hours in the period.  When an
 import without any user filter mixes several people's hours, the editor
 shows a prominent warning (and `generate` prints one to stderr) so a
-whole-team total can't masquerade as a personal invoice.
+whole-team total can't masquerade as a personal invoice.  The warning
+lists every name as a **click-to-pick button**: clicking your name sets
+`harvest_user`, saves it to issuer.json, and re-imports only your hours
+on the spot.
 
 `--harvest-client NAME` (formerly `--client`, still accepted) restricts the
 import to hours logged under one Harvest client; it is unrelated to the

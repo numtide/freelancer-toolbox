@@ -483,3 +483,21 @@ select:focus {
 /* Preview fully collapsed: the editor column takes the whole width. */
 .layout.preview-hidden { grid-template-columns: minmax(0, 1fr); }
 .layout.preview-hidden .preview-col { display: none; }
+
+/* Click-to-pick user buttons inside the multi-user warning. */
+.user-pick {
+  display: inline-block;
+  margin: 2px 4px 2px 0;
+  padding: 3px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  cursor: pointer;
+}
+.user-pick:hover {
+  border-color: var(--orange);
+  color: var(--orange);
+}

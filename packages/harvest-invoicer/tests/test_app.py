@@ -1009,13 +1009,76 @@ class TestMultiUserSafetyNet:
             client=_fake_client(),
             invoice_number="2026-06",
             output_path=tmp_path / "invoice.pdf",
-            startup_notice="Imported hours for 5 people — set harvest_user.",
+            startup_notice="Imported hours for 2 people. Click your name:",
+            startup_people=["Aldo Borrero", "Brian McGee"],
         )
         app.config["TESTING"] = True
         with app.test_client() as c:
             resp = c.get("/")
-        assert b"Imported hours for 5 people" in resp.data
+        assert b"Imported hours for 2 people" in resp.data
         assert b"fetch-err" in resp.data
+        assert resp.data.count(b'class="user-pick"') == 2
+        assert b"Aldo Borrero" in resp.data
+
+    def test_pick_user_sets_config_and_refetches(self, tmp_path: Path) -> None:
+        issuer = _fake_issuer()
+        issuer_path = tmp_path / "issuer.json"
+        issuer_path.write_text(json.dumps(issuer))
+        calls: list[tuple[date, date]] = []
+
+        def fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            calls.append((ps, pe))
+            return [
+                InvoiceLine(concept="Mine", unit_price=100.0, quantity=8.0, user="Aldo")
+            ]
+
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=issuer,
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            period_start=date(2026, 6, 1),
+            period_end=date(2026, 6, 30),
+            fetch_callback=fetch,
+            issuer_path=issuer_path,
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            resp = c.post("/settings/harvest-user", data={"user": "Aldo Borrero"})
+        assert b"harvest_user set to &#39;Aldo Borrero&#39;" in resp.data
+        assert b"Mine" in resp.data
+        # Persisted and re-fetched over the last import range
+        assert json.loads(issuer_path.read_text())["harvest_user"] == "Aldo Borrero"
+        assert calls == [(date(2026, 6, 1), date(2026, 6, 30))]
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert len(inv.lines) == 1
+
+    def test_pick_user_suppresses_future_warnings(self, tmp_path: Path) -> None:
+        issuer = _fake_issuer()
+
+        def team_fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            return [
+                InvoiceLine(concept="A", unit_price=1.0, quantity=1.0, user="Alice"),
+                InvoiceLine(concept="B", unit_price=1.0, quantity=1.0, user="Bob"),
+            ]
+
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=issuer,
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            fetch_callback=team_fetch,
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            issuer["harvest_user"] = "Alice"  # as the Settings page would set
+            resp = c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+        assert b"WARNING" not in resp.data
 
     def test_refetch_warns_without_user_filter(self, tmp_path: Path) -> None:
         def team_fetch(ps: date, pe: date) -> list[InvoiceLine]:
@@ -1031,7 +1094,7 @@ class TestMultiUserSafetyNet:
             invoice_number="2026-06",
             output_path=tmp_path / "invoice.pdf",
             fetch_callback=team_fetch,
-            user_filter_active=False,
+            cli_user_filter=None,
         )
         app.config["TESTING"] = True
         with app.test_client() as c:
@@ -1040,6 +1103,8 @@ class TestMultiUserSafetyNet:
                 data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
         assert b"WARNING: hours for 2 people" in resp.data
+        # Names render as click-to-pick buttons
+        assert resp.data.count(b'class="user-pick"') == 2
         assert b"Alice" in resp.data
         assert b"Bob" in resp.data
 
@@ -1057,7 +1122,7 @@ class TestMultiUserSafetyNet:
             invoice_number="2026-06",
             output_path=tmp_path / "invoice.pdf",
             fetch_callback=team_fetch,
-            user_filter_active=True,
+            cli_user_filter="Alice",
         )
         app.config["TESTING"] = True
         with app.test_client() as c:

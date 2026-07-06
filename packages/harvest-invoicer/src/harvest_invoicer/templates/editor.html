@@ -93,7 +93,13 @@
             </label>
             <span id="fetch-indicator" class="htmx-indicator">Fetching…</span>
             <span id="fetch-status"
-              class="{{ 'fetch-err' if startup_notice else '' }}">{{ startup_notice or '' }}</span>
+              class="{{ 'fetch-err' if startup_notice else '' }}">{{ startup_notice or '' }}
+              {%- for name in startup_people %}
+              <button type="button" class="user-pick"
+                hx-post="/settings/harvest-user"
+                hx-vals='{{ {"user": name} | tojson }}'
+                hx-target="#line-rows" hx-swap="outerHTML">{{ name }}</button>
+              {%- endfor %}</span>
           </div>
         </section>
 

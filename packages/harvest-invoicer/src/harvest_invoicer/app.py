@@ -17,11 +17,7 @@ from markupsafe import escape
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from harvest_invoicer.fetch import (
-    apply_client_vat,
-    client_extra_lines,
-    format_user_names,
-)
+from harvest_invoicer.fetch import apply_client_vat, client_extra_lines
 from harvest_invoicer.model import (
     DEFAULT_PAYMENT_TERM_DAYS,
     Invoice,
@@ -77,7 +73,8 @@ def create_app(
     issuer_path: Path | None = None,
     clients_path: Path | None = None,
     startup_notice: str | None = None,
-    user_filter_active: bool = False,
+    startup_people: list[str] | None = None,
+    cli_user_filter: str | None = None,
 ) -> Flask:
     """Create and configure the Flask editor application.
 
@@ -98,9 +95,11 @@ def create_app(
     settings edits apply to the running session only.
 
     ``startup_notice`` is shown in the fetch status area on load (e.g. the
-    multi-user import warning).  ``user_filter_active`` records whether a
-    Harvest user filter constrains fetches; when it doesn't, re-fetches
-    mixing several people's hours warn inline.
+    multi-user import warning) with ``startup_people`` rendered as
+    click-to-pick buttons that set ``harvest_user`` on the spot.
+    ``cli_user_filter`` is the explicit --user flag; together with the
+    issuer's ``harvest_user`` (checked at request time, so mid-session
+    Settings edits count) it decides whether multi-user imports warn.
     """
     app = Flask(
         __name__,
@@ -137,6 +136,9 @@ def create_app(
         "output_path": output_path,
         "user_templates_dir": user_templates_dir,
         "undo": None,
+        "last_fetch_range": (period_start, period_end)
+        if period_start and period_end
+        else None,
     }
 
     date_format = str(issuer.get("date_format") or "%Y-%m-%d")
@@ -183,6 +185,7 @@ def create_app(
             fmt_date=lambda d: fmt_date(d, date_format),
             output_path=str(output_path),
             startup_notice=startup_notice,
+            startup_people=startup_people or [],
         )
 
     @app.get("/static/htmx.min.js")
@@ -347,13 +350,36 @@ def create_app(
         totals_html = _render_totals(inv)
         return Response(rows_html + totals_html, content_type="text/html")
 
-    def _fetch_status(message: str, *, error: bool = False) -> str:
-        """OOB status span swapped into #fetch-status next to the button."""
+    def _fetch_status(
+        message: str, *, error: bool = False, extra_html: str = ""
+    ) -> str:
+        """OOB status span swapped into #fetch-status next to the button.
+
+        ``extra_html`` must already be escaped/safe markup (e.g. the
+        click-to-pick user buttons).
+        """
         css = "fetch-err" if error else "fetch-ok"
         return (
             f'<span id="fetch-status" hx-swap-oob="outerHTML" class="{css}">'
-            f"{escape(message)}</span>"
+            f"{escape(message)}{extra_html}</span>"
         )
+
+    def _user_filter_engaged() -> bool:
+        """A user constraint applies: --user flag or issuer harvest_user."""
+        return bool(cli_user_filter or str(issuer.get("harvest_user") or "").strip())
+
+    def _user_pick_buttons(people: set[str]) -> str:
+        """Click-to-pick buttons: set harvest_user and re-import."""
+        parts = []
+        for name in sorted(people):
+            payload = escape(json.dumps({"user": name}))
+            parts.append(
+                f'<button type="button" class="user-pick" '
+                f'hx-post="/settings/harvest-user" hx-vals="{payload}" '
+                f'hx-target="#line-rows" hx-swap="outerHTML">'
+                f"{escape(name)}</button>"
+            )
+        return "".join(parts)
 
     @app.post("/lines/fetch")
     def fetch_lines_route() -> Response:
@@ -366,11 +392,15 @@ def create_app(
         """
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
 
-        def _respond(status: str, *, error: bool = False) -> Response:
+        def _respond(
+            status: str, *, error: bool = False, extra_html: str = ""
+        ) -> Response:
             rows_html = _render_rows(inv)
             totals_html = _render_totals(inv)
             return Response(
-                rows_html + totals_html + _fetch_status(status, error=error),
+                rows_html
+                + totals_html
+                + _fetch_status(status, error=error, extra_html=extra_html),
                 content_type="text/html",
             )
 
@@ -405,18 +435,63 @@ def create_app(
 
         _snapshot_lines(inv)
         inv.lines[:] = new_lines
+        app.state["last_fetch_range"] = (ps, pe)  # type: ignore[attr-defined]
 
         people = {line.user for line in new_lines if line.user}
-        if not user_filter_active and len(people) > 1:
+        if not _user_filter_engaged() and len(people) > 1:
             return _respond(
                 f"Imported {len(new_lines)} lines{merged_note} for {ps} to "
-                f"{pe} — WARNING: hours for {len(people)} people "
-                f"({format_user_names(people)}); set harvest_user in "
-                "Settings or pass --user to import only your own.",
+                f"{pe} — WARNING: hours for {len(people)} people. Click "
+                "your name to import only yours: ",
                 error=True,
+                extra_html=_user_pick_buttons(people),
             )
         return _respond(
             f"Imported {len(new_lines)} lines{merged_note} for {ps} to {pe}."
+        )
+
+    @app.post("/settings/harvest-user")
+    def pick_harvest_user() -> Response:
+        """Set harvest_user from a warning button and re-import.
+
+        Persists the choice to issuer.json (when a config path exists) and
+        re-fetches the last import range so the table immediately shows
+        only the picked person's hours.
+        """
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+
+        def _respond2(status: str, *, error: bool = False) -> Response:
+            rows_html = _render_rows(inv)
+            totals_html = _render_totals(inv)
+            return Response(
+                rows_html + totals_html + _fetch_status(status, error=error),
+                content_type="text/html",
+            )
+
+        name = request.form.get("user", "").strip()
+        if not name:
+            return _respond2("No user name given.", error=True)
+        issuer["harvest_user"] = name
+        suffix = _persist_json(issuer_path, issuer)
+
+        rng = app.state["last_fetch_range"]  # type: ignore[attr-defined]
+        if fetch_callback is None or rng is None:
+            return _respond2(f"harvest_user set to '{name}'{suffix}.")
+        ps, pe = rng
+        try:
+            new_lines = fetch_callback(ps, pe)
+        except Exception as exc:  # noqa: BLE001 — surface fetch errors inline
+            return _respond2(str(exc), error=True)
+        new_lines = merge_duplicate_lines(new_lines)
+        cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
+        new_lines = apply_client_vat(
+            new_lines + client_extra_lines(cur_client), cur_client
+        )
+        _snapshot_lines(inv)
+        inv.lines[:] = new_lines
+        return _respond2(
+            f"harvest_user set to '{name}'{suffix}; imported "
+            f"{len(new_lines)} lines for {ps} to {pe}."
         )
 
     @app.post("/invoice/client")

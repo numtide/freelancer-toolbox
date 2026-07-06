@@ -359,16 +359,23 @@ def edit(
     else:
 
         def _fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            # Resolve the user filter at call time: harvest_user set in the
+            # editor (Settings or a warning's click-to-pick button) applies
+            # to re-fetches without restarting.
+            cur_user = user_filter or (
+                str(issuer.get("harvest_user") or "").strip() or None
+            )
             return fetch_lines(
                 ps,
                 pe,
                 client_filter=client_filter,
-                user_filter=effective_user,
+                user_filter=cur_user,
                 currency=currency,
                 use_agency=not no_agency,
             )
 
     startup_notice: str | None = None
+    startup_people: list[str] | None = None
     if onboarding:
         lines: list[InvoiceLine] = []
         client_entry: dict[str, str] = {}
@@ -377,6 +384,12 @@ def edit(
         startup_notice = _multi_user_warning(lines, effective_user)
         if startup_notice:
             click.echo(f"warning: {startup_notice}", err=True)
+            startup_people = sorted({ln.user for ln in lines if ln.user})
+            # The editor shows the names as click-to-pick buttons.
+            startup_notice = (
+                f"Imported hours for {len(startup_people)} people. Click "
+                "your name to import only yours: "
+            )
         if merge_duplicates:
             lines = merge_duplicate_lines(lines)
         client_entry = _resolve_bill_to(
@@ -419,7 +432,8 @@ def edit(
         issuer_path=eff_issuer_path,
         clients_path=eff_clients_path,
         startup_notice=startup_notice,
-        user_filter_active=bool(effective_user),
+        startup_people=startup_people,
+        cli_user_filter=user_filter,
     )
 
     url = (

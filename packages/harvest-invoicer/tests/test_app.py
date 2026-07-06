@@ -1515,6 +1515,31 @@ class TestDraftPersistence:
         assert c.post("/lines/add").status_code == 200
         assert c.post("/draft/discard").status_code == 200
 
+    def test_corrupt_draft_is_ignored_and_cleared(self, tmp_path: Path) -> None:
+        """A malformed draft record must not prevent the editor starting."""
+        db = tmp_path / "state.db"
+        state_db.save_draft(
+            db,
+            {
+                "key": "2026-06",
+                "invoice": {"lines": [{"concept": "X", "unit_price": "not-a-number"}]},
+            },
+        )
+        c = _make_app(tmp_path, db_path=db).test_client()
+        resp = c.get("/")
+        assert resp.status_code == 200
+        assert b"Draft restored" not in resp.data
+        assert b"Backend Development" in resp.data  # fresh seed lines
+        assert state_db.get_draft(db) is None  # bad record dropped
+
+    def test_noop_posts_leave_no_draft(self, tmp_path: Path) -> None:
+        """A session that never changes anything must not create a draft
+        (e.g. onboarding, where only settings are saved)."""
+        db = tmp_path / "state.db"
+        c = _make_app(tmp_path, db_path=db).test_client()
+        c.post("/lines/reorder", data={"order": "0,1"})  # identity order
+        assert state_db.get_draft(db) is None
+
     def test_draft_survives_roster_and_range_state(self, tmp_path: Path) -> None:
         """The import generation (roster, range, merge flag) round-trips."""
         db = tmp_path / "state.db"
@@ -1670,6 +1695,18 @@ class TestSendInvoice:
         resp = c.post("/send")
         assert b"render-err" in resp.data
         assert b"Send failed" in resp.data
+
+    def test_bad_smtp_port_reports_inline(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HARVEST_INVOICER_SMTP_HOST", "smtp.test")
+        monkeypatch.setenv("HARVEST_INVOICER_SMTP_PORT", "not-a-port")
+        client_entry = _fake_client() | {"email": "billing@acme.test"}
+        c = _make_app(tmp_path, client=client_entry).test_client()
+        resp = c.post("/send")
+        assert resp.status_code == 200
+        assert b"render-err" in resp.data
+        assert b"SMTP_PORT must be a number" in resp.data
 
     def test_send_button_wired_in_editor(self, client: FlaskClient) -> None:
         resp = client.get("/")

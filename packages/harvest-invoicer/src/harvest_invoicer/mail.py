@@ -57,7 +57,11 @@ def send_invoice_email(
             "(and _PORT/_USERNAME/_PASSWORD as needed) before starting."
         )
         raise MailConfigError(msg)
-    port = int(os.environ.get("HARVEST_INVOICER_SMTP_PORT", "587"))
+    try:
+        port = int(os.environ.get("HARVEST_INVOICER_SMTP_PORT", "587").strip())
+    except ValueError as exc:
+        msg = "HARVEST_INVOICER_SMTP_PORT must be a number (e.g. 587)."
+        raise MailConfigError(msg) from exc
     username = os.environ.get("HARVEST_INVOICER_SMTP_USERNAME", "").strip()
     password = os.environ.get("HARVEST_INVOICER_SMTP_PASSWORD", "")
     issuer_name = str(issuer.get("name") or "").strip()

@@ -424,8 +424,15 @@ def create_app(
     if db_path is not None:
         stored_draft = get_draft(db_path)
         if stored_draft and stored_draft.get("key") == invoice_number:
-            _apply_draft(stored_draft)
-            app.state["draft_restored"] = True  # type: ignore[attr-defined]
+            try:
+                _apply_draft(stored_draft)
+                app.state["draft_restored"] = True  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001 — a corrupt draft must never
+                # prevent the editor from starting.  Roll back whatever was
+                # partially applied and drop the bad record.
+                app.logger.warning("Ignoring corrupt draft", exc_info=True)
+                _apply_draft(fresh_state)
+                clear_draft(db_path)
 
     # Endpoints that never change the invoice's editing state; everything
     # else autosaves the draft after a successful POST.
@@ -448,7 +455,14 @@ def create_app(
             and resp.status_code < 400
             and request.endpoint not in draft_skip_endpoints
         ):
-            save_draft(db_path, _draft_dump())
+            data = _draft_dump()
+            if data == fresh_state:
+                # Nothing worth resuming (e.g. a settings-only session, or
+                # a no-op edit): don't create a junk draft, and don't let
+                # an older draft shadow a state that is back to fresh.
+                clear_draft(db_path)
+            else:
+                save_draft(db_path, data)
         return resp
 
     # ------------------------------------------------------------------

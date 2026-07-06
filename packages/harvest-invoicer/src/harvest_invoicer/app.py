@@ -4,17 +4,25 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import hashlib
 import os
 import threading
+from dataclasses import asdict
 from datetime import date, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from flask import Flask, Response, render_template, request
+from flask import Flask, Response, g, render_template, request
 from markupsafe import escape
 
-from harvest_invoicer.db import save_clients, save_issuer
+from harvest_invoicer.db import (
+    clear_draft,
+    get_draft,
+    save_clients,
+    save_draft,
+    save_issuer,
+)
 from harvest_invoicer.fetch import apply_client_vat, client_extra_lines
 from harvest_invoicer.i18n import SUPPORTED_LANGUAGES
 from harvest_invoicer.model import (
@@ -24,7 +32,7 @@ from harvest_invoicer.model import (
     fmt_money,
     merge_duplicate_lines,
 )
-from harvest_invoicer.render import _effective_base_url, render_html
+from harvest_invoicer.render import _effective_base_url, pdf_from_html, render_html
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -33,6 +41,18 @@ _LOCAL_HOSTNAMES = ("127.0.0.1", "localhost")
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _line_from_dict(data: dict[str, Any]) -> InvoiceLine:
+    """Rebuild an InvoiceLine from its draft (JSON) representation."""
+    return InvoiceLine(
+        concept=str(data.get("concept", "")),
+        unit_price=float(data.get("unit_price", 0.0)),
+        quantity=float(data.get("quantity", 0.0)),
+        vat_rate=float(data.get("vat_rate", 0.0)),
+        origin=str(data.get("origin", "harvest")),
+        user=str(data["user"]) if data.get("user") else None,
+    )
 
 
 def _make_invoice(
@@ -144,6 +164,11 @@ def create_app(
         # True once imported (origin "harvest") lines were hand-edited;
         # roster re-derives then ask for confirmation before discarding.
         "lines_dirty": False,
+        # (key, bytes) of the last WeasyPrint render, keyed on the rendered
+        # HTML + effective style.css, so unchanged previews are instant.
+        "pdf_cache": None,
+        # True when a previous session's autosaved draft was resumed.
+        "draft_restored": False,
     }
 
     @app.before_request
@@ -163,6 +188,34 @@ def create_app(
         if origin and urlparse(origin).hostname not in _LOCAL_HOSTNAMES:
             return Response("Forbidden: cross-origin request rejected.", status=403)
         return None
+
+    # The dev server runs threaded so slow PDF renders don't block edits,
+    # but app.state is a plain dict — serialize every state-touching
+    # request on one lock.  The PDF/asset endpoints stay parallel: they
+    # take the lock themselves just long enough to snapshot state, then
+    # run WeasyPrint outside it.
+    state_lock = threading.RLock()
+    unserialized_endpoints = {
+        "static",
+        "htmx_js",
+        "style_css",
+        "favicon",
+        "serve_pdf",
+        "preview_pdf",
+        "render_pdf_route",
+        "send_invoice",
+    }
+
+    @app.before_request
+    def _acquire_state_lock() -> None:
+        if request.endpoint not in unserialized_endpoints:
+            state_lock.acquire()
+            g.state_locked = True
+
+    @app.teardown_request
+    def _release_state_lock(_exc: BaseException | None) -> None:
+        if g.pop("state_locked", False):
+            state_lock.release()
 
     # ------------------------------------------------------------------
     # Template helpers
@@ -288,6 +341,117 @@ def create_app(
         )
 
     # ------------------------------------------------------------------
+    # Draft autosave: every edit persists the editing state to the state
+    # database, so a crashed or closed session resumes where it left off.
+    # ------------------------------------------------------------------
+
+    def _draft_dump() -> dict[str, Any]:
+        """Serialize the editing state to a JSON-safe draft record.
+
+        ``key`` is the invoice number the session started with — a later
+        session only resumes the draft when it computes the same number,
+        so a new month never inherits the previous month's edits.
+        """
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        lfr = app.state["last_fetch_range"]  # type: ignore[attr-defined]
+        return {
+            "key": invoice_number,
+            "invoice": {
+                "number": inv.number,
+                "issue_date": inv.issue_date.isoformat(),
+                "due_date": inv.due_date.isoformat(),
+                "legal_note": inv.legal_note,
+                "currency": inv.currency,
+                "period_start": inv.period_start.isoformat()
+                if inv.period_start
+                else None,
+                "period_end": inv.period_end.isoformat() if inv.period_end else None,
+                "lines": [asdict(ln) for ln in inv.lines],
+            },
+            "client_key": app.state["current_client_key"],  # type: ignore[attr-defined]
+            "selected_people": sorted(app.state["selected_people"]),  # type: ignore[attr-defined]
+            "import_raw": [
+                asdict(ln)
+                for ln in app.state["import_raw"]  # type: ignore[attr-defined]
+            ],
+            "import_merge": app.state["import_merge"],  # type: ignore[attr-defined]
+            "last_fetch_range": [lfr[0].isoformat(), lfr[1].isoformat()]
+            if lfr
+            else None,
+            "lines_dirty": app.state["lines_dirty"],  # type: ignore[attr-defined]
+        }
+
+    def _apply_draft(data: dict[str, Any]) -> None:
+        """Restore the editing state from a draft record (inverse of dump)."""
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        d: dict[str, Any] = data.get("invoice") or {}
+        if d.get("number"):
+            inv.number = str(d["number"])
+        for attr in ("issue_date", "due_date"):
+            if d.get(attr):
+                with contextlib.suppress(ValueError):
+                    setattr(inv, attr, date.fromisoformat(str(d[attr])))
+        for attr in ("period_start", "period_end"):
+            value = d.get(attr)
+            with contextlib.suppress(ValueError):
+                setattr(inv, attr, date.fromisoformat(str(value)) if value else None)
+        inv.legal_note = str(d["legal_note"]) if d.get("legal_note") else None
+        inv.lines[:] = [_line_from_dict(x) for x in d.get("lines") or []]
+        clients_map: dict[str, dict[str, str]] = app.state["clients"]  # type: ignore[attr-defined]
+        client_key = data.get("client_key")
+        if client_key and client_key in clients_map:
+            app.state["client"] = clients_map[client_key]  # type: ignore[attr-defined]
+            app.state["current_client_key"] = client_key  # type: ignore[attr-defined]
+        app.state["selected_people"] = set(  # type: ignore[attr-defined]
+            data.get("selected_people") or []
+        )
+        app.state["import_raw"] = [  # type: ignore[attr-defined]
+            _line_from_dict(x) for x in data.get("import_raw") or []
+        ]
+        app.state["import_merge"] = bool(data.get("import_merge", True))  # type: ignore[attr-defined]
+        lfr = data.get("last_fetch_range")
+        with contextlib.suppress(ValueError, IndexError, TypeError):
+            app.state["last_fetch_range"] = (  # type: ignore[attr-defined]
+                (date.fromisoformat(lfr[0]), date.fromisoformat(lfr[1]))
+                if lfr
+                else None
+            )
+        app.state["lines_dirty"] = bool(data.get("lines_dirty", False))  # type: ignore[attr-defined]
+
+    # The just-seeded state, kept so the restored-draft note's Discard
+    # button can return to it.  Must be captured before the draft applies.
+    fresh_state = _draft_dump()
+    if db_path is not None:
+        stored_draft = get_draft(db_path)
+        if stored_draft and stored_draft.get("key") == invoice_number:
+            _apply_draft(stored_draft)
+            app.state["draft_restored"] = True  # type: ignore[attr-defined]
+
+    # Endpoints that never change the invoice's editing state; everything
+    # else autosaves the draft after a successful POST.
+    # (settings_clients_save is NOT skipped: renaming the current client
+    # changes the draft's client_key.)
+    draft_skip_endpoints = {
+        "settings_issuer_save",
+        "settings_clients_delete",
+        "render_pdf_route",
+        "send_invoice",
+        "discard_draft",
+        "quit_server",
+    }
+
+    @app.after_request
+    def _autosave_draft(resp: Response) -> Response:
+        if (
+            db_path is not None
+            and request.method == "POST"
+            and resp.status_code < 400
+            and request.endpoint not in draft_skip_endpoints
+        ):
+            save_draft(db_path, _draft_dump())
+        return resp
+
+    # ------------------------------------------------------------------
     # Routes
     # ------------------------------------------------------------------
 
@@ -304,6 +468,7 @@ def create_app(
             fmt_money=fmt_money,
             output_path=str(output_path),
             has_undo=app.state["undo"] is not None,  # type: ignore[attr-defined]
+            draft_restored=app.state["draft_restored"],  # type: ignore[attr-defined]
             **_import_note_ctx(),
         )
 
@@ -327,6 +492,47 @@ def create_app(
                 mimetype="text/html",
             )
 
+    def _style_fingerprint(utd: Path | None) -> str:
+        """Identity of the effective style.css (path + mtime + size).
+
+        The stylesheet is resolved by WeasyPrint at conversion time, so it
+        must be part of the PDF cache key — editing a custom style.css has
+        to invalidate a cache keyed only on the rendered HTML.
+        """
+        css = Path(_effective_base_url(utd)) / "style.css"
+        try:
+            st = css.stat()
+        except OSError:
+            return str(css)
+        return f"{css}:{st.st_mtime_ns}:{st.st_size}"
+
+    def _invoice_pdf_bytes() -> bytes:
+        """The current invoice as PDF, cached on its rendered content.
+
+        Renders the HTML under the state lock (fast), then runs the slow
+        WeasyPrint conversion outside it so edits stay responsive.  When
+        neither the HTML nor the stylesheet changed since the last render
+        the cached bytes are returned immediately.
+        """
+        utd: Path | None = app.state["user_templates_dir"]  # type: ignore[attr-defined]
+        with state_lock:
+            html = render_html(
+                app.state["invoice"],  # type: ignore[attr-defined]
+                issuer,
+                app.state["client"],  # type: ignore[attr-defined]
+                utd,
+            )
+            key = hashlib.sha256(
+                (html + "\x00" + _style_fingerprint(utd)).encode()
+            ).hexdigest()
+            cached = app.state["pdf_cache"]  # type: ignore[attr-defined]
+            if cached and cached[0] == key:
+                return bytes(cached[1])
+        pdf = pdf_from_html(html, utd)
+        with state_lock:
+            app.state["pdf_cache"] = (key, pdf)  # type: ignore[attr-defined]
+        return pdf
+
     @app.get("/preview.pdf")
     def preview_pdf() -> Response:
         """True-to-output preview: the exact WeasyPrint render, in memory.
@@ -334,17 +540,8 @@ def create_app(
         Byte-identical to what the Generate PDF button writes, so the PDF
         preview shows real pagination, fonts, and page footers.
         """
-        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
-        utd: Path | None = app.state["user_templates_dir"]  # type: ignore[attr-defined]
-        from harvest_invoicer.render import render_pdf_bytes  # noqa: PLC0415
-
         try:
-            pdf = render_pdf_bytes(
-                inv,
-                issuer,
-                app.state["client"],  # type: ignore[attr-defined]
-                utd,
-            )
+            pdf = _invoice_pdf_bytes()
         except Exception as exc:  # noqa: BLE001 — surface render errors in the pane
             return Response(
                 f"<p>PDF preview unavailable: {escape(str(exc))}</p>",
@@ -971,14 +1168,63 @@ def create_app(
 
     @app.post("/render")
     def render_pdf_route() -> str:
-        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         out: Path = app.state["output_path"]  # type: ignore[attr-defined]
-        utd: Path | None = app.state["user_templates_dir"]  # type: ignore[attr-defined]
-        from harvest_invoicer.render import render_pdf  # noqa: PLC0415
-
-        cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
-        render_pdf(inv, issuer, cur_client, out, utd)
+        out.write_bytes(_invoice_pdf_bytes())
         return render_template("partials/render_done.html", output_path=str(out))
+
+    # --- Send by email ---
+
+    @app.post("/send")
+    def send_invoice() -> Response:
+        """Email the invoice PDF to the bill-to client.
+
+        SMTP settings come from HARVEST_INVOICER_SMTP_* environment
+        variables (see mail.py) — like Harvest credentials they are never
+        persisted.  Configuration problems and SMTP failures surface
+        inline in the header status area.
+        """
+        from harvest_invoicer.mail import (  # noqa: PLC0415
+            MailConfigError,
+            send_invoice_email,
+        )
+
+        def _status(msg: str, *, error: bool = False) -> Response:
+            css = "render-err" if error else "render-ok"
+            return Response(
+                f'<p id="render-status" class="{css}">{escape(msg)}</p>',
+                content_type="text/html",
+            )
+
+        # Snapshot under the lock so the email metadata matches the PDF
+        # even if another tab edits concurrently.
+        with state_lock:
+            inv_copy: Invoice = copy.deepcopy(app.state["invoice"])  # type: ignore[attr-defined]
+            cur_client = dict(app.state["client"])  # type: ignore[attr-defined]
+        try:
+            pdf = _invoice_pdf_bytes()
+            recipient = send_invoice_email(pdf, inv_copy, issuer, cur_client)
+        except MailConfigError as exc:
+            return _status(str(exc), error=True)
+        except OSError as exc:  # SMTPException subclasses OSError
+            return _status(f"Send failed: {exc}", error=True)
+        return _status(f"Invoice {inv_copy.number} emailed to {recipient}.")
+
+    # --- Draft ---
+
+    @app.post("/draft/discard")
+    def discard_draft() -> Response:
+        """Drop the restored draft and return to the freshly seeded state."""
+        if db_path is not None:
+            clear_draft(db_path)
+        _apply_draft(fresh_state)
+        app.state["undo"] = None  # type: ignore[attr-defined]
+        app.state["draft_restored"] = False  # type: ignore[attr-defined]
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        return _lines_response(
+            inv,
+            _client_inset_oob()
+            + _fetch_status("Draft discarded — back to the fresh session state."),
+        )
 
     # --- Quit ---
 

@@ -34,8 +34,11 @@
           <details class="menu">
             <summary class="menu-caret" aria-label="More invoice actions">&#9662;</summary>
             <div class="menu-items">
-              <button type="button" class="send-row" disabled
-                title="Coming soon: email the generated PDF to the client">
+              <button type="button" class="send-row"
+                title="Email the invoice PDF to the bill-to client (SMTP via HARVEST_INVOICER_SMTP_* environment)"
+                hx-post="/send" hx-target="#render-status" hx-swap="outerHTML"
+                hx-disabled-elt="this"
+                hx-confirm="Email the invoice PDF to the bill-to client now?">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FA5D00" stroke-width="1.8"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4z"></path></svg>
                 Send invoice
               </button>
@@ -101,7 +104,15 @@
             </label>
           </div>
           <span id="fetch-indicator" class="htmx-indicator">Fetching…</span>
-          <span id="fetch-status"></span>
+          <span id="fetch-status"{% if draft_restored %} class="fetch-ok"{% endif %}>
+            {%- if draft_restored -%}
+              Draft restored from your last session.
+              <button type="button" class="link-btn"
+                title="Throw away the draft and start over from the fresh session state"
+                hx-post="/draft/discard" hx-target="#line-rows" hx-swap="outerHTML"
+                hx-confirm="Discard the restored draft? Your saved edits will be lost.">Discard</button>
+            {%- endif -%}
+          </span>
           {% include "partials/import_note.html" %}
         </div>
       </div>

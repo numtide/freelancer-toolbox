@@ -97,23 +97,18 @@ def render_html(
     )
 
 
-def render_pdf_bytes(
-    invoice: Invoice,
-    issuer: dict[str, object],
-    client: dict[str, str],
-    user_templates_dir: Path | None = None,
-) -> bytes:
-    """Render invoice to PDF via WeasyPrint and return the bytes.
+def pdf_from_html(html_str: str, user_templates_dir: Path | None = None) -> bytes:
+    """Convert already-rendered invoice HTML to PDF bytes via WeasyPrint.
 
-    The HTML is rendered first via :func:`render_html`; WeasyPrint then
-    converts it using ``base_url`` so that relative ``style.css`` links
-    resolve correctly.  The user templates directory (if present) takes
-    precedence over the packaged fallback for both HTML and CSS.
+    ``base_url`` makes relative ``style.css`` links resolve against the
+    user templates directory (when it provides a style.css) or the
+    packaged one.  Split out from :func:`render_pdf_bytes` so callers can
+    render the HTML separately (e.g. under a lock, or to key a cache) and
+    run the slow conversion independently.
     """
     from weasyprint import HTML  # noqa: PLC0415
     from weasyprint.text.fonts import FontConfiguration  # noqa: PLC0415
 
-    html_str = render_html(invoice, issuer, client, user_templates_dir)
     base_url = _effective_base_url(user_templates_dir)
     font_config = FontConfiguration()
     pdf = HTML(string=html_str, base_url=base_url).write_pdf(
@@ -125,6 +120,23 @@ def render_pdf_bytes(
         msg = "WeasyPrint returned no PDF data"
         raise TypeError(msg)
     return pdf
+
+
+def render_pdf_bytes(
+    invoice: Invoice,
+    issuer: dict[str, object],
+    client: dict[str, str],
+    user_templates_dir: Path | None = None,
+) -> bytes:
+    """Render invoice to PDF via WeasyPrint and return the bytes.
+
+    The HTML is rendered first via :func:`render_html`; WeasyPrint then
+    converts it via :func:`pdf_from_html`.  The user templates directory
+    (if present) takes precedence over the packaged fallback for both
+    HTML and CSS.
+    """
+    html_str = render_html(invoice, issuer, client, user_templates_dir)
+    return pdf_from_html(html_str, user_templates_dir)
 
 
 def render_pdf(

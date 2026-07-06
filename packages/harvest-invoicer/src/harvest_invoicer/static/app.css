@@ -200,6 +200,19 @@ body {
 }
 .render-ok { color: var(--ok); font-weight: 600; font-size: 13px; margin: 0; }
 .render-ok a { color: inherit; }
+.render-err { color: var(--danger); font-weight: 600; font-size: 13px; margin: 0; }
+
+/* Inline text-style button (e.g. the restored-draft Discard action) */
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--orange);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:hover { color: var(--orange-hover); }
 
 /* ===== Editor layout ===== */
 .editor-grid {

@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def default_db_path() -> Path:
@@ -67,6 +67,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
             PRAGMA user_version = 1;
             """
         )
+    if version < 2:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS draft (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                data TEXT NOT NULL
+            );
+            PRAGMA user_version = 2;
+            """
+        )
 
 
 def get_issuer(path: Path | str) -> dict[str, object] | None:
@@ -105,3 +115,25 @@ def save_clients(path: Path | str, clients: dict[str, dict[str, object]]) -> Non
                 for pos, (key, entry) in enumerate(clients.items())
             ],
         )
+
+
+def get_draft(path: Path | str) -> dict[str, object] | None:
+    """The autosaved editing draft, or ``None`` when there is none."""
+    with _connect(path) as conn:
+        row = conn.execute("SELECT data FROM draft WHERE id = 1").fetchone()
+    return json.loads(row[0]) if row else None
+
+
+def save_draft(path: Path | str, data: dict[str, object]) -> None:
+    """Autosave the editing draft (a single slot, overwritten each time)."""
+    with _connect(path) as conn:
+        conn.execute(
+            "INSERT INTO draft (id, data) VALUES (1, ?) "
+            "ON CONFLICT (id) DO UPDATE SET data = excluded.data",
+            (json.dumps(data, ensure_ascii=False),),
+        )
+
+
+def clear_draft(path: Path | str) -> None:
+    with _connect(path) as conn:
+        conn.execute("DELETE FROM draft")

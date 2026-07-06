@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 import pytest
 from harvest_invoicer import db as state_db
@@ -1425,3 +1425,280 @@ class TestReorder:
         resp = client.get("/")
         assert resp.data.count(b'class="drag-handle"') == 2
         assert b"/lines/reorder" in resp.data
+
+
+def _make_app(tmp_path: Path, **overrides: object):  # noqa: ANN202
+    kwargs: dict[str, object] = {
+        "lines": _fake_lines(),
+        "issuer": _fake_issuer(),
+        "client": _fake_client(),
+        "invoice_number": "2026-06",
+        "output_path": tmp_path / "invoice-2026-06.pdf",
+    }
+    kwargs.update(overrides)
+    app = create_app(**kwargs)  # type: ignore[arg-type]
+    app.config["TESTING"] = True
+    return app
+
+
+class TestDraftPersistence:
+    """Edits autosave to the state DB and resume in the next session."""
+
+    def test_edit_autosaves_draft(self, tmp_path: Path) -> None:
+        db = tmp_path / "state.db"
+        c = _make_app(tmp_path, db_path=db).test_client()
+        c.post(
+            "/lines/update/0",
+            data={"concept": "Edited Concept", "quantity": "40", "unit_price": "120"},
+        )
+        draft = state_db.get_draft(db)
+        assert draft is not None
+        assert draft["key"] == "2026-06"
+        assert draft["invoice"]["lines"][0]["concept"] == "Edited Concept"
+
+    def test_next_session_restores_matching_draft(self, tmp_path: Path) -> None:
+        db = tmp_path / "state.db"
+        c1 = _make_app(tmp_path, db_path=db).test_client()
+        c1.post(
+            "/lines/update/0",
+            data={"concept": "Edited Concept", "quantity": "40", "unit_price": "120"},
+        )
+        c2 = _make_app(tmp_path, db_path=db).test_client()
+        resp = c2.get("/")
+        assert b"Draft restored" in resp.data
+        assert b"Edited Concept" in resp.data
+        assert b"/draft/discard" in resp.data
+
+    def test_renamed_invoice_still_resumes(self, tmp_path: Path) -> None:
+        """The draft key is the seed number, so editing the visible invoice
+        number does not orphan the draft on restart."""
+        db = tmp_path / "state.db"
+        c1 = _make_app(tmp_path, db_path=db).test_client()
+        c1.post("/meta/update", data={"number": "FINAL-042"})
+        c2 = _make_app(tmp_path, db_path=db).test_client()
+        resp = c2.get("/")
+        assert b"Draft restored" in resp.data
+        assert b"FINAL-042" in resp.data
+
+    def test_other_months_draft_is_ignored(self, tmp_path: Path) -> None:
+        db = tmp_path / "state.db"
+        c1 = _make_app(tmp_path, db_path=db).test_client()
+        c1.post(
+            "/lines/update/0",
+            data={"concept": "Edited Concept", "quantity": "40", "unit_price": "120"},
+        )
+        c2 = _make_app(tmp_path, db_path=db, invoice_number="2026-07").test_client()
+        resp = c2.get("/")
+        assert b"Draft restored" not in resp.data
+        assert b"Edited Concept" not in resp.data
+        assert b"Backend Development" in resp.data  # fresh seed lines
+
+    def test_discard_returns_to_fresh_state(self, tmp_path: Path) -> None:
+        db = tmp_path / "state.db"
+        c1 = _make_app(tmp_path, db_path=db).test_client()
+        c1.post(
+            "/lines/update/0",
+            data={"concept": "Edited Concept", "quantity": "40", "unit_price": "120"},
+        )
+        c2 = _make_app(tmp_path, db_path=db).test_client()
+        resp = c2.post("/draft/discard")
+        assert resp.status_code == 200
+        assert b"Draft discarded" in resp.data
+        assert b"Edited Concept" not in resp.data
+        assert b"Backend Development" in resp.data
+        assert state_db.get_draft(db) is None
+
+    def test_no_db_means_no_draft_and_discard_is_safe(self, tmp_path: Path) -> None:
+        c = _make_app(tmp_path).test_client()  # db_path=None (demo/tests)
+        resp = c.get("/")
+        assert b"Draft restored" not in resp.data
+        assert c.post("/lines/add").status_code == 200
+        assert c.post("/draft/discard").status_code == 200
+
+    def test_draft_survives_roster_and_range_state(self, tmp_path: Path) -> None:
+        """The import generation (roster, range, merge flag) round-trips."""
+        db = tmp_path / "state.db"
+        raw = [
+            InvoiceLine(concept="Dev", unit_price=100.0, quantity=10.0, user="Jane"),
+            InvoiceLine(concept="Dev", unit_price=100.0, quantity=5.0, user="Bob"),
+        ]
+        app1 = _make_app(
+            tmp_path,
+            db_path=db,
+            import_raw=raw,
+            period_start=date(2026, 6, 1),
+            period_end=date(2026, 6, 30),
+        )
+        c1 = app1.test_client()
+        c1.post("/lines/people", data={"toggle": "Bob"})  # deselect Bob
+        app2 = _make_app(tmp_path, db_path=db, import_raw=raw)
+        c2 = app2.test_client()
+        c2.get("/")
+        assert app2.state["selected_people"] == {"Jane"}  # type: ignore[attr-defined]
+        assert app2.state["last_fetch_range"] == (  # type: ignore[attr-defined]
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+
+class TestPdfCache:
+    """Unchanged invoices reuse the last WeasyPrint render."""
+
+    def test_preview_pdf_cached_until_state_changes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[str] = []
+
+        def fake_pdf(html: str, utd: Path | None = None) -> bytes:
+            calls.append(html)
+            return b"%PDF-fake"
+
+        monkeypatch.setattr("harvest_invoicer.app.pdf_from_html", fake_pdf)
+        c = _make_app(tmp_path).test_client()
+        assert c.get("/preview.pdf").data == b"%PDF-fake"
+        assert c.get("/preview.pdf").data == b"%PDF-fake"
+        assert len(calls) == 1  # second hit served from cache
+        c.post(
+            "/lines/update/0",
+            data={"concept": "Changed", "quantity": "40", "unit_price": "120"},
+        )
+        c.get("/preview.pdf")
+        assert len(calls) == 2  # state change invalidated the cache
+
+    def test_generate_reuses_preview_render(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[str] = []
+
+        def fake_pdf(html: str, utd: Path | None = None) -> bytes:
+            calls.append(html)
+            return b"%PDF-fake"
+
+        monkeypatch.setattr("harvest_invoicer.app.pdf_from_html", fake_pdf)
+        c = _make_app(tmp_path).test_client()
+        c.get("/preview.pdf")
+        resp = c.post("/render")
+        assert resp.status_code == 200
+        assert len(calls) == 1  # Generate reused the preview's bytes
+        assert (tmp_path / "invoice-2026-06.pdf").read_bytes() == b"%PDF-fake"
+
+
+class TestSendInvoice:
+    """POST /send emails the PDF to the bill-to client via env-configured SMTP."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_renderer(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "harvest_invoicer.app.pdf_from_html",
+            lambda _html, _utd=None: b"%PDF-fake",
+        )
+        for var in ("HOST", "PORT", "USERNAME", "PASSWORD", "FROM"):
+            monkeypatch.delenv(f"HARVEST_INVOICER_SMTP_{var}", raising=False)
+
+    def test_send_without_smtp_config_reports_inline(self, tmp_path: Path) -> None:
+        client_entry = _fake_client() | {"email": "billing@acme.test"}
+        c = _make_app(tmp_path, client=client_entry).test_client()
+        resp = c.post("/send")
+        assert resp.status_code == 200
+        assert b"render-err" in resp.data
+        assert b"SMTP is not configured" in resp.data
+
+    def test_send_without_client_email_reports_inline(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HARVEST_INVOICER_SMTP_HOST", "smtp.test")
+        c = _make_app(tmp_path).test_client()
+        resp = c.post("/send")
+        assert b"render-err" in resp.data
+        assert b"no email address" in resp.data
+
+    def test_send_success_attaches_pdf(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import smtplib  # noqa: PLC0415
+
+        sent = []
+
+        class FakeSMTP:
+            def __init__(self, host: str, port: int, timeout: int = 0) -> None:
+                self.host, self.port = host, port
+
+            def __enter__(self) -> Self:
+                return self
+
+            def __exit__(self, *exc: object) -> None:
+                return None
+
+            def ehlo(self) -> None:
+                pass
+
+            def has_extn(self, _name: str) -> bool:
+                return False
+
+            def login(self, _user: str, _password: str) -> None:
+                pass
+
+            def send_message(self, msg: object) -> None:
+                sent.append(msg)
+
+        monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+        monkeypatch.setenv("HARVEST_INVOICER_SMTP_HOST", "smtp.test")
+        client_entry = _fake_client() | {"email": "billing@acme.test"}
+        c = _make_app(tmp_path, client=client_entry).test_client()
+        resp = c.post("/send")
+        assert b"emailed to billing@acme.test" in resp.data
+        assert len(sent) == 1
+        msg = sent[0]
+        assert msg["To"] == "billing@acme.test"
+        assert "Invoice 2026-06" in msg["Subject"]
+        attachments = list(msg.iter_attachments())
+        assert attachments[0].get_filename() == "invoice-2026-06.pdf"
+        assert attachments[0].get_content() == b"%PDF-fake"
+
+    def test_smtp_failure_reports_inline(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import smtplib  # noqa: PLC0415
+
+        def boom(*_args: object, **_kwargs: object) -> object:
+            raise smtplib.SMTPConnectError(421, "unreachable")
+
+        monkeypatch.setattr(smtplib, "SMTP", boom)
+        monkeypatch.setenv("HARVEST_INVOICER_SMTP_HOST", "smtp.test")
+        client_entry = _fake_client() | {"email": "billing@acme.test"}
+        c = _make_app(tmp_path, client=client_entry).test_client()
+        resp = c.post("/send")
+        assert b"render-err" in resp.data
+        assert b"Send failed" in resp.data
+
+    def test_send_button_wired_in_editor(self, client: FlaskClient) -> None:
+        resp = client.get("/")
+        assert b'hx-post="/send"' in resp.data
+
+
+class TestStateLock:
+    """Concurrent requests must not corrupt app.state (threaded server)."""
+
+    def test_parallel_edits_stay_consistent(self, tmp_path: Path) -> None:
+        import threading  # noqa: PLC0415
+
+        app = _make_app(tmp_path)
+        errors: list[int] = []
+
+        def hammer() -> None:
+            c = app.test_client()
+            for i in range(25):
+                r = c.post(
+                    "/lines/update/0",
+                    data={"concept": f"C{i}", "quantity": "1", "unit_price": "1"},
+                )
+                if r.status_code != 200:
+                    errors.append(r.status_code)
+
+        threads = [threading.Thread(target=hammer) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errors
+        assert len(app.state["invoice"].lines) == 2  # type: ignore[attr-defined]

@@ -12,7 +12,10 @@ notation across all invoices (see the README).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {

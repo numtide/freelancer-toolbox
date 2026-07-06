@@ -905,29 +905,25 @@ def create_app(
             return _render_clients_block(
                 "Missing required fields: " + ", ".join(missing), error=True
             )
-        if values["email"] and "@" not in values["email"]:
-            return _render_clients_block(
-                "Email must be a valid address (missing '@').", error=True
-            )
-        if values["language"] and values["language"] not in SUPPORTED_LANGUAGES:
-            return _render_clients_block(
-                f"Unsupported language '{values['language']}'. "
-                f"Supported: {', '.join(SUPPORTED_LANGUAGES)}.",
-                error=True,
-            )
-
         vat_raw = request.form.get("vat_rate", "").strip()
         vat_val: float | None = None
-        if vat_raw:
+        field_error: str | None = None
+        if values["email"] and "@" not in values["email"]:
+            field_error = "Email must be a valid address (missing '@')."
+        elif values["language"] and values["language"] not in SUPPORTED_LANGUAGES:
+            field_error = (
+                f"Unsupported language '{values['language']}'. "
+                f"Supported: {', '.join(SUPPORTED_LANGUAGES)}."
+            )
+        elif vat_raw:
             try:
                 vat_val = float(vat_raw)
             except ValueError:
                 vat_val = -1.0
             if not 0.0 <= vat_val <= 1.0:
-                return _render_clients_block(
-                    "VAT rate must be a number between 0 and 1 (e.g. 0.21).",
-                    error=True,
-                )
+                field_error = "VAT rate must be a number between 0 and 1 (e.g. 0.21)."
+        if field_error:
+            return _render_clients_block(field_error, error=True)
 
         extra_items, extra_err = _parse_extra_lines(request.form.get("extra_lines", ""))
         if extra_err:

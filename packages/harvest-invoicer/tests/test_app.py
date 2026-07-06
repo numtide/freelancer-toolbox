@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -371,6 +372,162 @@ class TestFetchFromEditor:
             )
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         assert len(inv.lines) == 2
+
+
+class TestSettings:
+    """In-app settings: issuer and clients managed through the editor."""
+
+    def _make_app(self, tmp_path: Path):  # noqa: ANN202
+        issuer = _fake_issuer()
+        clients = {"Acme Corp": _fake_client(), "Other Client": _fake_client()}
+        issuer_path = tmp_path / "issuer.json"
+        clients_path = tmp_path / "clients.json"
+        issuer_path.write_text(json.dumps(issuer))
+        clients_path.write_text(json.dumps(clients))
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=issuer,
+            client=clients["Acme Corp"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+            issuer_path=issuer_path,
+            clients_path=clients_path,
+        )
+        app.config["TESTING"] = True
+        return app, issuer_path, clients_path
+
+    def _issuer_form(self, **overrides: str) -> dict[str, str]:
+        base = {
+            "name": "Jane Doe Consulting",
+            "address_line1": "12 Example St",
+            "address_line2": "10115 Berlin",
+            "country": "Germany",
+            "tax_id": "DE000000000",
+            "tax_id_label": "VAT ID",
+            "phone": "+49 30 0000",
+            "email": "jane@example.com",
+            "iban": "DE00 0000 0000 0000 0000 00",
+            "bic": "EXAMPLEXXX",
+            "date_format": "",
+            "legal_note": "",
+            "number_template": "",
+        }
+        base.update(overrides)
+        return base
+
+    def _client_form(self, **overrides: str) -> dict[str, str]:
+        base = {
+            "original_key": "",
+            "key": "New Client",
+            "name": "New Client Ltd.",
+            "address_line1": "9 New St",
+            "address_line2": "00000 Town",
+            "country": "Norway",
+            "tax_id": "NO000",
+            "tax_id_label": "",
+            "vat_rate": "",
+        }
+        base.update(overrides)
+        return base
+
+    def test_settings_page_renders(self, tmp_path: Path) -> None:
+        app, _, _ = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.get("/settings")
+        assert resp.status_code == 200
+        assert b"Jane Doe Consulting" in resp.data
+        assert b"Acme Corp" in resp.data
+        assert b"Other Client" in resp.data
+
+    def test_editor_links_settings(self, client: FlaskClient) -> None:
+        resp = client.get("/")
+        assert b'href="/settings"' in resp.data
+
+    def test_issuer_save_updates_session_and_file(self, tmp_path: Path) -> None:
+        app, issuer_path, _ = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/issuer",
+                data=self._issuer_form(name="New Name S.L."),
+            )
+            assert b"Issuer saved" in resp.data
+            # The preview reflects the new issuer immediately
+            preview = c.get("/preview")
+        assert b"New Name S.L." in preview.data
+        assert json.loads(issuer_path.read_text())["name"] == "New Name S.L."
+
+    def test_issuer_save_missing_required_rejected(self, tmp_path: Path) -> None:
+        app, issuer_path, _ = self._make_app(tmp_path)
+        before = issuer_path.read_text()
+        with app.test_client() as c:
+            resp = c.post("/settings/issuer", data=self._issuer_form(name=""))
+        assert b"Missing required fields" in resp.data
+        assert issuer_path.read_text() == before  # untouched
+
+    def test_client_edit_updates_current_invoice(self, tmp_path: Path) -> None:
+        app, _, clients_path = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/clients/save",
+                data=self._client_form(
+                    original_key="Acme Corp",
+                    key="Acme Corp",
+                    name="Acme Corp International",
+                ),
+            )
+            assert b"saved" in resp.data
+            preview = c.get("/preview")
+        assert b"Acme Corp International" in preview.data
+        saved = json.loads(clients_path.read_text())
+        assert saved["Acme Corp"]["name"] == "Acme Corp International"
+
+    def test_client_add_and_delete(self, tmp_path: Path) -> None:
+        app, _, clients_path = self._make_app(tmp_path)
+        with app.test_client() as c:
+            c.post("/settings/clients/save", data=self._client_form())
+            assert "New Client" in json.loads(clients_path.read_text())
+            resp = c.post(
+                "/settings/clients/delete", data={"original_key": "New Client"}
+            )
+            assert b"deleted" in resp.data
+        assert "New Client" not in json.loads(clients_path.read_text())
+
+    def test_delete_current_client_rejected(self, tmp_path: Path) -> None:
+        app, _, clients_path = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/clients/delete", data={"original_key": "Acme Corp"}
+            )
+        assert b"Cannot delete" in resp.data
+        assert "Acme Corp" in json.loads(clients_path.read_text())
+
+    def test_client_invalid_vat_rejected(self, tmp_path: Path) -> None:
+        app, _, _ = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/clients/save",
+                data=self._client_form(vat_rate="21"),
+            )
+        assert b"between 0 and 1" in resp.data
+
+    def test_no_paths_saves_session_only(self, tmp_path: Path) -> None:
+        """Demo mode: settings apply in memory, nothing written anywhere."""
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/issuer", data=self._issuer_form(name="Session Only")
+            )
+            preview = c.get("/preview")
+        assert b"this session only" in resp.data
+        assert b"Session Only" in preview.data
 
 
 class TestUndo:

@@ -1,0 +1,96 @@
+<div id="clients-block">
+  {% for key, entry in clients.items() %}
+  <form class="client-form"
+    hx-post="/settings/clients/save" hx-target="#clients-block" hx-swap="outerHTML">
+    <input type="hidden" name="original_key" value="{{ key }}">
+    <p class="client-key">{{ key }}{% if key == current_client_key %} <span class="muted">(current invoice)</span>{% endif %}</p>
+    <div class="field-grid">
+      <label class="field">
+        <span class="field-label">Harvest client name (key)</span>
+        <input type="text" name="key" value="{{ key }}">
+      </label>
+      <label class="field">
+        <span class="field-label">Legal name for invoice</span>
+        <input type="text" name="name" value="{{ entry.get('name', '') }}">
+      </label>
+      <label class="field">
+        <span class="field-label">Address line 1</span>
+        <input type="text" name="address_line1" value="{{ entry.get('address_line1', '') }}">
+      </label>
+      <label class="field">
+        <span class="field-label">Address line 2</span>
+        <input type="text" name="address_line2" value="{{ entry.get('address_line2', '') }}">
+      </label>
+      <label class="field">
+        <span class="field-label">Country</span>
+        <input type="text" name="country" value="{{ entry.get('country', '') }}">
+      </label>
+      <label class="field">
+        <span class="field-label">Tax ID</span>
+        <input type="text" name="tax_id" value="{{ entry.get('tax_id', '') }}">
+      </label>
+      <label class="field">
+        <span class="field-label">Tax ID label</span>
+        <input type="text" name="tax_id_label" value="{{ entry.get('tax_id_label', '') }}">
+      </label>
+      <label class="field">
+        <span class="field-label">VAT rate (0–1, e.g. 0.21; empty = none)</span>
+        <input type="number" name="vat_rate" step="0.01" min="0" max="1"
+          value="{{ entry.get('vat_rate', '') }}">
+      </label>
+    </div>
+    <div class="toolbar">
+      <button type="submit" class="secondary">Save client</button>
+      <button type="button" class="text-btn"
+        hx-post="/settings/clients/delete" hx-include="closest form"
+        hx-confirm="Delete client '{{ key }}'?"
+        hx-target="#clients-block" hx-swap="outerHTML">Delete</button>
+    </div>
+  </form>
+  {% endfor %}
+
+  <form class="client-form"
+    hx-post="/settings/clients/save" hx-target="#clients-block" hx-swap="outerHTML">
+    <input type="hidden" name="original_key" value="">
+    <p class="client-key">Add a client</p>
+    <div class="field-grid">
+      <label class="field">
+        <span class="field-label">Harvest client name (key)</span>
+        <input type="text" name="key" value="">
+      </label>
+      <label class="field">
+        <span class="field-label">Legal name for invoice</span>
+        <input type="text" name="name" value="">
+      </label>
+      <label class="field">
+        <span class="field-label">Address line 1</span>
+        <input type="text" name="address_line1" value="">
+      </label>
+      <label class="field">
+        <span class="field-label">Address line 2</span>
+        <input type="text" name="address_line2" value="">
+      </label>
+      <label class="field">
+        <span class="field-label">Country</span>
+        <input type="text" name="country" value="">
+      </label>
+      <label class="field">
+        <span class="field-label">Tax ID</span>
+        <input type="text" name="tax_id" value="">
+      </label>
+      <label class="field">
+        <span class="field-label">Tax ID label</span>
+        <input type="text" name="tax_id_label" value="">
+      </label>
+      <label class="field">
+        <span class="field-label">VAT rate (0–1, e.g. 0.21; empty = none)</span>
+        <input type="number" name="vat_rate" step="0.01" min="0" max="1" value="">
+      </label>
+    </div>
+    <div class="toolbar">
+      <button type="submit" class="secondary">Add client</button>
+    </div>
+  </form>
+
+  <span id="clients-status" class="{{ 'status-err' if status_error else 'status-ok' }}">{{ status or '' }}</span>
+</div>

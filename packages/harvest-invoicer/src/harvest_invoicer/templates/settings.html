@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Settings — invoice editor</title>
+  <script src="/static/htmx.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img class="logo" src="/static/harvest-logo.svg" alt="Harvest">
+      <h1>Settings</h1>
+    </div>
+    <div class="actions">
+      <a class="button" href="/">Back to editor</a>
+    </div>
+  </header>
+
+  <main class="settings-main">
+
+    <section class="card">
+      <h2>Issuer</h2>
+      <form hx-post="/settings/issuer" hx-target="#issuer-status" hx-swap="outerHTML">
+        <div class="field-grid">
+          <label class="field">
+            <span class="field-label">Name / company</span>
+            <input type="text" name="name" value="{{ issuer.get('name', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Email</span>
+            <input type="text" name="email" value="{{ issuer.get('email', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Address line 1</span>
+            <input type="text" name="address_line1" value="{{ issuer.get('address_line1', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Address line 2</span>
+            <input type="text" name="address_line2" value="{{ issuer.get('address_line2', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Country</span>
+            <input type="text" name="country" value="{{ issuer.get('country', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Phone</span>
+            <input type="text" name="phone" value="{{ issuer.get('phone', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Tax ID</span>
+            <input type="text" name="tax_id" value="{{ issuer.get('tax_id', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Tax ID label (e.g. NIF, VAT ID)</span>
+            <input type="text" name="tax_id_label" value="{{ issuer.get('tax_id_label', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">IBAN</span>
+            <input type="text" name="iban" value="{{ issuer.get('bank', {}).get('iban', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">BIC / SWIFT</span>
+            <input type="text" name="bic" value="{{ issuer.get('bank', {}).get('bic', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Date format (strftime, e.g. %d/%m/%Y)</span>
+            <input type="text" name="date_format" value="{{ issuer.get('date_format', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Invoice number template (e.g. {{ '{year}-{month}' }})</span>
+            <input type="text" name="number_template" value="{{ issuer.get('number_template', '') }}">
+          </label>
+          <label class="field field-wide">
+            <span class="field-label">Legal note (shown at the bottom of the invoice)</span>
+            <input type="text" name="legal_note" value="{{ issuer.get('legal_note', '') }}">
+          </label>
+        </div>
+        <div class="toolbar">
+          <button type="submit" class="secondary">Save issuer</button>
+          <span id="issuer-status"></span>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Clients</h2>
+      {% include "partials/settings_clients.html" %}
+    </section>
+
+  </main>
+</body>
+</html>

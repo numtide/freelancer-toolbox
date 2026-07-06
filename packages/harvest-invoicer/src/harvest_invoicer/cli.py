@@ -272,6 +272,10 @@ def edit(
         period_start=p_start,
         period_end=p_end,
         fetch_callback=_fetch_with_vat,
+        clients=clients,
+        # Demo config lives inside the package; never write back to it.
+        issuer_path=None if demo else Path(issuer_path),
+        clients_path=None if demo else Path(clients_path),
     )
 
     url = f"http://127.0.0.1:{port}/"

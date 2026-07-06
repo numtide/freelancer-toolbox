@@ -116,6 +116,13 @@ because all entries are treated as external when there is no agency rate.
 
 ## Configuration
 
+Configuration lives in two JSON files (`issuer.json` and `clients.json`),
+but you don't have to edit them by hand: the editor's **Settings** page
+(top-right button) provides validated forms for the issuer details and for
+adding, editing, or removing clients.  Saves apply to the running session
+immediately (the live preview updates) and are written back to the config
+files.  In `--demo` mode changes apply to the session only.
+
 ### issuer.json
 
 ```json

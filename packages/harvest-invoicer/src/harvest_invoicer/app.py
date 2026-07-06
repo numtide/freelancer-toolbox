@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import json
 import os
 import threading
 from datetime import date, timedelta
@@ -67,6 +68,9 @@ def create_app(
     period_start: date | None = None,
     period_end: date | None = None,
     fetch_callback: Callable[[date, date], list[InvoiceLine]] | None = None,
+    clients: dict[str, dict[str, str]] | None = None,
+    issuer_path: Path | None = None,
+    clients_path: Path | None = None,
 ) -> Flask:
     """Create and configure the Flask editor application.
 
@@ -80,6 +84,11 @@ def create_app(
     ``fetch_callback`` re-imports line items for a (start, end) date range —
     the editor's "Fetch from Harvest" button.  When ``None`` the button
     reports that re-fetching is unavailable.
+
+    ``clients`` is the full clients.json mapping (for the settings page);
+    ``issuer_path`` / ``clients_path`` are the config files the settings
+    routes write back to.  When a path is ``None`` (demo mode, tests)
+    settings edits apply to the running session only.
     """
     app = Flask(
         __name__,
@@ -101,10 +110,18 @@ def create_app(
     # "undo" holds a single-level snapshot of the line items taken before
     # the most recent mutation; undoing swaps it with the current lines,
     # so pressing Undo twice acts as redo.
+    if clients is None:
+        clients = {}
+    # Key of the invoice's client inside the clients mapping (by identity, so
+    # in-place edits through the settings page propagate to the preview).
+    current_client_key = next((k for k, v in clients.items() if v is client), None)
+
     app.state = {  # type: ignore[attr-defined]
         "invoice": invoice,
         "issuer": issuer,
         "client": client,
+        "clients": clients,
+        "current_client_key": current_client_key,
         "output_path": output_path,
         "user_templates_dir": user_templates_dir,
         "undo": None,
@@ -406,6 +423,179 @@ def create_app(
             invoice=inv,
             fmt_date=lambda d: fmt_date(d, date_format),
         )
+
+    # --- Settings ---
+
+    def _persist_json(
+        path: Path | None, data: dict[str, object] | dict[str, dict[str, object]]
+    ) -> str:
+        """Write config back to disk; describe where (or that we couldn't)."""
+        if path is None:
+            return " (this session only; no config file to write)"
+        path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return f" and written to {path}"
+
+    def _render_clients_block(status: str | None = None, *, error: bool = False) -> str:
+        return render_template(
+            "partials/settings_clients.html",
+            clients=app.state["clients"],  # type: ignore[attr-defined]
+            current_client_key=app.state["current_client_key"],  # type: ignore[attr-defined]
+            status=status,
+            status_error=error,
+        )
+
+    @app.get("/settings")
+    def settings_page() -> str:
+        return render_template(
+            "settings.html",
+            issuer=issuer,
+            clients=app.state["clients"],  # type: ignore[attr-defined]
+            current_client_key=app.state["current_client_key"],  # type: ignore[attr-defined]
+            status=None,
+            status_error=False,
+        )
+
+    @app.post("/settings/issuer")
+    def settings_issuer_save() -> str:
+        """Validate and save the issuer config (file + running session)."""
+
+        def _status(msg: str, *, error: bool = False) -> str:
+            css = "status-err" if error else "status-ok"
+            return f'<span id="issuer-status" class="{css}">{escape(msg)}</span>'
+
+        text_fields = (
+            "name",
+            "address_line1",
+            "address_line2",
+            "country",
+            "tax_id",
+            "tax_id_label",
+            "phone",
+            "email",
+            "date_format",
+            "legal_note",
+            "number_template",
+        )
+        values = {f: request.form.get(f, "").strip() for f in text_fields}
+        iban = request.form.get("iban", "").strip()
+        bic = request.form.get("bic", "").strip()
+
+        required = (
+            "name",
+            "address_line1",
+            "address_line2",
+            "country",
+            "tax_id",
+            "phone",
+            "email",
+        )
+        missing = [f for f in required if not values[f]]
+        if not iban:
+            missing.append("iban")
+        if not bic:
+            missing.append("bic")
+        if missing:
+            return _status("Missing required fields: " + ", ".join(missing), error=True)
+
+        # Mutate the shared issuer dict in place so the preview updates too.
+        for f in text_fields:
+            if values[f]:
+                issuer[f] = values[f]
+            else:
+                issuer.pop(f, None)
+        bank = issuer.get("bank")
+        if not isinstance(bank, dict):
+            bank = {}
+            issuer["bank"] = bank
+        bank["iban"] = iban
+        bank["bic"] = bic
+
+        suffix = _persist_json(issuer_path, issuer)
+        return _status("Issuer saved" + suffix)
+
+    @app.post("/settings/clients/save")
+    def settings_clients_save() -> str:
+        """Add or update a clients.json entry (file + running session)."""
+        clients_map: dict[str, dict[str, object]] = app.state["clients"]  # type: ignore[attr-defined]
+        original = request.form.get("original_key", "").strip()
+        new_key = request.form.get("key", "").strip()
+        if not new_key:
+            return _render_clients_block(
+                "Harvest client name (key) is required.", error=True
+            )
+
+        fields = (
+            "name",
+            "address_line1",
+            "address_line2",
+            "country",
+            "tax_id",
+            "tax_id_label",
+        )
+        values = {f: request.form.get(f, "").strip() for f in fields}
+        required = ("name", "address_line1", "address_line2", "country", "tax_id")
+        missing = [f for f in required if not values[f]]
+        if missing:
+            return _render_clients_block(
+                "Missing required fields: " + ", ".join(missing), error=True
+            )
+
+        vat_raw = request.form.get("vat_rate", "").strip()
+        vat_val: float | None = None
+        if vat_raw:
+            try:
+                vat_val = float(vat_raw)
+            except ValueError:
+                vat_val = -1.0
+            if not 0.0 <= vat_val <= 1.0:
+                return _render_clients_block(
+                    "VAT rate must be a number between 0 and 1 (e.g. 0.21).",
+                    error=True,
+                )
+
+        # Reuse the existing entry object so the current invoice's client
+        # (same object) picks up the edits immediately.
+        if original and original in clients_map:
+            entry = clients_map.pop(original)
+        elif new_key in clients_map:
+            entry = clients_map.pop(new_key)
+        else:
+            entry = {}
+        for f in fields:
+            if values[f]:
+                entry[f] = values[f]
+            else:
+                entry.pop(f, None)
+        if vat_val is not None:
+            entry["vat_rate"] = vat_val
+        else:
+            entry.pop("vat_rate", None)
+        clients_map[new_key] = entry
+
+        if original and original == app.state["current_client_key"]:  # type: ignore[attr-defined]
+            app.state["current_client_key"] = new_key  # type: ignore[attr-defined]
+
+        suffix = _persist_json(clients_path, clients_map)
+        return _render_clients_block(f"Client '{new_key}' saved{suffix}")
+
+    @app.post("/settings/clients/delete")
+    def settings_clients_delete() -> str:
+        """Remove a clients.json entry (guarding the invoice's client)."""
+        clients_map: dict[str, dict[str, object]] = app.state["clients"]  # type: ignore[attr-defined]
+        original = request.form.get("original_key", "").strip()
+        if original == app.state["current_client_key"]:  # type: ignore[attr-defined]
+            return _render_clients_block(
+                "Cannot delete the client used by the current invoice.",
+                error=True,
+            )
+        if original not in clients_map:
+            return _render_clients_block(f"Client '{original}' not found.", error=True)
+        del clients_map[original]
+        suffix = _persist_json(clients_path, clients_map)
+        return _render_clients_block(f"Client '{original}' deleted{suffix}")
 
     # --- PDF render ---
 

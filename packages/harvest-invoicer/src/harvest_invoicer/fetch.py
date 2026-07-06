@@ -275,6 +275,14 @@ def load_clients(clients_file: str) -> dict[str, dict[str, str]]:
     return result
 
 
+def format_user_names(users: set[str], limit: int = 8) -> str:
+    """Sorted, comma-separated user names, truncated beyond *limit*."""
+    names = sorted(users)
+    if len(names) > limit:
+        return ", ".join(names[:limit]) + ", ..."
+    return ", ".join(names)
+
+
 def client_extra_lines(client_entry: dict[str, str]) -> list[InvoiceLine]:
     """Build recurring InvoiceLines from the client's ``extra_lines`` config.
 

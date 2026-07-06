@@ -233,6 +233,8 @@ class TestPersistentDefaults:
         warning = _multi_user_warning(lines, None)
         assert warning is not None
         assert "2 people" in warning
+        assert "Alice" in warning
+        assert "Bob" in warning
 
     def test_no_warning_with_filter_or_single_user(self) -> None:
         lines = [

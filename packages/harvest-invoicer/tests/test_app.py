@@ -1021,6 +1021,8 @@ class TestMultiUserSafetyNet:
                 data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
             )
         assert b"WARNING: hours for 2 people" in resp.data
+        assert b"Alice" in resp.data
+        assert b"Bob" in resp.data
 
     def test_refetch_quiet_with_user_filter(self, tmp_path: Path) -> None:
         def team_fetch(ps: date, pe: date) -> list[InvoiceLine]:

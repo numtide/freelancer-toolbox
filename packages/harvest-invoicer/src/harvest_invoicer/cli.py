@@ -14,6 +14,7 @@ from harvest_invoicer.fetch import (
     apply_client_vat,
     client_extra_lines,
     fetch_lines,
+    format_user_names,
     load_clients,
     load_issuer,
     make_demo_lines,
@@ -107,8 +108,9 @@ def _multi_user_warning(
     if len(people) <= 1:
         return None
     return (
-        f"Imported hours for {len(people)} people — set harvest_user in "
-        "Settings or pass --user to import only your own."
+        f"Imported hours for {len(people)} people "
+        f"({format_user_names(people)}) — set harvest_user in Settings or "
+        "pass --user to import only your own."
     )
 
 

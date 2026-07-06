@@ -17,7 +17,11 @@ from markupsafe import escape
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from harvest_invoicer.fetch import apply_client_vat, client_extra_lines
+from harvest_invoicer.fetch import (
+    apply_client_vat,
+    client_extra_lines,
+    format_user_names,
+)
 from harvest_invoicer.model import (
     DEFAULT_PAYMENT_TERM_DAYS,
     Invoice,
@@ -403,9 +407,9 @@ def create_app(
         if not user_filter_active and len(people) > 1:
             return _respond(
                 f"Imported {len(new_lines)} lines{merged_note} for {ps} to "
-                f"{pe} — WARNING: hours for {len(people)} people; set "
-                "harvest_user in Settings or pass --user to import only "
-                "your own.",
+                f"{pe} — WARNING: hours for {len(people)} people "
+                f"({format_user_names(people)}); set harvest_user in "
+                "Settings or pass --user to import only your own.",
                 error=True,
             )
         return _respond(

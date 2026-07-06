@@ -451,6 +451,7 @@ def create_app(
         """Write config back to disk; describe where (or that we couldn't)."""
         if path is None:
             return " (this session only; no config file to write)"
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",

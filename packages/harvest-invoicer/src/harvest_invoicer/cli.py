@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import webbrowser
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
@@ -21,6 +22,7 @@ from harvest_invoicer.fetch import (
 )
 from harvest_invoicer.model import (
     DEFAULT_PAYMENT_TERM_DAYS,
+    REQUIRED_ISSUER_FIELDS,
     Invoice,
     InvoiceLine,
     merge_duplicate_lines,
@@ -60,6 +62,46 @@ def _previous_month() -> str:
     if today.month == 1:
         return f"{today.year - 1}-12"
     return f"{today.year}-{today.month - 1:02d}"
+
+
+def _xdg_config_dir() -> Path:
+    """Return the app's XDG config directory (~/.config/harvest-invoicer)."""
+    base = os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
+    return Path(base) / "harvest-invoicer"
+
+
+def _resolve_config_path(explicit: str | None, filename: str) -> Path | None:
+    """Locate a config file: explicit flag/env > ./<filename> > XDG dir.
+
+    Returns ``None`` when nothing was passed explicitly and neither the
+    current directory nor the XDG config directory has the file.
+    """
+    if explicit:
+        return Path(explicit)
+    cwd_candidate = Path(filename)
+    if cwd_candidate.exists():
+        return cwd_candidate
+    xdg_candidate = _xdg_config_dir() / filename
+    if xdg_candidate.exists():
+        return xdg_candidate
+    return None
+
+
+def _blank_issuer() -> dict[str, object]:
+    """Empty issuer skeleton so the editor can render before configuration."""
+    issuer: dict[str, object] = dict.fromkeys(
+        sorted(REQUIRED_ISSUER_FIELDS - {"bank"}), ""
+    )
+    issuer["bank"] = {"iban": "", "bic": ""}
+    return issuer
+
+
+def _missing_config_message() -> str:
+    return (
+        "No issuer.json / clients.json found. Searched the current directory "
+        f"and {_xdg_config_dir()}. Run 'harvest-invoicer edit' to configure "
+        "interactively, or pass --issuer/--clients."
+    )
 
 
 def _build_invoice(
@@ -143,17 +185,17 @@ def main() -> None:
     "--issuer",
     "issuer_path",
     envvar="INVOICE_ISSUER_FILE",
-    default="issuer.json",
-    show_default=True,
+    default=None,
     type=click.Path(),
+    help="Path to issuer.json (default: ./issuer.json, then ~/.config/harvest-invoicer/).",
 )
 @click.option(
     "--clients",
     "clients_path",
     envvar="INVOICE_CLIENTS_FILE",
-    default="clients.json",
-    show_default=True,
+    default=None,
     type=click.Path(),
+    help="Path to clients.json (default: ./clients.json, then ~/.config/harvest-invoicer/).",
 )
 @_TEMPLATES_DIR_OPTION
 @click.option(
@@ -199,8 +241,8 @@ def edit(
     month: str | None,
     client_filter: str | None,
     user_filter: str | None,
-    issuer_path: str,
-    clients_path: str,
+    issuer_path: str | None,
+    clients_path: str | None,
     templates_dir: Path | None,
     number_override: str | None,
     output_path: str | None,
@@ -218,12 +260,17 @@ def edit(
     parse_month(month)  # validate format early; raises ClickException on bad input
     p_start, p_end = _resolve_period(month, period_start, period_end)
 
-    if demo:
-        issuer_path = str(_ISSUER_EXAMPLE)
-        clients_path = str(_CLIENTS_EXAMPLE)
+    issuer_file = _resolve_config_path(issuer_path, "issuer.json")
+    clients_file = _resolve_config_path(clients_path, "clients.json")
+    # First run without config: skip fetching and open Settings to create it.
+    onboarding = not demo and (issuer_file is None or clients_file is None)
 
-    issuer = load_issuer(issuer_path)
-    clients = load_clients(clients_path)
+    if demo:
+        issuer = load_issuer(str(_ISSUER_EXAMPLE))
+        clients = load_clients(str(_CLIENTS_EXAMPLE))
+    else:
+        issuer = load_issuer(str(issuer_file)) if issuer_file else _blank_issuer()
+        clients = load_clients(str(clients_file)) if clients_file else {}
 
     if demo:
 
@@ -241,12 +288,15 @@ def edit(
                 use_agency=not no_agency,
             )
 
-    lines = _fetch(p_start, p_end)
-    if merge_duplicates:
-        lines = merge_duplicate_lines(lines)
-
-    client_entry = resolve_client(client_filter, clients, lines)
-    lines = apply_client_vat(lines, client_entry)
+    if onboarding:
+        lines: list[InvoiceLine] = []
+        client_entry: dict[str, str] = {}
+    else:
+        lines = _fetch(p_start, p_end)
+        if merge_duplicates:
+            lines = merge_duplicate_lines(lines)
+        client_entry = resolve_client(client_filter, clients, lines)
+        lines = apply_client_vat(lines, client_entry)
 
     def _fetch_with_vat(ps: date, pe: date) -> list[InvoiceLine]:
         """Editor re-fetches get the client's vat_rate applied too."""
@@ -261,6 +311,15 @@ def edit(
 
     from harvest_invoicer.app import create_app  # noqa: PLC0415
 
+    # Settings saves land where the config was found; on first run they
+    # default to the XDG config directory.  Demo config lives inside the
+    # package and is never written back.
+    if demo:
+        eff_issuer_path = eff_clients_path = None
+    else:
+        eff_issuer_path = issuer_file or _xdg_config_dir() / "issuer.json"
+        eff_clients_path = clients_file or _xdg_config_dir() / "clients.json"
+
     app = create_app(
         lines,
         issuer,
@@ -273,12 +332,20 @@ def edit(
         period_end=p_end,
         fetch_callback=_fetch_with_vat,
         clients=clients,
-        # Demo config lives inside the package; never write back to it.
-        issuer_path=None if demo else Path(issuer_path),
-        clients_path=None if demo else Path(clients_path),
+        issuer_path=eff_issuer_path,
+        clients_path=eff_clients_path,
     )
 
-    url = f"http://127.0.0.1:{port}/"
+    url = (
+        f"http://127.0.0.1:{port}/settings"
+        if onboarding
+        else f"http://127.0.0.1:{port}/"
+    )
+    if onboarding:
+        click.echo(
+            "No configuration found — opening Settings to create it "
+            f"(saved to {_xdg_config_dir()})."
+        )
     click.echo(f"Starting editor at {url}")
     click.echo("Press Ctrl-C to stop.")
     if not no_browser:
@@ -308,17 +375,17 @@ def edit(
     "--issuer",
     "issuer_path",
     envvar="INVOICE_ISSUER_FILE",
-    default="issuer.json",
-    show_default=True,
+    default=None,
     type=click.Path(),
+    help="Path to issuer.json (default: ./issuer.json, then ~/.config/harvest-invoicer/).",
 )
 @click.option(
     "--clients",
     "clients_path",
     envvar="INVOICE_CLIENTS_FILE",
-    default="clients.json",
-    show_default=True,
+    default=None,
     type=click.Path(),
+    help="Path to clients.json (default: ./clients.json, then ~/.config/harvest-invoicer/).",
 )
 @_TEMPLATES_DIR_OPTION
 @click.option(
@@ -362,8 +429,8 @@ def generate(
     months: tuple[str, ...],
     client_filter: str | None,
     user_filter: str | None,
-    issuer_path: str,
-    clients_path: str,
+    issuer_path: str | None,
+    clients_path: str | None,
     templates_dir: Path | None,
     number_override: str | None,
     output_dir: str,
@@ -380,6 +447,13 @@ def generate(
     if demo:
         issuer_path = str(_ISSUER_EXAMPLE)
         clients_path = str(_CLIENTS_EXAMPLE)
+    else:
+        issuer_file = _resolve_config_path(issuer_path, "issuer.json")
+        clients_file = _resolve_config_path(clients_path, "clients.json")
+        if issuer_file is None or clients_file is None:
+            raise click.ClickException(_missing_config_message())
+        issuer_path = str(issuer_file)
+        clients_path = str(clients_file)
 
     issuer = load_issuer(issuer_path)
     clients = load_clients(clients_path)

@@ -123,6 +123,20 @@ adding, editing, or removing clients.  Saves apply to the running session
 immediately (the live preview updates) and are written back to the config
 files.  In `--demo` mode changes apply to the session only.
 
+### Where config is found
+
+Both commands resolve each file in this order:
+
+1. Explicit `--issuer` / `--clients` flag or `INVOICE_ISSUER_FILE` /
+   `INVOICE_CLIENTS_FILE` environment variable.
+2. `./issuer.json` / `./clients.json` in the current directory.
+3. `~/.config/harvest-invoicer/` (respects `XDG_CONFIG_HOME`).
+
+**First run:** if `edit` finds no configuration anywhere, it opens straight
+into the Settings page instead of erroring — fill in your details and they
+are saved to `~/.config/harvest-invoicer/`.  Headless `generate` keeps the
+explicit error (it lists the searched locations).
+
 ### issuer.json
 
 ```json

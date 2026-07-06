@@ -1109,3 +1109,57 @@ button:focus-visible, a:focus-visible {
 .btn-primary:hover { background: var(--orange-hover); }
 .status-ok { color: var(--ok); font-weight: 600; font-size: 14px; }
 .status-err { color: var(--danger); font-weight: 600; font-size: 14px; }
+
+/* ===== Responsive ===== */
+/* The editor and settings both use fixed multi-column grids that crush
+   below laptop width. Collapse them progressively; the dense line-items
+   table keeps its column integrity by scrolling rather than squashing. */
+@media (max-width: 1024px) {
+  /* Editor: one column. The live preview stacks under the details card
+     (still toggleable via the eye button) instead of sitting beside it. */
+  .editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 20px;
+  }
+  .editor-grid .span-full { grid-column: 1; }
+  .preview-col { align-self: auto; }
+  iframe#preview-frame { min-height: 440px; }
+
+  /* Settings: the sticky side-nav becomes a horizontal strip on top. */
+  .settings-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding: 24px 20px 96px;
+  }
+  .sidenav {
+    position: static;
+    top: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .sidenav .eyebrow { width: 100%; padding: 0 4px 4px; }
+}
+
+@media (max-width: 720px) {
+  .topbar-inner { padding: 12px 16px; gap: 10px; }
+  .savebar-inner { padding: 12px 16px; }
+  /* Two-up field grids stack. */
+  .grid2, .sgrid, .acc-body { grid-template-columns: 1fr; }
+  .sgrid-bank { grid-template-columns: 1fr; }
+  /* Keep the line-items columns aligned by scrolling the table area
+     horizontally rather than letting the inputs collapse. */
+  .li-body { overflow-x: auto; }
+  .li-grid-head, .li-row { min-width: 600px; }
+}
+
+@media (max-width: 560px) {
+  .crumb { display: none; }
+  .card-head, .card-sec { padding-left: 18px; padding-right: 18px; }
+  .li-head, .sel-bar { padding-left: 16px; padding-right: 16px; }
+  .scard-head, .scard-body { padding-left: 18px; padding-right: 18px; }
+  /* Totals wrap so the big number never overflows the dark bar. */
+  .totals-bar { flex-wrap: wrap; gap: 18px; padding: 18px 20px; }
+  .tb-total { margin-left: 0; }
+}

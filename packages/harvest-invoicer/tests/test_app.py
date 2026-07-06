@@ -205,6 +205,24 @@ class TestTheme:
         assert "background: #1D1E1C;" in css
 
 
+class TestResponsive:
+    """The layout must adapt below laptop width."""
+
+    def test_both_pages_have_viewport_meta(self, client: FlaskClient) -> None:
+        # Without this the media queries never fire on mobile browsers.
+        meta = b'name="viewport" content="width=device-width, initial-scale=1"'
+        assert meta in client.get("/").data
+        assert meta in client.get("/settings").data
+
+    def test_stylesheet_has_responsive_breakpoints(self) -> None:
+        static_dir = (
+            Path(__file__).parent.parent / "src" / "harvest_invoicer" / "static"
+        )
+        css = (static_dir / "app.css").read_text(encoding="utf-8")
+        for bp in ("max-width: 1024px", "max-width: 720px", "max-width: 560px"):
+            assert f"@media ({bp})" in css
+
+
 def _weasyprint_available() -> bool:
     """WeasyPrint imports its native libs (pango, gobject) at import time."""
     try:

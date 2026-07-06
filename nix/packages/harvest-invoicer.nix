@@ -29,5 +29,14 @@ pkgs.python3.pkgs.buildPythonApplication {
   doCheck = true;
   nativeCheckInputs = [ pkgs.python3.pkgs.pytestCheckHook ];
 
-  meta.mainProgram = "harvest-invoicer";
+  meta = {
+    mainProgram = "harvest-invoicer";
+    # WeasyPrint 68.1-unstable is currently broken on aarch64-darwin in
+    # nixpkgs-unstable (last Hydra success: 68.0, 2026-04). Re-enable once
+    # upstream builds again.
+    platforms = [
+      "x86_64-linux"
+      "aarch64-linux"
+    ];
+  };
 }

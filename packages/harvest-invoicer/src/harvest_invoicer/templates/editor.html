@@ -14,7 +14,7 @@
         <img class="logo" src="/static/harvest-logo.svg" alt="Harvest">
       </a>
       <h1>Invoicer</h1>
-      <span class="crumb">/ Invoice {{ invoice.number }}</span>
+      <span id="inv-no-crumb" class="crumb">/ Invoice {{ invoice.number }}</span>
       <div class="actions">
         <div id="render-status"></div>
         <button type="button" class="icon-btn active" id="preview-toggle"
@@ -55,7 +55,6 @@
     <section class="card">
       <div class="card-head">
         <h2>Invoice details</h2>
-        <span id="inv-no-head" class="hv-num card-meta">Invoice {{ invoice.number }}</span>
       </div>
       <form id="meta-form">
         <div class="card-sec">

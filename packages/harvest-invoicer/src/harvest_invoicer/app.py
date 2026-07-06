@@ -920,14 +920,16 @@ def create_app(
                 inv.period_end = None
         legal_val = request.form.get("legal_note", "").strip()
         inv.legal_note = legal_val or None
-        head_oob = (
-            f'<span id="inv-no-head" hx-swap-oob="outerHTML" class="hv-num card-meta">'
-            f"Invoice {escape(inv.number)}</span>"
+        # Keep the header crumb (the only other place the number shows)
+        # in sync with the Number field.
+        crumb_oob = (
+            f'<span id="inv-no-crumb" hx-swap-oob="outerHTML" class="crumb">'
+            f"/ Invoice {escape(inv.number)}</span>"
         )
         return (
             render_template("partials/meta.html", invoice=inv)
             + render_template("partials/period.html", invoice=inv)
-            + head_oob
+            + crumb_oob
         )
 
     # --- Settings ---

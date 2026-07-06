@@ -1020,6 +1020,20 @@ class TestReviewPolish:
         assert b"Net -" not in resp.data
         assert b"in -" not in resp.data
 
+    def test_number_shown_once_and_crumb_follows_edits(
+        self, client: FlaskClient
+    ) -> None:
+        """The details card must not repeat the Number input's value; the
+        header crumb is the single display and follows meta edits."""
+        page = client.get("/").data
+        assert b"inv-no-head" not in page  # old duplicate label is gone
+        # Number renders as the crumb and as the input value, nothing else.
+        assert page.count(b"Invoice 2026-06") == 1
+        assert b'id="inv-no-crumb"' in page
+        resp = client.post("/meta/update", data={"number": "INV-99"})
+        assert b'id="inv-no-crumb"' in resp.data
+        assert b"/ Invoice INV-99" in resp.data
+
 
 class TestMergeDuplicates:
     """One-click consolidation of per-user duplicate lines."""

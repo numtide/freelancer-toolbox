@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <title>Harvest Invoicer — {{ invoice.number }}</title>
+  {# Set the theme before first paint to avoid a light flash, and expose
+     toggleTheme() shared across both screens via localStorage. #}
+  <script src="/static/theme.js"></script>
   <script src="/static/htmx.min.js"></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/app.css">
@@ -20,6 +23,11 @@
         <button type="button" class="icon-btn active" id="preview-toggle"
           title="Toggle live preview" aria-label="Toggle live preview">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        </button>
+        <button type="button" class="icon-btn theme-toggle" data-theme-toggle
+          onclick="toggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">
+          <svg class="icon-moon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg class="icon-sun" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
         </button>
         <a class="icon-btn" href="/settings" title="Settings" aria-label="Settings">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
@@ -77,17 +85,21 @@
           </label>
           <div id="fetch-range" class="grid2" style="margin-top:16px;" hidden>
             <div>
-              <label class="field-label" style="font-size:13px;color:rgba(29,30,28,0.7);">Range start</label>
+              <label class="field-label" style="font-size:13px;color:var(--text-2);">Range start</label>
               <input type="date" class="hv-num" id="fetch-start" name="fetch_start"
                 value="{{ invoice.period_start.isoformat() if invoice.period_start else '' }}">
             </div>
             <div>
-              <label class="field-label" style="font-size:13px;color:rgba(29,30,28,0.7);">Range end</label>
+              <label class="field-label" style="font-size:13px;color:var(--text-2);">Range end</label>
               <input type="date" class="hv-num" id="fetch-end" name="fetch_end"
                 value="{{ invoice.period_end.isoformat() if invoice.period_end else '' }}">
             </div>
           </div>
           <div class="import-actions">
+            <label class="chk-label light">
+              <input type="checkbox" id="merge-on-fetch" name="merge_duplicates" checked>
+              Auto-merge duplicate entries
+            </label>
             <button type="button" class="btn-orange"
               title="Import time entries from Harvest for the range (replaces current line items)"
               hx-post="/lines/fetch" hx-include="#fetch-start, #fetch-end, #merge-on-fetch"
@@ -97,10 +109,6 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-6.2-8.5"></path><path d="M21 3v6h-6"></path></svg>
               Fetch from Harvest
             </button>
-            <label class="chk-label light">
-              <input type="checkbox" id="merge-on-fetch" name="merge_duplicates" checked>
-              Auto-merge duplicate entries
-            </label>
           </div>
           <span id="fetch-indicator" class="htmx-indicator">Fetching…</span>
           <span id="fetch-status"{% if draft_restored %} class="fetch-ok"{% endif %}>

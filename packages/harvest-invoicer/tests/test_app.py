@@ -161,6 +161,49 @@ class TestStaticAssets:
             f"htmx.min.js contains unexpected control bytes: {[hex(b) for b in bad[:10]]}"
         )
 
+    def test_theme_js_served(self, client: FlaskClient) -> None:
+        resp = client.get("/static/theme.js")
+        assert resp.status_code == 200
+        assert b"invoicer_theme" in resp.data
+        assert b"toggleTheme" in resp.data
+
+
+class TestTheme:
+    """Light/dark theme toggle, shared across both screens."""
+
+    def test_editor_has_theme_toggle_and_loader(self, client: FlaskClient) -> None:
+        resp = client.get("/")
+        assert b'src="/static/theme.js"' in resp.data
+        assert b"data-theme-toggle" in resp.data
+        assert b"toggleTheme()" in resp.data
+
+    def test_settings_has_theme_toggle_and_loader(self, client: FlaskClient) -> None:
+        resp = client.get("/settings")
+        assert b'src="/static/theme.js"' in resp.data
+        assert b"data-theme-toggle" in resp.data
+
+    def test_settings_back_link_below_header_not_in_bar(
+        self, client: FlaskClient
+    ) -> None:
+        resp = client.get("/settings")
+        body = resp.data
+        # Back-to-editor moved to a standalone row below the header.
+        assert b'class="back-row"' in body
+        assert b'class="back-link"' in body
+        # ...and is no longer the old top-bar outline button.
+        assert b'class="btn-outline" href="/"' not in body
+
+    def test_dark_theme_tokens_present_in_stylesheet(self) -> None:
+        static_dir = (
+            Path(__file__).parent.parent / "src" / "harvest_invoicer" / "static"
+        )
+        css = (static_dir / "app.css").read_text(encoding="utf-8")
+        assert 'html[data-theme="dark"]' in css
+        assert "--ink-tint" in css
+        # The totals bar is a semantic dark band — it must NOT flip with the
+        # theme, so it uses the fixed brand ink, not var(--ink).
+        assert "background: #1D1E1C;" in css
+
 
 def _weasyprint_available() -> bool:
     """WeasyPrint imports its native libs (pango, gobject) at import time."""

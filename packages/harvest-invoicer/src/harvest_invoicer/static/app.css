@@ -28,16 +28,22 @@
 }
 
 :root {
+  /* Light theme (default). The whole ink ramp is derived from one RGB
+     triple — flip --ink-tint (and the surfaces below) for dark mode.
+     Brand orange and the semantic status colors are constant: they are
+     meaning, not chrome, and never invert. */
+  --ink-tint: 29, 30, 28;
+  --barbg: 255, 248, 241;
   --ink: #1D1E1C;
   --cream: #FFF8F1;
+  --surface: #FFFFFF;
   --orange: #FA5D00;
   --orange-hover: #E15400;
-  --surface: #FFFFFF;
-  --line: rgba(29, 30, 28, 0.08);
-  --line-strong: rgba(29, 30, 28, 0.14);
-  --text-2: rgba(29, 30, 28, 0.65);
-  --text-3: rgba(29, 30, 28, 0.5);
-  --text-4: rgba(29, 30, 28, 0.4);
+  --line: rgba(var(--ink-tint), 0.08);
+  --line-strong: rgba(var(--ink-tint), 0.14);
+  --text-2: rgba(var(--ink-tint), 0.65);
+  --text-3: rgba(var(--ink-tint), 0.5);
+  --text-4: rgba(var(--ink-tint), 0.4);
   --ok: #2E8A6A;
   --danger: #E5484D;
   --r-input: 10px;
@@ -47,6 +53,32 @@
   --shadow-doc: 0 24px 50px -34px rgba(29, 30, 28, 0.4);
   --font: 'Schibsted Grotesk', system-ui, -apple-system, sans-serif;
 }
+
+html[data-theme="dark"] {
+  --ink-tint: 238, 233, 223;
+  --barbg: 23, 21, 15;
+  --ink: #F1ECE2;
+  --cream: #17150F;
+  --surface: #211E17;
+}
+
+/* Native controls follow the theme so date pickers, spinners and
+   scrollbars render dark instead of light-on-dark. */
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select { color-scheme: dark; }
+
+/* The Harvest wordmark is a black SVG; make it legible on dark chrome.
+   (Ship a real light logo asset if this ever stops borrowing Harvest's.) */
+html[data-theme="dark"] img[alt="Harvest"] {
+  filter: brightness(0) invert(1);
+  opacity: 0.92;
+}
+
+/* Theme toggle: show the moon in light mode, the sun in dark mode. */
+.theme-toggle .icon-sun { display: none; }
+html[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+html[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
 
 * { box-sizing: border-box; }
 ::selection { background: var(--orange); color: #fff; }
@@ -63,12 +95,17 @@ body {
 
 .hv-num { font-variant-numeric: tabular-nums; }
 
+/* Unstyled buttons inherit the theme ink instead of the UA black, so text
+   like the Bill-to client name stays legible in dark mode. Buttons that
+   set an explicit color (orange/white CTAs) override this. */
+button { color: var(--ink); }
+
 /* ===== Top bar ===== */
 .topbar {
   position: sticky;
   top: 0;
   z-index: 40;
-  background: rgba(255, 248, 241, 0.88);
+  background: rgba(var(--barbg), 0.88);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
@@ -89,7 +126,7 @@ body {
 }
 .crumb {
   font-size: 14px;
-  color: rgba(29, 30, 28, 0.45);
+  color: rgba(var(--ink-tint), 0.45);
   white-space: nowrap;
 }
 .topbar .actions {
@@ -165,7 +202,7 @@ body {
   top: calc(100% + 8px);
   min-width: 210px;
   background: var(--surface);
-  border: 1px solid rgba(29, 30, 28, 0.12);
+  border: 1px solid rgba(var(--ink-tint), 0.12);
   border-radius: 12px;
   box-shadow: 0 18px 44px -16px rgba(29, 30, 28, 0.4);
   padding: 6px;
@@ -187,7 +224,7 @@ body {
   border: none;
   text-align: left;
 }
-.menu-items button:hover:not([disabled]) { background: rgba(29, 30, 28, 0.05); }
+.menu-items button:hover:not([disabled]) { background: rgba(var(--ink-tint), 0.05); }
 .menu-items button.send-row:hover:not([disabled]) { background: rgba(250, 93, 0, 0.09); }
 .menu-items button[disabled] { color: var(--text-3); cursor: default; }
 
@@ -272,7 +309,7 @@ body {
   margin-bottom: 16px;
 }
 .sec-head .eyebrow { margin-bottom: 0; }
-.sec-meta { font-size: 13px; color: rgba(29, 30, 28, 0.55); }
+.sec-meta { font-size: 13px; color: rgba(var(--ink-tint), 0.55); }
 
 /* ===== Fields ===== */
 .field-label {
@@ -308,13 +345,13 @@ input[type=checkbox] { accent-color: var(--orange); width: 17px; height: 17px; }
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(29, 30, 28, 0.1);
+  border: 1px solid rgba(var(--ink-tint), 0.1);
   background: var(--cream);
   border-radius: var(--r-input);
   padding: 11px 13px;
   font-size: 15px;
 }
-.computed .hint { margin-left: auto; font-size: 12px; color: rgba(29, 30, 28, 0.45); }
+.computed .hint { margin-left: auto; font-size: 12px; color: rgba(var(--ink-tint), 0.45); }
 
 /* ===== Dropdown (client picker, payment terms) ===== */
 .dd { position: relative; }
@@ -362,7 +399,7 @@ input[type=checkbox] { accent-color: var(--orange); width: 17px; height: 17px; }
   cursor: pointer;
   font-size: 14px;
 }
-.dd-row:hover { background: rgba(29, 30, 28, 0.05); }
+.dd-row:hover { background: rgba(var(--ink-tint), 0.05); }
 .dd-col { display: flex; flex-direction: column; line-height: 1.25; }
 .dd-name { font-size: 14px; font-weight: 600; }
 .dd-meta { font-size: 12px; color: var(--text-3); }
@@ -402,12 +439,12 @@ input[type=checkbox] { accent-color: var(--orange); width: 17px; height: 17px; }
   display: flex;
   gap: 14px;
   background: var(--cream);
-  border: 1px solid rgba(29, 30, 28, 0.09);
+  border: 1px solid rgba(var(--ink-tint), 0.09);
   border-radius: 12px;
   padding: 14px 16px;
   margin-bottom: 18px;
 }
-.client-inset .left { flex: 1; font-size: 13px; line-height: 1.5; color: rgba(29, 30, 28, 0.7); }
+.client-inset .left { flex: 1; font-size: 13px; line-height: 1.5; color: rgba(var(--ink-tint), 0.7); }
 .client-inset .right { text-align: right; font-size: 13px; line-height: 1.5; }
 .inset-eyebrow {
   font-size: 11px;
@@ -447,7 +484,7 @@ input[type=checkbox] { accent-color: var(--orange); width: 17px; height: 17px; }
 /* ===== Import panel ===== */
 .import-panel {
   background: var(--cream);
-  border: 1px solid rgba(29, 30, 28, 0.1);
+  border: 1px solid rgba(var(--ink-tint), 0.1);
   border-radius: 16px;
   padding: 20px;
 }
@@ -459,16 +496,20 @@ input[type=checkbox] { accent-color: var(--orange); width: 17px; height: 17px; }
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  color: rgba(29, 30, 28, 0.75);
+  color: rgba(var(--ink-tint), 0.75);
 }
 .chk-label.light { font-weight: 500; }
 .import-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: space-between;
+  gap: 14px 20px;
   flex-wrap: wrap;
   margin-top: 16px;
 }
+/* Keep the primary action on its own trailing edge; on narrow widths the
+   checkbox and button stack instead of colliding mid-row. */
+.import-actions .btn-orange { margin-left: auto; }
 .btn-orange {
   display: inline-flex;
   align-items: center;
@@ -514,7 +555,7 @@ button[disabled] { opacity: 0.6; cursor: default; }
   gap: 12px;
 }
 .li-head h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
-.li-head .card-meta { color: rgba(29, 30, 28, 0.45); }
+.li-head .card-meta { color: rgba(var(--ink-tint), 0.45); }
 .li-actions { margin-left: auto; display: flex; align-items: center; gap: 7px; }
 .icon-btn-sm {
   width: 36px;
@@ -576,7 +617,7 @@ button[disabled] { opacity: 0.6; cursor: default; }
 .text-btn {
   background: none;
   border: none;
-  color: rgba(29, 30, 28, 0.55);
+  color: rgba(var(--ink-tint), 0.55);
   font-family: var(--font);
   font-size: 13px;
   font-weight: 600;
@@ -595,19 +636,19 @@ button[disabled] { opacity: 0.6; cursor: default; }
 }
 .li-grid-head {
   padding: 0 0 10px;
-  border-bottom: 1px solid rgba(29, 30, 28, 0.12);
+  border-bottom: 1px solid rgba(var(--ink-tint), 0.12);
 }
 .li-grid-head span {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(29, 30, 28, 0.42);
+  color: rgba(var(--ink-tint), 0.42);
 }
 .li-grid-head .num { text-align: right; }
 .li-row {
   padding: 7px 0;
-  border-bottom: 1px solid rgba(29, 30, 28, 0.06);
+  border-bottom: 1px solid rgba(var(--ink-tint), 0.06);
 }
 .li-row.dragging { opacity: 0.5; background: rgba(250, 93, 0, 0.05); }
 .li-row input[type=text], .li-row input[type=number] {
@@ -618,7 +659,7 @@ button[disabled] { opacity: 0.6; cursor: default; }
 .li-row input[type=number] { padding: 9px 11px; }
 .li-sub { text-align: right; font-size: 14px; font-weight: 600; }
 .drag-handle {
-  color: rgba(29, 30, 28, 0.3);
+  color: rgba(var(--ink-tint), 0.3);
   cursor: grab;
   font-size: 14px;
   line-height: 1;
@@ -629,7 +670,7 @@ button[disabled] { opacity: 0.6; cursor: default; }
 .row-x {
   background: none;
   border: none;
-  color: rgba(29, 30, 28, 0.35);
+  color: rgba(var(--ink-tint), 0.35);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -644,7 +685,7 @@ button[disabled] { opacity: 0.6; cursor: default; }
   font-weight: 600;
   padding: 2px 8px;
   border-radius: var(--r-pill);
-  background: rgba(29, 30, 28, 0.06);
+  background: rgba(var(--ink-tint), 0.06);
   color: var(--text-3);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -657,13 +698,13 @@ button[disabled] { opacity: 0.6; cursor: default; }
   justify-content: center;
   gap: 8px;
   background: none;
-  border: 1.5px dashed rgba(29, 30, 28, 0.22);
+  border: 1.5px dashed rgba(var(--ink-tint), 0.22);
   border-radius: 11px;
   padding: 12px;
   font-family: var(--font);
   font-size: 14px;
   font-weight: 600;
-  color: rgba(29, 30, 28, 0.55);
+  color: rgba(var(--ink-tint), 0.55);
   cursor: pointer;
 }
 .ghost-add:hover {
@@ -672,10 +713,12 @@ button[disabled] { opacity: 0.6; cursor: default; }
   background: rgba(250, 93, 0, 0.03);
 }
 
-/* ===== Totals bar (dark) ===== */
+/* ===== Totals bar (always dark) ===== */
+/* Semantic ink-on-cream band: it stays dark in BOTH themes, so it uses
+   the fixed brand colors, not the theme-flipping --ink/--cream vars. */
 .totals-bar {
-  background: var(--ink);
-  color: var(--cream);
+  background: #1D1E1C;
+  color: #FFF8F1;
   border-radius: 20px;
   padding: 22px 30px;
   display: flex;
@@ -718,8 +761,8 @@ button[disabled] { opacity: 0.6; cursor: default; }
   gap: 6px;
   padding: 4px 11px;
   border-radius: var(--r-pill);
-  background: rgba(29, 30, 28, 0.08);
-  color: rgba(29, 30, 28, 0.6);
+  background: rgba(var(--ink-tint), 0.08);
+  color: rgba(var(--ink-tint), 0.6);
   font-size: 12px;
   font-weight: 700;
 }
@@ -727,7 +770,7 @@ button[disabled] { opacity: 0.6; cursor: default; }
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(29, 30, 28, 0.45);
+  background: rgba(var(--ink-tint), 0.45);
 }
 .preview-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .seg {
@@ -823,7 +866,7 @@ button:focus-visible, a:focus-visible {
   gap: 12px;
   margin-top: 14px;
 }
-.ctl-summary { font-size: 13px; color: rgba(29, 30, 28, 0.6); }
+.ctl-summary { font-size: 13px; color: rgba(var(--ink-tint), 0.6); }
 .ctl-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .ctl-all {
   background: none;
@@ -837,13 +880,13 @@ button:focus-visible, a:focus-visible {
 .ctl-clear {
   background: none;
   border: none;
-  color: rgba(29, 30, 28, 0.55);
+  color: rgba(var(--ink-tint), 0.55);
   font-family: var(--font);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
-.ctl-dot { color: rgba(29, 30, 28, 0.25); }
+.ctl-dot { color: rgba(var(--ink-tint), 0.25); }
 .chips { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 12px; }
 .chip {
   display: inline-flex;
@@ -857,7 +900,7 @@ button:focus-visible, a:focus-visible {
   cursor: pointer;
   background: var(--surface);
   color: var(--ink);
-  border: 1px solid rgba(29, 30, 28, 0.16);
+  border: 1px solid rgba(var(--ink-tint), 0.16);
   transition: all 0.13s ease;
 }
 .chip.is-you { border-color: rgba(250, 93, 0, 0.5); }
@@ -871,6 +914,23 @@ button:focus-visible, a:focus-visible {
 .chip-hours { opacity: 0.65; }
 
 /* ===== Settings screen ===== */
+/* Back affordance sits top-left of the content, below the header — not
+   among the top-bar actions. */
+.back-row {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px 32px 0;
+}
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-decoration: none;
+}
+.back-link:hover { color: var(--ink); }
 .settings-grid {
   max-width: 1120px;
   margin: 0 auto;
@@ -895,7 +955,7 @@ button:focus-visible, a:focus-visible {
   padding: 8px 12px;
   border-radius: 9px;
   cursor: pointer;
-  color: rgba(29, 30, 28, 0.7);
+  color: rgba(var(--ink-tint), 0.7);
 }
 .snav-link.active { background: rgba(250, 93, 0, 0.1); color: var(--orange); }
 .settings-content {
@@ -913,7 +973,7 @@ button:focus-visible, a:focus-visible {
 }
 .scard-head {
   padding: 24px 28px 18px;
-  border-bottom: 1px solid rgba(29, 30, 28, 0.07);
+  border-bottom: 1px solid rgba(var(--ink-tint), 0.07);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -925,7 +985,7 @@ button:focus-visible, a:focus-visible {
   letter-spacing: -0.02em;
   margin: 0 0 4px;
 }
-.scard-head p { font-size: 14px; color: rgba(29, 30, 28, 0.55); margin: 0; }
+.scard-head p { font-size: 14px; color: rgba(var(--ink-tint), 0.55); margin: 0; }
 .scard-body { padding: 24px 28px; }
 .subgroup {
   font-size: 12px;
@@ -935,7 +995,7 @@ button:focus-visible, a:focus-visible {
   color: var(--text-4);
   margin-bottom: 16px;
 }
-.subgroup.bordered { padding-top: 20px; border-top: 1px solid rgba(29, 30, 28, 0.07); }
+.subgroup.bordered { padding-top: 20px; border-top: 1px solid rgba(var(--ink-tint), 0.07); }
 .sgrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -953,7 +1013,7 @@ button:focus-visible, a:focus-visible {
 
 /* Clients accordion */
 .acc-list { padding: 12px 20px 20px; display: flex; flex-direction: column; gap: 10px; }
-.acc-item { border: 1px solid rgba(29, 30, 28, 0.1); border-radius: 14px; overflow: hidden; }
+.acc-item { border: 1px solid rgba(var(--ink-tint), 0.1); border-radius: 14px; overflow: hidden; }
 .acc-head {
   display: flex;
   align-items: center;
@@ -984,7 +1044,7 @@ button:focus-visible, a:focus-visible {
 .acc-item.open .acc-chevron { transform: rotate(180deg); }
 .acc-body {
   padding: 6px 18px 20px;
-  border-top: 1px solid rgba(29, 30, 28, 0.07);
+  border-top: 1px solid rgba(var(--ink-tint), 0.07);
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px 20px;
@@ -1021,9 +1081,9 @@ button:focus-visible, a:focus-visible {
   left: 0;
   right: 0;
   z-index: 45;
-  background: rgba(255, 248, 241, 0.9);
+  background: rgba(var(--barbg), 0.9);
   backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(29, 30, 28, 0.1);
+  border-top: 1px solid rgba(var(--ink-tint), 0.1);
 }
 .savebar-inner {
   max-width: 1120px;
@@ -1033,7 +1093,7 @@ button:focus-visible, a:focus-visible {
   align-items: center;
   gap: 14px;
 }
-.savebar-note { font-size: 13px; color: rgba(29, 30, 28, 0.55); }
+.savebar-note { font-size: 13px; color: rgba(var(--ink-tint), 0.55); }
 .savebar .actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .btn-primary {
   background: var(--orange);

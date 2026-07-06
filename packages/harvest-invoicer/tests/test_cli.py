@@ -28,11 +28,15 @@ def test_generate_demo_invalid_month() -> None:
     assert result.exit_code != 0
 
 
-def test_edit_demo_invalid_month() -> None:
-    """edit --demo rejects a non-YYYY-MM month string with exit code != 0."""
+def test_edit_has_no_month_flag() -> None:
+    """edit seeds from the previous month; the UI owns dates (no --month)."""
     runner = CliRunner()
-    result = runner.invoke(main, ["edit", "--demo", "--month", "junk", "--no-browser"])
+    result = runner.invoke(main, ["edit", "--demo", "--month", "2026-06"])
     assert result.exit_code != 0
+    assert "No such option" in result.output
+    help_out = runner.invoke(main, ["edit", "--help"]).output
+    assert "--month" not in help_out
+    assert "--period-start" not in help_out
 
 
 def test_resolve_period_defaults_to_month() -> None:
@@ -250,11 +254,11 @@ class TestPersistentDefaults:
 def test_harvest_client_flag_and_alias() -> None:
     """--harvest-client is the primary name; --client still parses."""
     runner = CliRunner()
-    result = runner.invoke(main, ["edit", "--help"])
+    result = runner.invoke(main, ["generate", "--help"])
     assert "--harvest-client" in result.output
     for flag in ("--harvest-client", "--client"):
         result = runner.invoke(
-            main, ["edit", "--demo", "--month", "junk", flag, "X", "--no-browser"]
+            main, ["generate", "--demo", "--month", "junk", flag, "X"]
         )
         # Fails on the month, never on the option name
         assert "No such option" not in result.output

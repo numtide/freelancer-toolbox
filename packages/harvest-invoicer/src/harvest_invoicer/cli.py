@@ -256,12 +256,6 @@ def main() -> None:
 
 @main.command("edit")
 @click.option(
-    "--month",
-    default=None,
-    metavar="YYYY-MM",
-    help="Month to invoice (default: previous month).",
-)
-@click.option(
     "--harvest-client",
     "--client",
     "client_filter",
@@ -334,11 +328,9 @@ def main() -> None:
     is_flag=True,
     help="Use synthetic data (no Harvest credentials required).",
 )
-@_period_options
 @_MERGE_DUPLICATES_OPTION
 @_BILL_TO_OPTION
 def edit(
-    month: str | None,
     client_filter: str | None,
     user_filter: str | None,
     issuer_path: str | None,
@@ -351,15 +343,17 @@ def edit(
     currency: str,
     no_agency: bool,
     demo: bool,
-    period_start: datetime | None,
-    period_end: datetime | None,
     merge_duplicates: bool,
     bill_to: str | None,
 ) -> None:
-    """Launch the interactive invoice editor in a local browser."""
-    month = month or _previous_month()
-    parse_month(month)  # validate format early; raises ClickException on bad input
-    p_start, p_end = _resolve_period(month, period_start, period_end)
+    """Launch the interactive invoice editor in a local browser.
+
+    Everything the CLI used to seed (invoice number, billing period, import
+    range) is edited live in the browser, so the command takes no month or
+    period flags: it seeds from the previous month and hands over to the UI.
+    """
+    month = _previous_month()
+    p_start, p_end = _resolve_period(month, None, None)
 
     issuer_file = _resolve_config_path(issuer_path, "issuer.json")
     clients_file = _resolve_config_path(clients_path, "clients.json")

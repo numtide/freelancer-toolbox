@@ -42,20 +42,19 @@ harvest-invoicer generate --month 2026-06 --output-dir ./invoices/
 ### `edit` — interactive editor
 
 ```
-harvest-invoicer edit [--month YYYY-MM] [--harvest-client NAME] [--user NAME]
+harvest-invoicer edit [--harvest-client NAME] [--user NAME]
                       [--issuer PATH] [--clients PATH] [--bill-to KEY]
                       [--templates-dir DIR]
                       [--number STR] [--output PATH.pdf]
-                      [--period-start YYYY-MM-DD] [--period-end YYYY-MM-DD]
                       [--port N] [--no-browser]
                       [--currency CODE] [--no-agency] [--demo]
 ```
 
 Starts a local Flask server on `127.0.0.1` (never exposed to the network)
 and opens the editor in your default browser.  The editor starts **without
-fetching** — `--month` seeds the invoice number, billing period, and default
-import range, and you import the hours from the page with **Fetch from
-Harvest** (credentials are only needed at that point).  Use `--demo` to try
+fetching**, seeded with the previous month's number, billing period, and
+import range — all editable on the page.  Import the hours with **Fetch
+from Harvest** (credentials are only needed at that point).  Use `--demo` to try
 the editor with synthetic data pre-loaded.
 
 The live preview has two modes: **PDF** (the default — the exact WeasyPrint
@@ -82,8 +81,9 @@ month has no entries.
 
 The service period drives **both** the Harvest import range and the
 **Period** row shown on the invoice.  It defaults to the first and last day
-of `--month`; customize it with `--period-start` / `--period-end`
-(single-month only) to import and bill a partial month.
+of the invoiced month; for headless `generate`, customize it with
+`--period-start` / `--period-end` (single-month only) to import and bill a
+partial month.
 
 In the interactive editor the two concepts are separate rows: the invoice's
 **Period start/end** fields only relabel the document (clearing both removes

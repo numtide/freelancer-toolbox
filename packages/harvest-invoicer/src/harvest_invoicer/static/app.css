@@ -697,7 +697,14 @@ button[disabled] { opacity: 0.6; cursor: default; }
 .tb-big .tb-cur { font-size: 15px; color: rgba(255, 248, 241, 0.65); }
 
 /* ===== Live preview ===== */
-.preview-col { min-width: 0; }
+.preview-col {
+  min-width: 0;
+  /* Stretch to the full first grid row so the preview reaches down to
+     the line-items section instead of stopping at a fixed height. */
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+}
 .preview-head {
   display: flex;
   align-items: center;
@@ -761,7 +768,10 @@ button[disabled] { opacity: 0.6; cursor: default; }
 iframe#preview-frame {
   display: block;
   width: 100%;
-  height: 560px;
+  /* Fill the stretched preview column (560px floor when the details
+     card is shorter than the preview). */
+  flex: 1 1 auto;
+  min-height: 560px;
   border: 1px solid var(--line);
   border-radius: 20px;
   background: #fff;

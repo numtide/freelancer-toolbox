@@ -201,6 +201,21 @@ must be charged VAT.  Omit it for reverse-charge / VAT-exempt invoicing
 (lines default to 0%).  The rate can still be adjusted per line via the
 invoice model if needed.
 
+**Optional `extra_lines`**: recurring non-Harvest items (fixed retainer,
+license pass-through, …) automatically appended to every import for that
+client:
+
+```json
+"extra_lines": [
+  { "concept": "Monthly retainer", "unit_price": 500, "quantity": 1 }
+]
+```
+
+`quantity` defaults to 1.  Extra lines are marked with an "extra" pill in
+the editor, are re-added on every fetch, and are never collapsed by
+merge-duplicates.  They are editable in Settings (one per line:
+`description ; unit price ; quantity`).
+
 See `src/harvest_invoicer/examples/` for full working examples with fake data.
 
 ### Invoice numbering

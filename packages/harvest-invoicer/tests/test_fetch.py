@@ -10,7 +10,12 @@ from unittest.mock import patch
 import click
 import pytest
 from harvest_exporter.cli import NUMTIDE_RATE
-from harvest_invoicer.fetch import apply_client_vat, fetch_lines, load_clients
+from harvest_invoicer.fetch import (
+    apply_client_vat,
+    client_extra_lines,
+    fetch_lines,
+    load_clients,
+)
 from harvest_invoicer.model import InvoiceLine
 
 if TYPE_CHECKING:
@@ -169,4 +174,61 @@ class TestClientVat:
         p = tmp_path / "clients.json"
         p.write_text(json.dumps({"Acme": {"name": "Acme Ltd", "vat_rate": "lots"}}))
         with pytest.raises(click.ClickException, match="vat_rate"):
+            load_clients(str(p))
+
+
+class TestExtraLines:
+    """Recurring per-client extra lines from clients.json."""
+
+    def test_builds_lines_with_extra_origin(self) -> None:
+        entry = {
+            "name": "Acme",
+            "extra_lines": [
+                {"concept": "Monthly retainer", "unit_price": 500.0},
+                {"concept": "License", "unit_price": 20.0, "quantity": 3.0},
+            ],
+        }
+        lines = client_extra_lines(entry)  # type: ignore[arg-type]
+        assert len(lines) == 2
+        assert all(line.origin == "extra" for line in lines)
+        assert lines[0].quantity == 1.0  # quantity defaults to 1
+        assert lines[1].total == pytest.approx(60.0)
+
+    def test_absent_config_gives_no_lines(self) -> None:
+        assert client_extra_lines({"name": "Acme"}) == []
+
+    def test_load_clients_accepts_valid_extra_lines(self, tmp_path: Path) -> None:
+        p = tmp_path / "clients.json"
+        p.write_text(
+            json.dumps(
+                {
+                    "Acme": {
+                        "name": "Acme Ltd",
+                        "extra_lines": [{"concept": "Fee", "unit_price": 10}],
+                    }
+                }
+            )
+        )
+        clients = load_clients(str(p))
+        assert clients["Acme"]["extra_lines"][0]["concept"] == "Fee"
+
+    def test_load_clients_rejects_bad_extra_lines(self, tmp_path: Path) -> None:
+        p = tmp_path / "clients.json"
+        p.write_text(
+            json.dumps(
+                {
+                    "Acme": {
+                        "name": "Acme Ltd",
+                        "extra_lines": [{"concept": "Fee"}],  # missing unit_price
+                    }
+                }
+            )
+        )
+        with pytest.raises(click.ClickException, match="extra_lines"):
+            load_clients(str(p))
+
+    def test_load_clients_rejects_non_list_extra_lines(self, tmp_path: Path) -> None:
+        p = tmp_path / "clients.json"
+        p.write_text(json.dumps({"Acme": {"name": "Acme Ltd", "extra_lines": "nope"}}))
+        with pytest.raises(click.ClickException, match="must be a list"):
             load_clients(str(p))

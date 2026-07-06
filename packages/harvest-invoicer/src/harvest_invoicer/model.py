@@ -37,12 +37,19 @@ REQUIRED_ISSUER_BANK_FIELDS: frozenset[str] = frozenset({"iban", "bic"})
 
 @dataclass
 class InvoiceLine:
-    """A single billable line on the invoice."""
+    """A single billable line on the invoice.
+
+    ``origin`` distinguishes where the line came from: ``"harvest"`` for
+    imported time entries, ``"extra"`` for recurring lines configured per
+    client in clients.json.  Extra lines are never merged with Harvest
+    lines and are re-added on every import.
+    """
 
     concept: str
     unit_price: float
     quantity: float
     vat_rate: float = 0.0
+    origin: str = "harvest"
 
     @property
     def base(self) -> float:
@@ -100,26 +107,42 @@ class Invoice:
 
 
 def merge_duplicate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
-    """Collapse lines with identical concept, rate, and VAT into one.
+    """Collapse Harvest lines with identical concept, rate, and VAT into one.
 
     Harvest aggregation is per team member, so several people logging the
     same task at the same rate yield visually identical rows.  Quantities
-    are summed; order of first occurrence is preserved.
+    are summed; order of first occurrence is preserved.  Lines with a
+    non-Harvest origin (recurring extras) are never merged — each passes
+    through unchanged.
     """
+    result: list[InvoiceLine] = []
     grouped: dict[tuple[str, float, float], InvoiceLine] = {}
     for line in lines:
+        if line.origin != "harvest":
+            result.append(
+                InvoiceLine(
+                    concept=line.concept,
+                    unit_price=line.unit_price,
+                    quantity=line.quantity,
+                    vat_rate=line.vat_rate,
+                    origin=line.origin,
+                )
+            )
+            continue
         key = (line.concept, line.unit_price, line.vat_rate)
         existing = grouped.get(key)
         if existing is None:
-            grouped[key] = InvoiceLine(
+            merged = InvoiceLine(
                 concept=line.concept,
                 unit_price=line.unit_price,
                 quantity=line.quantity,
                 vat_rate=line.vat_rate,
             )
+            grouped[key] = merged
+            result.append(merged)
         else:
             existing.quantity = round(existing.quantity + line.quantity, 4)
-    return list(grouped.values())
+    return result
 
 
 # --------------------------------------------------------------------------

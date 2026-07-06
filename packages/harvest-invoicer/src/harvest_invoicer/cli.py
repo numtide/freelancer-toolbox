@@ -12,6 +12,7 @@ import click
 
 from harvest_invoicer.fetch import (
     apply_client_vat,
+    client_extra_lines,
     fetch_lines,
     load_clients,
     load_issuer,
@@ -296,11 +297,13 @@ def edit(
         if merge_duplicates:
             lines = merge_duplicate_lines(lines)
         client_entry = resolve_client(client_filter, clients, lines)
-        lines = apply_client_vat(lines, client_entry)
+        lines = apply_client_vat(lines + client_extra_lines(client_entry), client_entry)
 
     def _fetch_with_vat(ps: date, pe: date) -> list[InvoiceLine]:
-        """Editor re-fetches get the client's vat_rate applied too."""
-        return apply_client_vat(_fetch(ps, pe), client_entry)
+        """Editor re-fetches get the client's vat_rate and extra lines too."""
+        return apply_client_vat(
+            _fetch(ps, pe) + client_extra_lines(client_entry), client_entry
+        )
 
     number = resolve_invoice_number(
         month,
@@ -489,7 +492,9 @@ def generate(
             if merge_duplicates:
                 lines = merge_duplicate_lines(lines)
             client_entry = resolve_client(client_filter, clients, lines)
-            lines = apply_client_vat(lines, client_entry)
+            lines = apply_client_vat(
+                lines + client_extra_lines(client_entry), client_entry
+            )
             number = resolve_invoice_number(
                 month,
                 number_override=number_override,

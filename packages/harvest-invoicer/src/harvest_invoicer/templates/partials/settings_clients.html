@@ -38,6 +38,14 @@
         <input type="number" name="vat_rate" step="0.01" min="0" max="1"
           value="{{ entry.get('vat_rate', '') }}">
       </label>
+      <label class="field field-wide">
+        <span class="field-label">Recurring extra lines (one per line: description ; unit price ; quantity)</span>
+        <textarea name="extra_lines" rows="3" placeholder="Monthly retainer ; 500 ; 1">
+{%- for x in entry.get('extra_lines', []) -%}
+{{ x['concept'] }} ; {{ x['unit_price'] }} ; {{ x['quantity'] }}
+{% endfor -%}
+</textarea>
+      </label>
     </div>
     <div class="toolbar">
       <button type="submit" class="secondary">Save client</button>
@@ -85,6 +93,10 @@
       <label class="field">
         <span class="field-label">VAT rate (0–1, e.g. 0.21; empty = none)</span>
         <input type="number" name="vat_rate" step="0.01" min="0" max="1" value="">
+      </label>
+      <label class="field field-wide">
+        <span class="field-label">Recurring extra lines (one per line: description ; unit price ; quantity)</span>
+        <textarea name="extra_lines" rows="3" placeholder="Monthly retainer ; 500 ; 1"></textarea>
       </label>
     </div>
     <div class="toolbar">

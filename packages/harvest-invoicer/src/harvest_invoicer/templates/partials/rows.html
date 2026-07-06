@@ -3,9 +3,15 @@
   <tr>
     <td><input type="checkbox" name="selected" value="{{ loop.index0 }}" form="merge-form"></td>
     <td>
-      <input type="text" name="concept" value="{{ line.concept }}"
-        hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest tr"
-        hx-target="#line-rows" hx-swap="outerHTML">
+      <div class="cell-desc">
+        <input type="text" name="concept" value="{{ line.concept }}"
+          hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest tr"
+          hx-target="#line-rows" hx-swap="outerHTML">
+        {% if line.origin == 'extra' %}
+        <span class="pill-extra"
+          title="Recurring line from clients.json (re-added on every import)">extra</span>
+        {% endif %}
+      </div>
     </td>
     <td>
       <input type="number" name="quantity" value="{{ fmt_qty(line.quantity) }}" step="0.01"

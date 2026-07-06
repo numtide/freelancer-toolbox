@@ -12,6 +12,7 @@ from harvest_invoicer.model import (
     fmt_money,
     fmt_qty,
     fmt_vat_cell,
+    merge_duplicate_lines,
 )
 
 # --------------------------------------------------------------------------
@@ -113,3 +114,18 @@ def test_fmt_vat_cell_nonzero() -> None:
     result = fmt_vat_cell(line)
     assert "21%" in result
     assert "21.00" in result
+
+
+def test_merge_duplicates_preserves_extra_lines() -> None:
+    """Extra-origin lines are never merged, even with identical fields."""
+    lines = [
+        InvoiceLine(concept="Dev", unit_price=100.0, quantity=10.0),
+        InvoiceLine(concept="Dev", unit_price=100.0, quantity=5.0),
+        InvoiceLine(concept="Dev", unit_price=100.0, quantity=1.0, origin="extra"),
+    ]
+    merged = merge_duplicate_lines(lines)
+    assert len(merged) == 2
+    harvest = [ln for ln in merged if ln.origin == "harvest"]
+    extras = [ln for ln in merged if ln.origin == "extra"]
+    assert harvest[0].quantity == 15.0
+    assert extras[0].quantity == 1.0

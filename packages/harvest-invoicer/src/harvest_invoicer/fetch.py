@@ -247,8 +247,50 @@ def load_clients(clients_file: str) -> dict[str, dict[str, str]]:
                     f"between 0 and 1 (e.g. 0.21 for 21%), got {vat!r}."
                 )
                 raise click.ClickException(msg)
+        extra = entry.get("extra_lines")
+        if extra is not None:
+            if not isinstance(extra, list):
+                msg = f"clients.json entry for '{key}': extra_lines must be a list."
+                raise click.ClickException(msg)
+            for i, item in enumerate(extra):
+                valid = isinstance(item, dict) and str(item.get("concept", "")).strip()
+                if valid:
+                    try:
+                        float(item["unit_price"])
+                        float(item.get("quantity", 1.0))
+                    except (TypeError, ValueError, KeyError):
+                        valid = False
+                if not valid:
+                    msg = (
+                        f"clients.json entry for '{key}': extra_lines[{i}] must "
+                        "be an object with 'concept' (string) and numeric "
+                        "'unit_price' (optional numeric 'quantity')."
+                    )
+                    raise click.ClickException(msg)
         result[key] = entry
     return result
+
+
+def client_extra_lines(client_entry: dict[str, str]) -> list[InvoiceLine]:
+    """Build recurring InvoiceLines from the client's ``extra_lines`` config.
+
+    Each configured item becomes a fresh line with ``origin="extra"`` so it
+    survives merge-duplicates and is visually marked in the editor.  The
+    shape is validated by :func:`load_clients`.
+    """
+    raw = client_entry.get("extra_lines")
+    if not isinstance(raw, list):
+        return []
+    return [
+        InvoiceLine(
+            concept=str(item["concept"]),
+            unit_price=float(item["unit_price"]),
+            quantity=float(item.get("quantity", 1.0)),
+            vat_rate=float(item.get("vat_rate", 0.0)),
+            origin="extra",
+        )
+        for item in raw
+    ]
 
 
 def apply_client_vat(

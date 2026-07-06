@@ -576,6 +576,33 @@ def create_app(
                     error=True,
                 )
 
+        # Recurring extra lines: "description ; unit price [; quantity]"
+        extra_items: list[dict[str, object]] = []
+        for lineno, row in enumerate(
+            request.form.get("extra_lines", "").splitlines(), start=1
+        ):
+            text = row.strip()
+            if not text:
+                continue
+            parts = [p.strip() for p in text.split(";")]
+            if len(parts) not in (2, 3) or not parts[0]:
+                return _render_clients_block(
+                    f"Extra line {lineno}: expected "
+                    "'description ; unit price ; quantity'.",
+                    error=True,
+                )
+            try:
+                price = float(parts[1])
+                qty = float(parts[2]) if len(parts) == 3 else 1.0
+            except ValueError:
+                return _render_clients_block(
+                    f"Extra line {lineno}: unit price and quantity must be numbers.",
+                    error=True,
+                )
+            extra_items.append(
+                {"concept": parts[0], "unit_price": price, "quantity": qty}
+            )
+
         # Reuse the existing entry object so the current invoice's client
         # (same object) picks up the edits immediately.
         if original and original in clients_map:
@@ -593,6 +620,10 @@ def create_app(
             entry["vat_rate"] = vat_val
         else:
             entry.pop("vat_rate", None)
+        if extra_items:
+            entry["extra_lines"] = extra_items
+        else:
+            entry.pop("extra_lines", None)
         clients_map[new_key] = entry
 
         if original and original == app.state["current_client_key"]:  # type: ignore[attr-defined]

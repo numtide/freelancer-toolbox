@@ -374,6 +374,124 @@ class TestFetchFromEditor:
         assert len(inv.lines) == 2
 
 
+class TestExtraLinesInEditor:
+    """Extra-origin lines survive fetch+merge and are marked in the editor."""
+
+    def test_fetch_with_merge_keeps_extras(self, tmp_path: Path) -> None:
+        def fetch_with_extras(ps: date, pe: date) -> list[InvoiceLine]:
+            return [
+                InvoiceLine(concept="Dev", unit_price=100.0, quantity=10.0),
+                InvoiceLine(concept="Dev", unit_price=100.0, quantity=5.0),
+                InvoiceLine(
+                    concept="Retainer", unit_price=500.0, quantity=1.0, origin="extra"
+                ),
+            ]
+
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            fetch_callback=fetch_with_extras,
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            c.post(
+                "/lines/fetch",
+                data={
+                    "period_start": "2026-06-01",
+                    "period_end": "2026-06-30",
+                    "merge_duplicates": "on",
+                },
+            )
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert len(inv.lines) == 2
+        extras = [ln for ln in inv.lines if ln.origin == "extra"]
+        assert len(extras) == 1
+        assert extras[0].concept == "Retainer"
+
+    def test_editor_marks_extra_lines(self, tmp_path: Path) -> None:
+        app = create_app(
+            lines=[
+                InvoiceLine(concept="Dev", unit_price=100.0, quantity=10.0),
+                InvoiceLine(
+                    concept="Retainer", unit_price=500.0, quantity=1.0, origin="extra"
+                ),
+            ],
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            resp = c.get("/")
+        assert resp.data.count(b"pill-extra") == 1
+
+    def test_settings_saves_extra_lines(self, tmp_path: Path) -> None:
+        issuer = _fake_issuer()
+        clients = {"Acme Corp": _fake_client()}
+        clients_path = tmp_path / "clients.json"
+        clients_path.write_text(json.dumps(clients))
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=issuer,
+            client=clients["Acme Corp"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+            clients_path=clients_path,
+        )
+        app.config["TESTING"] = True
+        form = {
+            "original_key": "Acme Corp",
+            "key": "Acme Corp",
+            "name": "Acme Corp Ltd.",
+            "address_line1": "1 Acme Blvd",
+            "address_line2": "EC1A 1BB London",
+            "country": "United Kingdom",
+            "tax_id": "GB000000000",
+            "tax_id_label": "",
+            "vat_rate": "",
+            "extra_lines": "Monthly retainer ; 500 ; 1\nLicense ; 20 ; 3",
+        }
+        with app.test_client() as c:
+            resp = c.post("/settings/clients/save", data=form)
+            assert b"saved" in resp.data
+            # Round-trips into the re-rendered textarea
+            assert b"Monthly retainer ; 500.0 ; 1.0" in resp.data
+        saved = json.loads(clients_path.read_text())
+        assert saved["Acme Corp"]["extra_lines"] == [
+            {"concept": "Monthly retainer", "unit_price": 500.0, "quantity": 1.0},
+            {"concept": "License", "unit_price": 20.0, "quantity": 3.0},
+        ]
+
+    def test_settings_rejects_bad_extra_lines(self, tmp_path: Path) -> None:
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients={"Acme Corp": _fake_client()},
+        )
+        app.config["TESTING"] = True
+        form = {
+            "original_key": "Acme Corp",
+            "key": "Acme Corp",
+            "name": "Acme",
+            "address_line1": "A",
+            "address_line2": "B",
+            "country": "C",
+            "tax_id": "T",
+            "extra_lines": "Retainer ; lots",
+        }
+        with app.test_client() as c:
+            resp = c.post("/settings/clients/save", data=form)
+        assert b"must be" in resp.data or b"expected" in resp.data
+
+
 class TestServePdf:
     """GET /pdf serves the last generated file."""
 

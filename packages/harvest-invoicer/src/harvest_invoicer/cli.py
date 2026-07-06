@@ -57,6 +57,37 @@ _MERGE_DUPLICATES_OPTION = click.option(
     ),
 )
 
+_BILL_TO_OPTION = click.option(
+    "--bill-to",
+    "bill_to",
+    default=None,
+    metavar="KEY",
+    help=(
+        "clients.json key of the client to bill. Decoupled from --client "
+        "(the Harvest fetch filter). Default: auto-detect from fetched data, "
+        "falling back to the single clients.json entry."
+    ),
+)
+
+
+def _resolve_bill_to(
+    bill_to: str | None,
+    client_filter: str | None,
+    clients: dict[str, dict[str, str]],
+    lines: list[InvoiceLine],
+) -> dict[str, str]:
+    """Pick the invoice's bill-to entry: explicit --bill-to wins."""
+    if bill_to:
+        if bill_to not in clients:
+            available = ", ".join(sorted(clients.keys())) or "(none)"
+            msg = (
+                f"--bill-to '{bill_to}' not found in clients.json.\n"
+                f"  Available keys: {available}"
+            )
+            raise click.ClickException(msg)
+        return clients[bill_to]
+    return resolve_client(client_filter, clients, lines)
+
 
 def _previous_month() -> str:
     today = date.today()
@@ -238,6 +269,7 @@ def main() -> None:
 )
 @_period_options
 @_MERGE_DUPLICATES_OPTION
+@_BILL_TO_OPTION
 def edit(
     month: str | None,
     client_filter: str | None,
@@ -255,6 +287,7 @@ def edit(
     period_start: datetime | None,
     period_end: datetime | None,
     merge_duplicates: bool,
+    bill_to: str | None,
 ) -> None:
     """Launch the interactive invoice editor in a local browser."""
     month = month or _previous_month()
@@ -296,14 +329,8 @@ def edit(
         lines = _fetch(p_start, p_end)
         if merge_duplicates:
             lines = merge_duplicate_lines(lines)
-        client_entry = resolve_client(client_filter, clients, lines)
+        client_entry = _resolve_bill_to(bill_to, client_filter, clients, lines)
         lines = apply_client_vat(lines + client_extra_lines(client_entry), client_entry)
-
-    def _fetch_with_vat(ps: date, pe: date) -> list[InvoiceLine]:
-        """Editor re-fetches get the client's vat_rate and extra lines too."""
-        return apply_client_vat(
-            _fetch(ps, pe) + client_extra_lines(client_entry), client_entry
-        )
 
     number = resolve_invoice_number(
         month,
@@ -333,7 +360,9 @@ def edit(
         currency,
         period_start=p_start,
         period_end=p_end,
-        fetch_callback=_fetch_with_vat,
+        # Raw Harvest fetch; the editor applies the current bill-to
+        # client's vat_rate and extra lines per request.
+        fetch_callback=_fetch,
         clients=clients,
         issuer_path=eff_issuer_path,
         clients_path=eff_clients_path,
@@ -428,6 +457,7 @@ def edit(
 )
 @_period_options
 @_MERGE_DUPLICATES_OPTION
+@_BILL_TO_OPTION
 def generate(
     months: tuple[str, ...],
     client_filter: str | None,
@@ -443,6 +473,7 @@ def generate(
     period_start: datetime | None,
     period_end: datetime | None,
     merge_duplicates: bool,
+    bill_to: str | None,
 ) -> None:
     """Headless: fetch → render → PDF for one or more months (no browser)."""
     from harvest_invoicer.render import render_pdf  # noqa: PLC0415
@@ -491,7 +522,7 @@ def generate(
                 )
             if merge_duplicates:
                 lines = merge_duplicate_lines(lines)
-            client_entry = resolve_client(client_filter, clients, lines)
+            client_entry = _resolve_bill_to(bill_to, client_filter, clients, lines)
             lines = apply_client_vat(
                 lines + client_extra_lines(client_entry), client_entry
             )

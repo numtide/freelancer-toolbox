@@ -17,6 +17,7 @@ from markupsafe import escape
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+from harvest_invoicer.fetch import apply_client_vat, client_extra_lines
 from harvest_invoicer.model import (
     DEFAULT_PAYMENT_TERM_DAYS,
     Invoice,
@@ -163,7 +164,9 @@ def create_app(
             "editor.html",
             invoice=inv,
             issuer=issuer,
-            client=client,
+            client=app.state["client"],  # type: ignore[attr-defined]
+            clients=app.state["clients"],  # type: ignore[attr-defined]
+            current_client_key=app.state["current_client_key"],  # type: ignore[attr-defined]
             fmt_money=fmt_money,
             fmt_qty=fmt_qty,
             fmt_date=lambda d: fmt_date(d, date_format),
@@ -178,7 +181,8 @@ def create_app(
     def preview() -> str:
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         utd: Path | None = app.state["user_templates_dir"]  # type: ignore[attr-defined]
-        return render_html(inv, issuer, client, utd)
+        cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
+        return render_html(inv, issuer, cur_client, utd)
 
     @app.get("/preview.pdf")
     def preview_pdf() -> Response:
@@ -192,7 +196,12 @@ def create_app(
         from harvest_invoicer.render import render_pdf_bytes  # noqa: PLC0415
 
         try:
-            pdf = render_pdf_bytes(inv, issuer, client, utd)
+            pdf = render_pdf_bytes(
+                inv,
+                issuer,
+                app.state["client"],  # type: ignore[attr-defined]
+                utd,
+            )
         except Exception as exc:  # noqa: BLE001 — surface render errors in the pane
             return Response(
                 f"<p>PDF preview unavailable: {escape(str(exc))}</p>",
@@ -370,6 +379,13 @@ def create_app(
             if len(new_lines) != raw_count:
                 merged_note = f" ({raw_count} before merging duplicates)"
 
+        # Apply the *current* bill-to client's vat_rate and extra lines, so
+        # re-fetches follow a switched client.
+        cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
+        new_lines = apply_client_vat(
+            new_lines + client_extra_lines(cur_client), cur_client
+        )
+
         _snapshot_lines(inv)
         inv.lines[:] = new_lines
         inv.period_start = ps
@@ -377,6 +393,40 @@ def create_app(
         return _respond(
             f"Imported {len(new_lines)} lines{merged_note} for {ps} to {pe}."
         )
+
+    @app.post("/invoice/client")
+    def switch_client() -> Response:
+        """Switch the invoice's bill-to client (from the editor dropdown).
+
+        Keeps the current Harvest lines and any manual edits; swaps the
+        recurring extra lines to the new client's set and applies its
+        vat_rate uniformly.  Never re-fetches.
+        """
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        clients_map: dict[str, dict[str, str]] = app.state["clients"]  # type: ignore[attr-defined]
+        key = request.form.get("client_key", "").strip()
+        entry = clients_map.get(key)
+        def rows_and_totals() -> Response:
+            return Response(
+                _render_rows(inv) + _render_totals(inv), content_type="text/html"
+            )
+
+        if entry is None:
+            return rows_and_totals()
+
+        _snapshot_lines(inv)
+        app.state["client"] = entry  # type: ignore[attr-defined]
+        app.state["current_client_key"] = key  # type: ignore[attr-defined]
+
+        # Old client's recurring extras out, new client's in.
+        kept = [line for line in inv.lines if line.origin != "extra"]
+        inv.lines[:] = kept + client_extra_lines(entry)
+        # The new client's effective VAT applies to all lines (0 when unset,
+        # replacing any rate inherited from the previous client).
+        vat = float(str(entry.get("vat_rate") or 0.0))
+        for line in inv.lines:
+            line.vat_rate = vat
+        return rows_and_totals()
 
     @app.post("/lines/merge-duplicates")
     def merge_duplicates_route() -> Response:
@@ -657,7 +707,8 @@ def create_app(
         utd: Path | None = app.state["user_templates_dir"]  # type: ignore[attr-defined]
         from harvest_invoicer.render import render_pdf  # noqa: PLC0415
 
-        render_pdf(inv, issuer, client, out, utd)
+        cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
+        render_pdf(inv, issuer, cur_client, out, utd)
         return render_template("partials/render_done.html", output_path=str(out))
 
     # --- Quit ---

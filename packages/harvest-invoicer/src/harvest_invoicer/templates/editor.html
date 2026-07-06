@@ -32,6 +32,24 @@
 
         <section class="card">
           <h2>Invoice details</h2>
+          {% if clients %}
+          <label class="field field-wide bill-to">
+            <span class="field-label">Bill to</span>
+            <select name="client_key"
+              title="Switch the invoiced client: keeps the current lines, swaps recurring extras, applies the client's VAT"
+              hx-post="/invoice/client" hx-trigger="change"
+              hx-target="#line-rows" hx-swap="outerHTML">
+              {% for key, entry in clients.items() %}
+              <option value="{{ key }}" {% if key == current_client_key %}selected{% endif %}>
+                {{ entry.get('name', key) }} ({{ key }})
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+          {% else %}
+          <p class="config-note">No clients configured yet — add one in
+            <a href="/settings">Settings</a>.</p>
+          {% endif %}
           <form id="meta-form">
             {% include "partials/meta.html" %}
           </form>

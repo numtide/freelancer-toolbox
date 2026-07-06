@@ -374,6 +374,125 @@ class TestFetchFromEditor:
         assert len(inv.lines) == 2
 
 
+class TestBillToSwitch:
+    """POST /invoice/client switches the invoiced client mid-session."""
+
+    def _clients(self) -> dict[str, dict[str, object]]:
+        return {
+            "Numtide": {
+                "name": "Numtide Sarl",
+                "address_line1": "Rue X 1",
+                "address_line2": "1003 Lausanne",
+                "country": "Switzerland",
+                "tax_id": "CHE-000",
+            },
+            "Domestic": {
+                "name": "Domestic S.L.",
+                "address_line1": "Calle Y 2",
+                "address_line2": "28000 Madrid",
+                "country": "Spain",
+                "tax_id": "B0000",
+                "vat_rate": 0.21,
+                "extra_lines": [{"concept": "Retainer", "unit_price": 100.0}],
+            },
+        }
+
+    def _make_app(self, tmp_path: Path):  # noqa: ANN202
+        clients = self._clients()
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=clients["Numtide"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+        )
+        app.config["TESTING"] = True
+        return app
+
+    def test_switch_updates_preview_billto(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path)
+        with app.test_client() as c:
+            assert b"Numtide Sarl" in c.get("/preview").data
+            resp = c.post("/invoice/client", data={"client_key": "Domestic"})
+            assert resp.status_code == 200
+            preview = c.get("/preview")
+        assert b"Domestic S.L." in preview.data
+        assert b"Numtide Sarl" not in preview.data
+
+    def test_switch_applies_vat_and_extras_keeps_lines(
+        self, tmp_path: Path
+    ) -> None:
+        app = self._make_app(tmp_path)
+        with app.test_client() as c:
+            # Edit a harvest line first: the edit must survive the switch
+            c.post(
+                "/lines/update/0",
+                data={"concept": "Edited Task", "quantity": "40", "unit_price": "120"},
+            )
+            c.post("/invoice/client", data={"client_key": "Domestic"})
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        concepts = [line.concept for line in inv.lines]
+        assert "Edited Task" in concepts  # manual edit preserved, no re-fetch
+        assert "Retainer" in concepts  # new client's extra line added
+        assert all(line.vat_rate == 0.21 for line in inv.lines)
+
+    def test_switch_back_removes_vat_and_extras(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path)
+        with app.test_client() as c:
+            c.post("/invoice/client", data={"client_key": "Domestic"})
+            c.post("/invoice/client", data={"client_key": "Numtide"})
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        concepts = [line.concept for line in inv.lines]
+        assert "Retainer" not in concepts  # other client's extras removed
+        assert all(line.vat_rate == 0.0 for line in inv.lines)
+
+    def test_unknown_key_is_noop(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.post("/invoice/client", data={"client_key": "Nope"})
+            assert resp.status_code == 200
+        assert app.state["current_client_key"] == "Numtide"  # type: ignore[attr-defined]
+
+    def test_refetch_follows_switched_client(self, tmp_path: Path) -> None:
+        clients = self._clients()
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=clients["Numtide"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+            fetch_callback=lambda *_args: [
+                InvoiceLine(concept="Fresh", unit_price=100.0, quantity=1.0)
+            ],
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            c.post("/invoice/client", data={"client_key": "Domestic"})
+            c.post(
+                "/lines/fetch",
+                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+            )
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        concepts = [line.concept for line in inv.lines]
+        assert "Fresh" in concepts
+        assert "Retainer" in concepts  # switched client's extras applied
+        assert all(line.vat_rate == 0.21 for line in inv.lines)
+
+    def test_editor_renders_picker(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.get("/")
+        assert b'name="client_key"' in resp.data
+        assert b"Numtide Sarl" in resp.data
+        assert b"Domestic S.L." in resp.data
+
+    def test_editor_without_clients_links_settings(self, client: FlaskClient) -> None:
+        resp = client.get("/")
+        assert b"No clients configured yet" in resp.data
+
+
 class TestExtraLinesInEditor:
     """Extra-origin lines survive fetch+merge and are marked in the editor."""
 

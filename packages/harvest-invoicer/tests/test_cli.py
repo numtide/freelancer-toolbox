@@ -184,3 +184,24 @@ class TestConfigResolution:
         assert result.exit_code != 0
         assert "No issuer.json / clients.json found" in result.output
         assert "harvest-invoicer edit" in result.output
+
+
+def test_bill_to_flag_available() -> None:
+    """Both commands expose --bill-to."""
+    runner = CliRunner()
+    for cmd in ("edit", "generate"):
+        result = runner.invoke(main, [cmd, "--help"])
+        assert result.exit_code == 0
+        assert "--bill-to" in result.output
+
+
+def test_generate_bill_to_unknown_key_errors() -> None:
+    """--bill-to with a key missing from clients.json fails with the keys listed."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["generate", "--demo", "--month", "2026-06", "--bill-to", "Nonexistent"],
+    )
+    assert result.exit_code != 0
+    assert "Nonexistent" in result.output
+    assert "Available keys" in result.output

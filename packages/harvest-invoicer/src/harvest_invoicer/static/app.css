@@ -376,3 +376,27 @@ textarea:focus {
   border-color: var(--orange);
   box-shadow: 0 0 0 3px rgba(250, 93, 0, 0.15);
 }
+
+/* ===== Bill-to picker ===== */
+select {
+  width: 100%;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-input);
+  padding: 10px 12px;
+  font-family: var(--font);
+  font-size: 15px;
+}
+select:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgba(250, 93, 0, 0.15);
+}
+.bill-to { margin-bottom: 16px; }
+.config-note {
+  font-size: 14px;
+  color: var(--text-2);
+  margin: 0 0 16px;
+}
+.config-note a { color: var(--orange); }

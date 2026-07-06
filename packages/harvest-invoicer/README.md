@@ -43,7 +43,7 @@ harvest-invoicer generate --month 2026-06 --output-dir ./invoices/
 
 ```
 harvest-invoicer edit [--month YYYY-MM] [--client NAME] [--user NAME]
-                      [--issuer PATH] [--clients PATH]
+                      [--issuer PATH] [--clients PATH] [--bill-to KEY]
                       [--templates-dir DIR]
                       [--number STR] [--output PATH.pdf]
                       [--period-start YYYY-MM-DD] [--period-end YYYY-MM-DD]
@@ -65,7 +65,7 @@ footers; refreshes are debounced since each render takes about a second).
 
 ```
 harvest-invoicer generate [--month YYYY-MM]... [--client NAME] [--user NAME]
-                          [--issuer PATH] [--clients PATH]
+                          [--issuer PATH] [--clients PATH] [--bill-to KEY]
                           [--templates-dir DIR]
                           [--number STR] [--output-dir DIR]
                           [--period-start YYYY-MM-DD] [--period-end YYYY-MM-DD]
@@ -88,6 +88,26 @@ dates, click the button, and the table, totals, and preview update (a
 confirmation guards against overwriting manual edits).  Editing the period
 fields alone only relabels the invoice; clearing both removes the Period
 row.
+
+### Bill-to selection
+
+The client whose hours you *fetch* (`--client`, a Harvest client name) and
+the client you *bill* are independent — in agency mode you typically fetch
+hours logged under end-customer Harvest clients but invoice the agency.
+
+The bill-to entry is chosen in this order:
+
+1. `--bill-to KEY` — an explicit clients.json key (both commands).
+2. Auto-detect: the first fetched line's Harvest client name, if it matches
+   a clients.json key.
+3. The single clients.json entry, when there is exactly one.
+
+In the editor, the **Bill to** dropdown (Invoice details) switches the
+invoiced client mid-session: the current line items and manual edits are
+kept, the previous client's recurring extra lines are swapped for the new
+client's, and its `vat_rate` is applied.  Switching never re-fetches;
+subsequent fetches follow the selected client.  Clients added in Settings
+appear in the dropdown.
 
 ### Agency mode and `--no-agency`
 

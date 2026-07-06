@@ -72,9 +72,8 @@ def create_app(
     clients: dict[str, dict[str, str]] | None = None,
     issuer_path: Path | None = None,
     clients_path: Path | None = None,
-    startup_notice: str | None = None,
-    startup_people: list[str] | None = None,
-    cli_user_filter: str | None = None,
+    import_raw: list[InvoiceLine] | None = None,
+    import_merge: bool = True,
 ) -> Flask:
     """Create and configure the Flask editor application.
 
@@ -94,12 +93,11 @@ def create_app(
     routes write back to.  When a path is ``None`` (demo mode, tests)
     settings edits apply to the running session only.
 
-    ``startup_notice`` is shown in the fetch status area on load (e.g. the
-    multi-user import warning) with ``startup_people`` rendered as
-    click-to-pick buttons that set ``harvest_user`` on the spot.
-    ``cli_user_filter`` is the explicit --user flag; together with the
-    issuer's ``harvest_user`` (checked at request time, so mid-session
-    Settings edits count) it decides whether multi-user imports warn.
+    ``import_raw`` is the raw per-person result of the initial Harvest
+    fetch (pre merge/VAT/extras).  It feeds the import roster: person chips
+    that choose whose hours the invoice includes, re-derived locally
+    without re-hitting the API.  ``import_merge`` records whether duplicate
+    merging applies when re-deriving.
     """
     app = Flask(
         __name__,
@@ -139,6 +137,9 @@ def create_app(
         "last_fetch_range": (period_start, period_end)
         if period_start and period_end
         else None,
+        "import_raw": copy.deepcopy(import_raw) if import_raw else [],
+        "selected_people": {ln.user for ln in (import_raw or []) if ln.user},
+        "import_merge": import_merge,
     }
 
     date_format = str(issuer.get("date_format") or "%Y-%m-%d")
@@ -202,6 +203,51 @@ def create_app(
         )
         return meta + pcount + undo
 
+    def _store_import(raw_lines: list[InvoiceLine], merge: bool) -> None:
+        """Remember the raw per-person import for chip-based re-derives."""
+        app.state["import_raw"] = copy.deepcopy(raw_lines)  # type: ignore[attr-defined]
+        app.state["selected_people"] = {  # type: ignore[attr-defined]
+            ln.user for ln in raw_lines if ln.user
+        }
+        app.state["import_merge"] = merge  # type: ignore[attr-defined]
+
+    def _derive_from_import(inv: Invoice) -> None:
+        """Rebuild the invoice lines from the stored import + selection."""
+        raw: list[InvoiceLine] = app.state["import_raw"]  # type: ignore[attr-defined]
+        selected: set[str] = app.state["selected_people"]  # type: ignore[attr-defined]
+        lines = [
+            copy.deepcopy(ln) for ln in raw if not ln.user or ln.user in selected
+        ]
+        if app.state["import_merge"]:  # type: ignore[attr-defined]
+            lines = merge_duplicate_lines(lines)
+        cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
+        inv.lines[:] = apply_client_vat(
+            lines + client_extra_lines(cur_client), cur_client
+        )
+
+    def _import_note_ctx() -> dict[str, object]:
+        raw: list[InvoiceLine] = app.state["import_raw"]  # type: ignore[attr-defined]
+        selected: set[str] = app.state["selected_people"]  # type: ignore[attr-defined]
+        hours: dict[str, float] = {}
+        for ln in raw:
+            if ln.user:
+                hours[ln.user] = hours.get(ln.user, 0.0) + ln.quantity
+        roster = sorted(hours.items())
+        return {
+            "roster": roster,
+            "selected": selected,
+            "you": str(issuer.get("harvest_user") or "").strip(),
+            "total_hours": round(sum(hours.values()), 2),
+            "selected_hours": round(
+                sum(h for n, h in roster if n in selected), 2
+            ),
+        }
+
+    def _import_note_oob() -> str:
+        return render_template(
+            "partials/import_note.html", oob=True, **_import_note_ctx()
+        )
+
     def _lines_response(inv: Invoice, status_html: str = "") -> Response:
         """Standard response for line mutations: rows + totals + OOB extras."""
         return Response(
@@ -227,9 +273,8 @@ def create_app(
             fmt_qty=fmt_qty,
             fmt_date=lambda d: fmt_date(d, date_format),
             output_path=str(output_path),
-            startup_notice=startup_notice,
-            startup_people=startup_people or [],
             has_undo=app.state["undo"] is not None,  # type: ignore[attr-defined]
+            **_import_note_ctx(),
         )
 
     @app.get("/static/htmx.min.js")
@@ -407,23 +452,6 @@ def create_app(
             f"{escape(message)}{extra_html}</span>"
         )
 
-    def _user_filter_engaged() -> bool:
-        """A user constraint applies: --user flag or issuer harvest_user."""
-        return bool(cli_user_filter or str(issuer.get("harvest_user") or "").strip())
-
-    def _user_pick_buttons(people: set[str]) -> str:
-        """Click-to-pick buttons: set harvest_user and re-import."""
-        parts = []
-        for name in sorted(people):
-            payload = escape(json.dumps({"user": name}))
-            parts.append(
-                f'<button type="button" class="user-pick" '
-                f'hx-post="/settings/harvest-user" hx-vals="{payload}" '
-                f'hx-target="#line-rows" hx-swap="outerHTML">'
-                f"{escape(name)}</button>"
-            )
-        return "".join(parts)
-
     @app.post("/lines/fetch")
     def fetch_lines_route() -> Response:
         """Re-import line items from Harvest for the import range.
@@ -453,40 +481,44 @@ def create_app(
             return _respond("Re-fetching is not available in this session.", error=True)
 
         try:
-            new_lines = fetch_callback(ps, pe)
+            raw_lines = fetch_callback(ps, pe)
         except Exception as exc:  # noqa: BLE001 — surface fetch errors inline
             return _respond(str(exc), error=True)
 
-        raw_count = len(new_lines)
-        merged_note = ""
-        if request.form.get("merge_duplicates") == "on":
-            new_lines = merge_duplicate_lines(new_lines)
-            if len(new_lines) != raw_count:
-                merged_note = f" ({raw_count} before merging duplicates)"
-
-        # Apply the *current* bill-to client's vat_rate and extra lines, so
-        # re-fetches follow a switched client.
-        cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
-        new_lines = apply_client_vat(
-            new_lines + client_extra_lines(cur_client), cur_client
-        )
-
+        _store_import(raw_lines, request.form.get("merge_duplicates") == "on")
         _snapshot_lines(inv)
-        inv.lines[:] = new_lines
+        _derive_from_import(inv)
         app.state["last_fetch_range"] = (ps, pe)  # type: ignore[attr-defined]
 
-        people = {line.user for line in new_lines if line.user}
-        if not _user_filter_engaged() and len(people) > 1:
-            return _respond(
-                f"Imported {len(new_lines)} lines{merged_note} for {ps} to "
-                f"{pe} — WARNING: hours for {len(people)} people. Click "
-                "your name to import only yours: ",
-                error=True,
-                extra_html=_user_pick_buttons(people),
-            )
         return _respond(
-            f"Imported {len(new_lines)} lines{merged_note} for {ps} to {pe}."
+            f"Imported {len(inv.lines)} lines for {ps} to {pe}.",
+            extra_html=_import_note_oob(),
         )
+
+    @app.post("/lines/people")
+    def toggle_people() -> Response:
+        """Choose whose hours the invoice includes (import roster chips).
+
+        Re-derives the lines from the stored import — never re-fetches.
+        """
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        raw: list[InvoiceLine] = app.state["import_raw"]  # type: ignore[attr-defined]
+        roster_names = {ln.user for ln in raw if ln.user}
+        selected: set[str] = set(app.state["selected_people"])  # type: ignore[attr-defined]
+        if request.form.get("all"):
+            selected = set(roster_names)
+        elif request.form.get("none"):
+            selected = set()
+        else:
+            name = request.form.get("toggle", "").strip()
+            if name in selected:
+                selected.discard(name)
+            elif name in roster_names:
+                selected.add(name)
+        app.state["selected_people"] = selected  # type: ignore[attr-defined]
+        _snapshot_lines(inv)
+        _derive_from_import(inv)
+        return _lines_response(inv, _import_note_oob())
 
     @app.post("/settings/harvest-user")
     def pick_harvest_user() -> Response:
@@ -512,19 +544,19 @@ def create_app(
             return _respond2(f"harvest_user set to '{name}'{suffix}.")
         ps, pe = rng
         try:
-            new_lines = fetch_callback(ps, pe)
+            raw_lines = fetch_callback(ps, pe)
         except Exception as exc:  # noqa: BLE001 — surface fetch errors inline
             return _respond2(str(exc), error=True)
-        new_lines = merge_duplicate_lines(new_lines)
-        cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
-        new_lines = apply_client_vat(
-            new_lines + client_extra_lines(cur_client), cur_client
-        )
+        _store_import(raw_lines, merge=True)
         _snapshot_lines(inv)
-        inv.lines[:] = new_lines
-        return _respond2(
-            f"harvest_user set to '{name}'{suffix}; imported "
-            f"{len(new_lines)} lines for {ps} to {pe}."
+        _derive_from_import(inv)
+        return _lines_response(
+            inv,
+            _fetch_status(
+                f"harvest_user set to '{name}'{suffix}; imported "
+                f"{len(inv.lines)} lines for {ps} to {pe}."
+            )
+            + _import_note_oob(),
         )
 
     def _client_inset_oob() -> str:

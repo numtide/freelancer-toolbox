@@ -374,22 +374,16 @@ def edit(
                 use_agency=not no_agency,
             )
 
-    startup_notice: str | None = None
-    startup_people: list[str] | None = None
+    raw_import: list[InvoiceLine] = []
     if onboarding:
         lines: list[InvoiceLine] = []
         client_entry: dict[str, str] = {}
     else:
-        lines = _fetch(p_start, p_end)
-        startup_notice = _multi_user_warning(lines, effective_user)
-        if startup_notice:
-            click.echo(f"warning: {startup_notice}", err=True)
-            startup_people = sorted({ln.user for ln in lines if ln.user})
-            # The editor shows the names as click-to-pick buttons.
-            startup_notice = (
-                f"Imported hours for {len(startup_people)} people. Click "
-                "your name to import only yours: "
-            )
+        raw_import = _fetch(p_start, p_end)
+        lines = list(raw_import)
+        warning = _multi_user_warning(lines, effective_user)
+        if warning:
+            click.echo(f"warning: {warning}", err=True)
         if merge_duplicates:
             lines = merge_duplicate_lines(lines)
         client_entry = _resolve_bill_to(
@@ -431,9 +425,8 @@ def edit(
         clients=clients,
         issuer_path=eff_issuer_path,
         clients_path=eff_clients_path,
-        startup_notice=startup_notice,
-        startup_people=startup_people,
-        cli_user_filter=user_filter,
+        import_raw=raw_import,
+        import_merge=merge_duplicates,
     )
 
     url = (

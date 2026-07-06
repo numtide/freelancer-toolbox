@@ -375,7 +375,7 @@ class TestFetchFromEditor:
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         assert len(inv.lines) == 2
         assert inv.lines[0].quantity == pytest.approx(252.0)
-        assert b"Imported 2 lines (3 before merging duplicates)" in resp.data
+        assert b"Imported 2 lines" in resp.data
 
     def test_fetch_keeps_raw_lines_when_unchecked(self, tmp_path: Path) -> None:
         def dup_fetch(ps: date, pe: date) -> list[InvoiceLine]:
@@ -1003,138 +1003,103 @@ class TestStyleCss:
         assert b"<svg" in resp.data
 
 
-class TestMultiUserSafetyNet:
-    """Warnings when an import mixes several people's hours."""
+class TestImportRoster:
+    """Person chips: choose whose hours the invoice includes."""
 
-    def test_startup_notice_rendered(self, tmp_path: Path) -> None:
+    def _team_fetch(self, ps: date, pe: date) -> list[InvoiceLine]:  # noqa: ARG002
+        return [
+            InvoiceLine(concept="Dev", unit_price=100.0, quantity=10.0, user="Alice"),
+            InvoiceLine(concept="Ops", unit_price=90.0, quantity=5.0, user="Bob"),
+        ]
+
+    def _make_app(self, tmp_path: Path, **kwargs):  # noqa: ANN003, ANN202
         app = create_app(
             lines=_fake_lines(),
             issuer=_fake_issuer(),
             client=_fake_client(),
             invoice_number="2026-06",
             output_path=tmp_path / "invoice.pdf",
-            startup_notice="Imported hours for 2 people. Click your name:",
-            startup_people=["Aldo Borrero", "Brian McGee"],
+            **kwargs,
         )
         app.config["TESTING"] = True
+        return app
+
+    def test_startup_roster_rendered(self, tmp_path: Path) -> None:
+        raw = self._team_fetch(date(2026, 6, 1), date(2026, 6, 30))
+        app = self._make_app(tmp_path, import_raw=raw)
         with app.test_client() as c:
             resp = c.get("/")
-        assert b"Imported hours for 2 people" in resp.data
-        assert b"fetch-err" in resp.data
-        assert resp.data.count(b'class="user-pick"') == 2
-        assert b"Aldo Borrero" in resp.data
-
-    def test_pick_user_sets_config_and_refetches(self, tmp_path: Path) -> None:
-        issuer = _fake_issuer()
-        issuer_path = tmp_path / "issuer.json"
-        issuer_path.write_text(json.dumps(issuer))
-        calls: list[tuple[date, date]] = []
-
-        def fetch(ps: date, pe: date) -> list[InvoiceLine]:
-            calls.append((ps, pe))
-            return [
-                InvoiceLine(concept="Mine", unit_price=100.0, quantity=8.0, user="Aldo")
-            ]
-
-        app = create_app(
-            lines=_fake_lines(),
-            issuer=issuer,
-            client=_fake_client(),
-            invoice_number="2026-06",
-            output_path=tmp_path / "invoice.pdf",
-            period_start=date(2026, 6, 1),
-            period_end=date(2026, 6, 30),
-            fetch_callback=fetch,
-            issuer_path=issuer_path,
-        )
-        app.config["TESTING"] = True
-        with app.test_client() as c:
-            resp = c.post("/settings/harvest-user", data={"user": "Aldo Borrero"})
-        assert b"harvest_user set to &#39;Aldo Borrero&#39;" in resp.data
-        assert b"Mine" in resp.data
-        # Persisted and re-fetched over the last import range
-        assert json.loads(issuer_path.read_text())["harvest_user"] == "Aldo Borrero"
-        assert calls == [(date(2026, 6, 1), date(2026, 6, 30))]
-        inv = app.state["invoice"]  # type: ignore[attr-defined]
-        assert len(inv.lines) == 1
-
-    def test_pick_user_suppresses_future_warnings(self, tmp_path: Path) -> None:
-        issuer = _fake_issuer()
-
-        def team_fetch(ps: date, pe: date) -> list[InvoiceLine]:
-            return [
-                InvoiceLine(concept="A", unit_price=1.0, quantity=1.0, user="Alice"),
-                InvoiceLine(concept="B", unit_price=1.0, quantity=1.0, user="Bob"),
-            ]
-
-        app = create_app(
-            lines=_fake_lines(),
-            issuer=issuer,
-            client=_fake_client(),
-            invoice_number="2026-06",
-            output_path=tmp_path / "invoice.pdf",
-            fetch_callback=team_fetch,
-        )
-        app.config["TESTING"] = True
-        with app.test_client() as c:
-            issuer["harvest_user"] = "Alice"  # as the Settings page would set
-            resp = c.post(
-                "/lines/fetch",
-                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
-            )
-        assert b"WARNING" not in resp.data
-
-    def test_refetch_warns_without_user_filter(self, tmp_path: Path) -> None:
-        def team_fetch(ps: date, pe: date) -> list[InvoiceLine]:
-            return [
-                InvoiceLine(concept="Dev", unit_price=1.0, quantity=1.0, user="Alice"),
-                InvoiceLine(concept="Dev2", unit_price=1.0, quantity=1.0, user="Bob"),
-            ]
-
-        app = create_app(
-            lines=_fake_lines(),
-            issuer=_fake_issuer(),
-            client=_fake_client(),
-            invoice_number="2026-06",
-            output_path=tmp_path / "invoice.pdf",
-            fetch_callback=team_fetch,
-            cli_user_filter=None,
-        )
-        app.config["TESTING"] = True
-        with app.test_client() as c:
-            resp = c.post(
-                "/lines/fetch",
-                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
-            )
-        assert b"WARNING: hours for 2 people" in resp.data
-        # Names render as click-to-pick buttons
-        assert resp.data.count(b'class="user-pick"') == 2
+        assert b"across <strong>2 people</strong>" in resp.data
+        assert resp.data.count(b'class="chip on') == 2
         assert b"Alice" in resp.data
         assert b"Bob" in resp.data
 
-    def test_refetch_quiet_with_user_filter(self, tmp_path: Path) -> None:
-        def team_fetch(ps: date, pe: date) -> list[InvoiceLine]:
-            return [
-                InvoiceLine(concept="Dev", unit_price=1.0, quantity=1.0, user="Alice"),
-                InvoiceLine(concept="Dev2", unit_price=1.0, quantity=1.0, user="Bob"),
-            ]
-
-        app = create_app(
-            lines=_fake_lines(),
-            issuer=_fake_issuer(),
-            client=_fake_client(),
-            invoice_number="2026-06",
-            output_path=tmp_path / "invoice.pdf",
-            fetch_callback=team_fetch,
-            cli_user_filter="Alice",
-        )
-        app.config["TESTING"] = True
+    def test_fetch_renders_roster_note(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
         with app.test_client() as c:
             resp = c.post(
                 "/lines/fetch",
                 data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
-        assert b"WARNING" not in resp.data
+        assert b"across <strong>2 people</strong>" in resp.data
+        assert b"Choose who to include" in resp.data
+        assert resp.data.count(b'class="chip on') == 2
+
+    def test_single_person_import_has_no_chips(self, tmp_path: Path) -> None:
+        def solo(ps: date, pe: date) -> list[InvoiceLine]:  # noqa: ARG001
+            return [
+                InvoiceLine(concept="Dev", unit_price=100.0, quantity=8.0, user="Al")
+            ]
+
+        app = self._make_app(tmp_path, fetch_callback=solo)
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+        assert b"across <strong>1 person</strong>" in resp.data
+        assert b'class="chip' not in resp.data
+
+    def test_toggle_excludes_person(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
+        with app.test_client() as c:
+            c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+            resp = c.post("/lines/people", data={"toggle": "Bob"})
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert [ln.user for ln in inv.lines] == ["Alice"]
+        assert b"1 of 2 selected" in resp.data
+        # Toggle back in re-derives both, without re-fetching
+        with app.test_client() as c:
+            c.post("/lines/people", data={"toggle": "Bob"})
+        assert len(app.state["invoice"].lines) == 2  # type: ignore[attr-defined]
+
+    def test_everyone_and_clear(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
+        with app.test_client() as c:
+            c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+            resp = c.post("/lines/people", data={"none": "1"})
+            assert b"0 of 2 selected" in resp.data
+            assert app.state["invoice"].lines == []  # type: ignore[attr-defined]
+            resp = c.post("/lines/people", data={"all": "1"})
+            assert b"2 of 2 selected" in resp.data
+        assert len(app.state["invoice"].lines) == 2  # type: ignore[attr-defined]
+
+    def test_toggle_is_undoable(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
+        with app.test_client() as c:
+            c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+            c.post("/lines/people", data={"none": "1"})
+            c.post("/lines/undo")
+        assert len(app.state["invoice"].lines) == 2  # type: ignore[attr-defined]
 
 
 class TestIssuerDefaultsSettings:

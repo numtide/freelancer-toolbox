@@ -747,6 +747,84 @@ button:focus-visible, a:focus-visible {
   outline-offset: 2px;
 }
 
+/* ===== Import roster (success note + person chips) ===== */
+.success-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 11px 14px;
+  background: rgba(46, 138, 106, 0.09);
+  border: 1px solid rgba(46, 138, 106, 0.22);
+  border-radius: 11px;
+  font-size: 14px;
+}
+.ok-dot {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ok);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.select-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.ctl-summary { font-size: 13px; color: rgba(29, 30, 28, 0.6); }
+.ctl-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.ctl-all {
+  background: none;
+  border: none;
+  color: var(--orange);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ctl-clear {
+  background: none;
+  border: none;
+  color: rgba(29, 30, 28, 0.55);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ctl-dot { color: rgba(29, 30, 28, 0.25); }
+.chips { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 12px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: var(--r-pill);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid rgba(29, 30, 28, 0.16);
+  transition: all 0.13s ease;
+}
+.chip.is-you { border-color: rgba(250, 93, 0, 0.5); }
+.chip.on {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: #fff;
+}
+.chip-check { font-weight: 800; }
+.chip-you { font-size: 11px; opacity: 0.8; }
+.chip-hours { opacity: 0.65; }
+
 /* ===== Settings screen ===== */
 .settings-grid {
   max-width: 1120px;

@@ -420,9 +420,7 @@ class TestBillToSwitch:
         assert b"Domestic S.L." in preview.data
         assert b"Numtide Sarl" not in preview.data
 
-    def test_switch_applies_vat_and_extras_keeps_lines(
-        self, tmp_path: Path
-    ) -> None:
+    def test_switch_applies_vat_and_extras_keeps_lines(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path)
         with app.test_client() as c:
             # Edit a harvest line first: the edit must survive the switch
@@ -792,6 +790,34 @@ class TestSettings:
                 data=self._client_form(vat_rate="21"),
             )
         assert b"between 0 and 1" in resp.data
+
+    def test_client_email_saved(self, tmp_path: Path) -> None:
+        app, _, clients_path = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/clients/save",
+                data=self._client_form(
+                    original_key="Acme Corp",
+                    key="Acme Corp",
+                    email="billing@acme.example",
+                ),
+            )
+            assert b"saved" in resp.data
+        saved = json.loads(clients_path.read_text())
+        assert saved["Acme Corp"]["email"] == "billing@acme.example"
+
+    def test_client_invalid_email_rejected(self, tmp_path: Path) -> None:
+        app, _, clients_path = self._make_app(tmp_path)
+        before = clients_path.read_text()
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/clients/save",
+                data=self._client_form(
+                    original_key="Acme Corp", key="Acme Corp", email="not-an-email"
+                ),
+            )
+        assert b"valid address" in resp.data
+        assert clients_path.read_text() == before
 
     def test_no_paths_saves_session_only(self, tmp_path: Path) -> None:
         """Demo mode: settings apply in memory, nothing written anywhere."""

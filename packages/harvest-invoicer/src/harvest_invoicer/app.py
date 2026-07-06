@@ -406,6 +406,7 @@ def create_app(
         clients_map: dict[str, dict[str, str]] = app.state["clients"]  # type: ignore[attr-defined]
         key = request.form.get("client_key", "").strip()
         entry = clients_map.get(key)
+
         def rows_and_totals() -> Response:
             return Response(
                 _render_rows(inv) + _render_totals(inv), content_type="text/html"
@@ -586,6 +587,31 @@ def create_app(
         suffix = _persist_json(issuer_path, issuer)
         return _status("Issuer saved" + suffix)
 
+    def _parse_extra_lines(
+        text: str,
+    ) -> tuple[list[dict[str, object]], str | None]:
+        """Parse 'description ; unit price [; quantity]' rows -> (items, error)."""
+        items: list[dict[str, object]] = []
+        for lineno, row in enumerate(text.splitlines(), start=1):
+            stripped = row.strip()
+            if not stripped:
+                continue
+            parts = [p.strip() for p in stripped.split(";")]
+            if len(parts) not in (2, 3) or not parts[0]:
+                return [], (
+                    f"Extra line {lineno}: expected "
+                    "'description ; unit price ; quantity'."
+                )
+            try:
+                price = float(parts[1])
+                qty = float(parts[2]) if len(parts) == 3 else 1.0
+            except ValueError:
+                return [], (
+                    f"Extra line {lineno}: unit price and quantity must be numbers."
+                )
+            items.append({"concept": parts[0], "unit_price": price, "quantity": qty})
+        return items, None
+
     @app.post("/settings/clients/save")
     def settings_clients_save() -> str:
         """Add or update a clients.json entry (file + running session)."""
@@ -604,6 +630,7 @@ def create_app(
             "country",
             "tax_id",
             "tax_id_label",
+            "email",
         )
         values = {f: request.form.get(f, "").strip() for f in fields}
         required = ("name", "address_line1", "address_line2", "country", "tax_id")
@@ -611,6 +638,10 @@ def create_app(
         if missing:
             return _render_clients_block(
                 "Missing required fields: " + ", ".join(missing), error=True
+            )
+        if values["email"] and "@" not in values["email"]:
+            return _render_clients_block(
+                "Email must be a valid address (missing '@').", error=True
             )
 
         vat_raw = request.form.get("vat_rate", "").strip()
@@ -626,32 +657,9 @@ def create_app(
                     error=True,
                 )
 
-        # Recurring extra lines: "description ; unit price [; quantity]"
-        extra_items: list[dict[str, object]] = []
-        for lineno, row in enumerate(
-            request.form.get("extra_lines", "").splitlines(), start=1
-        ):
-            text = row.strip()
-            if not text:
-                continue
-            parts = [p.strip() for p in text.split(";")]
-            if len(parts) not in (2, 3) or not parts[0]:
-                return _render_clients_block(
-                    f"Extra line {lineno}: expected "
-                    "'description ; unit price ; quantity'.",
-                    error=True,
-                )
-            try:
-                price = float(parts[1])
-                qty = float(parts[2]) if len(parts) == 3 else 1.0
-            except ValueError:
-                return _render_clients_block(
-                    f"Extra line {lineno}: unit price and quantity must be numbers.",
-                    error=True,
-                )
-            extra_items.append(
-                {"concept": parts[0], "unit_price": price, "quantity": qty}
-            )
+        extra_items, extra_err = _parse_extra_lines(request.form.get("extra_lines", ""))
+        if extra_err:
+            return _render_clients_block(extra_err, error=True)
 
         # Reuse the existing entry object so the current invoice's client
         # (same object) picks up the edits immediately.

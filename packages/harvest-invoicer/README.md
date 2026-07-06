@@ -221,6 +221,9 @@ must be charged VAT.  Omit it for reverse-charge / VAT-exempt invoicing
 (lines default to 0%).  The rate can still be adjusted per line via the
 invoice model if needed.
 
+**Optional `email`**: the recipient's billing address — not printed on the
+invoice; reserved for sending the invoice by email.
+
 **Optional `extra_lines`**: recurring non-Harvest items (fixed retainer,
 license pass-through, …) automatically appended to every import for that
 client:

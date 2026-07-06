@@ -225,6 +225,25 @@ def create_app(
         """Return 204 to silence browser favicon requests."""
         return Response(status=204)
 
+    @app.get("/pdf")
+    def serve_pdf() -> Response:
+        """Serve the last generated PDF (the Generate button's output file)."""
+        out: Path = app.state["output_path"]  # type: ignore[attr-defined]
+        if not out.exists():
+            return Response(
+                "<p>No PDF generated yet. Click Generate PDF first.</p>",
+                status=404,
+                mimetype="text/html",
+            )
+        return Response(
+            out.read_bytes(),
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename={out.name}",
+                "Cache-Control": "no-store",
+            },
+        )
+
     # --- Line mutations ---
 
     @app.post("/lines/update/<int:idx>")

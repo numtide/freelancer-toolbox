@@ -374,6 +374,51 @@ class TestFetchFromEditor:
         assert len(inv.lines) == 2
 
 
+class TestServePdf:
+    """GET /pdf serves the last generated file."""
+
+    def test_pdf_404_before_generate(self, client: FlaskClient) -> None:
+        resp = client.get("/pdf")
+        assert resp.status_code == 404
+        assert b"No PDF generated yet" in resp.data
+
+    def test_pdf_served_when_present(self, tmp_path: Path) -> None:
+        out = tmp_path / "invoice-2026-06.pdf"
+        out.write_bytes(b"%PDF-1.7 fake for test")
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=out,
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            resp = c.get("/pdf")
+        assert resp.status_code == 200
+        assert resp.mimetype == "application/pdf"
+        assert resp.data.startswith(b"%PDF")
+        assert "invoice-2026-06.pdf" in resp.headers["Content-Disposition"]
+
+    def test_render_status_links_pdf(self, tmp_path: Path) -> None:
+        """The success partial contains the open link."""
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+        )
+        with app.test_request_context():
+            from flask import render_template  # noqa: PLC0415
+
+            html = render_template(
+                "partials/render_done.html", output_path="invoice.pdf"
+            )
+        assert 'href="/pdf"' in html
+        assert 'target="_blank"' in html
+
+
 class TestSettings:
     """In-app settings: issuer and clients managed through the editor."""
 

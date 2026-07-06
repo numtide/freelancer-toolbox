@@ -341,3 +341,4 @@ a.button:hover { border-color: var(--ink); }
 .status-ok { color: var(--ok); font-weight: 600; font-size: 14px; }
 .status-err { color: var(--danger); font-weight: 600; font-size: 14px; }
 .muted { color: var(--text-3); font-weight: 500; }
+.render-ok a { color: inherit; }

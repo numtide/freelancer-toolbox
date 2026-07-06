@@ -12,96 +12,213 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
+    <div class="topbar-inner">
       <a class="brand-link" href="/" title="Back to the editor">
         <img class="logo" src="/static/harvest-logo.svg" alt="Harvest">
       </a>
-      <h1>Settings</h1>
-    </div>
-    <div class="actions">
-      <a class="button" href="/">Back to editor</a>
+      <h1>Invoicer</h1>
+      <span class="crumb">/ Settings</span>
+      <div class="actions">
+        <a class="btn-outline" href="/">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+          Back to editor
+        </a>
+      </div>
     </div>
   </header>
 
-  <main class="settings-main">
+  <div class="settings-grid">
+    <nav class="sidenav">
+      <div class="eyebrow">Settings</div>
+      <a class="snav-link active" href="#issuer">Issuer</a>
+      <a class="snav-link" href="#banking">Banking</a>
+      <a class="snav-link" href="#defaults">Invoice defaults</a>
+      <a class="snav-link" href="#clients">Clients</a>
+    </nav>
 
-    <section class="card">
-      <h2>Issuer</h2>
-      <form hx-post="/settings/issuer" hx-target="#issuer-status" hx-swap="outerHTML">
-        <div class="field-grid">
-          <label class="field">
-            <span class="field-label">Name / company</span>
-            <input type="text" name="name" value="{{ issuer.get('name', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Email</span>
-            <input type="text" name="email" value="{{ issuer.get('email', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Address line 1</span>
-            <input type="text" name="address_line1" value="{{ issuer.get('address_line1', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Address line 2</span>
-            <input type="text" name="address_line2" value="{{ issuer.get('address_line2', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Country</span>
-            <input type="text" name="country" value="{{ issuer.get('country', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Phone</span>
-            <input type="text" name="phone" value="{{ issuer.get('phone', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Tax ID</span>
-            <input type="text" name="tax_id" value="{{ issuer.get('tax_id', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Tax ID label (e.g. NIF, VAT ID)</span>
-            <input type="text" name="tax_id_label" value="{{ issuer.get('tax_id_label', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">IBAN</span>
-            <input type="text" name="iban" value="{{ issuer.get('bank', {}).get('iban', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">BIC / SWIFT</span>
-            <input type="text" name="bic" value="{{ issuer.get('bank', {}).get('bic', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Date format (strftime, e.g. %d/%m/%Y)</span>
-            <input type="text" name="date_format" value="{{ issuer.get('date_format', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Invoice number template (e.g. {{ '{year}-{month}' }})</span>
-            <input type="text" name="number_template" value="{{ issuer.get('number_template', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Harvest user (only import this person's hours)</span>
-            <input type="text" name="harvest_user" value="{{ issuer.get('harvest_user', '') }}">
-          </label>
-          <label class="field">
-            <span class="field-label">Default bill-to (clients.json key)</span>
-            <input type="text" name="default_bill_to" value="{{ issuer.get('default_bill_to', '') }}">
-          </label>
-          <label class="field field-wide">
-            <span class="field-label">Legal note (shown at the bottom of the invoice)</span>
-            <input type="text" name="legal_note" value="{{ issuer.get('legal_note', '') }}">
-          </label>
-        </div>
-        <div class="toolbar">
-          <button type="submit" class="secondary">Save issuer</button>
-          <span id="issuer-status"></span>
-        </div>
+    <div class="settings-content">
+      <form id="issuer-form" hx-post="/settings/issuer" hx-target="#issuer-status" hx-swap="outerHTML"
+        style="display:contents;">
+
+        <section id="issuer" class="scard">
+          <div class="scard-head">
+            <div>
+              <h2>Issuer</h2>
+              <p>Your business details, shown in the header of every invoice.</p>
+            </div>
+          </div>
+          <div class="scard-body">
+            <div class="subgroup">Identity</div>
+            <div class="sgrid" style="margin-bottom:24px;">
+              <div>
+                <label class="slabel">Name / company</label>
+                <input type="text" name="name" value="{{ issuer.get('name', '') }}">
+              </div>
+              <div>
+                <label class="slabel">Email</label>
+                <input type="text" name="email" value="{{ issuer.get('email', '') }}">
+              </div>
+              <div class="wide">
+                <label class="slabel">Address line 1</label>
+                <input type="text" name="address_line1" value="{{ issuer.get('address_line1', '') }}">
+              </div>
+              <div class="wide">
+                <label class="slabel">Address line 2</label>
+                <input type="text" name="address_line2" value="{{ issuer.get('address_line2', '') }}">
+              </div>
+              <div>
+                <label class="slabel">Country</label>
+                <input type="text" name="country" value="{{ issuer.get('country', '') }}">
+              </div>
+              <div>
+                <label class="slabel">Phone</label>
+                <input type="text" class="hv-num" name="phone" value="{{ issuer.get('phone', '') }}">
+              </div>
+            </div>
+            <div class="subgroup bordered">Tax</div>
+            <div class="sgrid">
+              <div>
+                <label class="slabel">Tax ID</label>
+                <input type="text" class="hv-num" name="tax_id" value="{{ issuer.get('tax_id', '') }}">
+              </div>
+              <div>
+                <label class="slabel">Tax ID label</label>
+                <input type="text" name="tax_id_label" value="{{ issuer.get('tax_id_label', '') }}" placeholder="NIF, VAT ID…">
+                <div class="help">How it's labelled on the invoice</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="banking" class="scard">
+          <div class="scard-head">
+            <div>
+              <h2>Banking</h2>
+              <p>Payment details printed in the invoice footer.</p>
+            </div>
+          </div>
+          <div class="scard-body">
+            <div class="sgrid sgrid-bank">
+              <div>
+                <label class="slabel">IBAN</label>
+                <input type="text" class="hv-num" name="iban" value="{{ issuer.get('bank', {}).get('iban', '') }}">
+              </div>
+              <div>
+                <label class="slabel">BIC / SWIFT</label>
+                <input type="text" class="hv-num" name="bic" value="{{ issuer.get('bank', {}).get('bic', '') }}">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="defaults" class="scard">
+          <div class="scard-head">
+            <div>
+              <h2>Invoice defaults</h2>
+              <p>Applied automatically to every new invoice. You can override them per invoice.</p>
+            </div>
+          </div>
+          <div class="scard-body">
+            <div class="sgrid">
+              <div>
+                <label class="slabel">Date format</label>
+                <input type="text" class="hv-num" name="date_format" value="{{ issuer.get('date_format', '') }}" placeholder="%d/%m/%Y">
+                <div class="help">strftime pattern — <span class="hv-num">%d/%m/%Y</span> → 06/07/2026</div>
+              </div>
+              <div>
+                <label class="slabel">Invoice number format</label>
+                <input type="text" class="hv-num" name="number_template" value="{{ issuer.get('number_template', '') }}" placeholder="{{ '{year}-{month}' }}">
+                <div class="help">Tokens <span class="hv-num">{{ '{year}' }}</span> <span class="hv-num">{{ '{month}' }}</span> → 2026-07</div>
+              </div>
+              <div>
+                <label class="slabel">Default Harvest user</label>
+                <input type="text" name="harvest_user" value="{{ issuer.get('harvest_user', '') }}" placeholder="Everyone">
+                <div class="help">Only import this person's hours</div>
+              </div>
+              <div>
+                <label class="slabel">Default client</label>
+                <input type="text" name="default_bill_to" value="{{ issuer.get('default_bill_to', '') }}" placeholder="numtide">
+                <div class="help">Pre-selected in the "Bill to" field</div>
+              </div>
+              <div class="wide">
+                <label class="slabel">Legal note</label>
+                <textarea name="legal_note" rows="2" placeholder="e.g. Reverse charge — VAT exempt under art. 196">{{ issuer.get('legal_note', '') }}</textarea>
+                <div class="help">Shown at the bottom of the invoice</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
       </form>
-    </section>
 
-    <section class="card">
-      <h2>Clients</h2>
-      {% include "partials/settings_clients.html" %}
-    </section>
+      <section id="clients" class="scard">
+        <div class="scard-head">
+          <div>
+            <h2>Clients</h2>
+            <p>Billing details per client, matched to your Harvest client names.</p>
+          </div>
+          <button type="button" class="btn-primary-sm" id="add-client-btn">
+            <span style="font-size:15px;line-height:1;">＋</span> Add client
+          </button>
+        </div>
+        {% include "partials/settings_clients.html" %}
+      </section>
+    </div>
+  </div>
 
-  </main>
+  <div class="savebar">
+    <div class="savebar-inner">
+      <span class="savebar-note">Changes are saved to this workspace.</span>
+      <span id="issuer-status"></span>
+      <div class="actions">
+        <button type="button" class="btn-outline" id="discard-btn">Discard</button>
+        <button type="button" class="btn-primary" id="save-all-btn">Save changes</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Side-nav active state (anchors scroll natively via scroll-margin-top).
+    document.querySelectorAll(".snav-link").forEach(function (a) {
+      a.addEventListener("click", function () {
+        document.querySelectorAll(".snav-link").forEach(function (x) {
+          x.classList.toggle("active", x === a);
+        });
+      });
+    });
+
+    // Clients accordion (delegated; survives htmx swaps of #clients-block).
+    document.addEventListener("click", function (e) {
+      var head = e.target.closest("[data-acc]");
+      if (!head) return;
+      var item = head.closest(".acc-item");
+      var body = item.querySelector(".acc-body");
+      var open = item.classList.toggle("open");
+      if (body) body.hidden = !open;
+    });
+
+    // "Add client" opens the blank accordion at the end of the list.
+    document.getElementById("add-client-btn").addEventListener("click", function () {
+      var item = document.getElementById("new-client");
+      item.classList.add("open");
+      var body = item.querySelector(".acc-body");
+      if (body) body.hidden = false;
+      item.scrollIntoView({ behavior: "smooth", block: "center" });
+      var key = item.querySelector('[name="key"]');
+      if (key) key.focus();
+    });
+
+    // Save bar: submit the issuer form and every client form with content.
+    document.getElementById("save-all-btn").addEventListener("click", function () {
+      htmx.trigger(document.getElementById("issuer-form"), "submit");
+      document.querySelectorAll("#clients-block form").forEach(function (f) {
+        var key = f.querySelector('[name="key"]');
+        if (key && key.value.trim() !== "") htmx.trigger(f, "submit");
+      });
+    });
+    document.getElementById("discard-btn").addEventListener("click", function () {
+      window.location.reload();
+    });
+  </script>
 </body>
 </html>

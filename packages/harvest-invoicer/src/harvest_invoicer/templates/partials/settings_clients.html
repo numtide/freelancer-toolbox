@@ -1,116 +1,107 @@
-<div id="clients-block">
-  {% for key, entry in clients.items() %}
-  <form class="client-form"
-    hx-post="/settings/clients/save" hx-target="#clients-block" hx-swap="outerHTML">
-    <input type="hidden" name="original_key" value="{{ key }}">
-    <p class="client-key">{{ key }}{% if key == current_client_key %} <span class="muted">(current invoice)</span>{% endif %}</p>
-    <div class="field-grid">
-      <label class="field">
-        <span class="field-label">Harvest client name (key)</span>
-        <input type="text" name="key" value="{{ key }}">
-      </label>
-      <label class="field">
-        <span class="field-label">Legal name for invoice</span>
+{%- macro initials(name) -%}
+{{ name.split()[:2] | map('first') | join('') | upper }}
+{%- endmacro -%}
+{%- macro client_fields(key, entry) -%}
+      <div>
+        <label class="slabel">Harvest client name (key)</label>
+        <input type="text" class="hv-num" name="key" value="{{ key }}">
+        <div class="help">Must match the name in Harvest</div>
+      </div>
+      <div>
+        <label class="slabel">Legal name for invoice</label>
         <input type="text" name="name" value="{{ entry.get('name', '') }}">
-      </label>
-      <label class="field">
-        <span class="field-label">Address line 1</span>
+      </div>
+      <div>
+        <label class="slabel">Address line 1</label>
         <input type="text" name="address_line1" value="{{ entry.get('address_line1', '') }}">
-      </label>
-      <label class="field">
-        <span class="field-label">Address line 2</span>
+      </div>
+      <div>
+        <label class="slabel">Address line 2</label>
         <input type="text" name="address_line2" value="{{ entry.get('address_line2', '') }}">
-      </label>
-      <label class="field">
-        <span class="field-label">Country</span>
+      </div>
+      <div>
+        <label class="slabel">Country</label>
         <input type="text" name="country" value="{{ entry.get('country', '') }}">
-      </label>
-      <label class="field">
-        <span class="field-label">Tax ID</span>
-        <input type="text" name="tax_id" value="{{ entry.get('tax_id', '') }}">
-      </label>
-      <label class="field">
-        <span class="field-label">Tax ID label</span>
+      </div>
+      <div>
+        <label class="slabel">Tax ID</label>
+        <input type="text" class="hv-num" name="tax_id" value="{{ entry.get('tax_id', '') }}">
+      </div>
+      <div>
+        <label class="slabel">Tax ID label</label>
         <input type="text" name="tax_id_label" value="{{ entry.get('tax_id_label', '') }}">
-      </label>
-      <label class="field">
-        <span class="field-label">Email (for sending the invoice; optional)</span>
+        <div class="help">How it's labelled on the invoice</div>
+      </div>
+      <div>
+        <label class="slabel">Email</label>
         <input type="text" name="email" value="{{ entry.get('email', '') }}">
-      </label>
-      <label class="field">
-        <span class="field-label">VAT rate (0–1, e.g. 0.21; empty = none)</span>
+        <div class="help">For sending the invoice; optional</div>
+      </div>
+      <div>
+        <label class="slabel">VAT rate</label>
         <input type="number" name="vat_rate" step="0.01" min="0" max="1"
           value="{{ entry.get('vat_rate', '') }}">
-      </label>
-      <label class="field field-wide">
-        <span class="field-label">Recurring extra lines (one per line: description ; unit price ; quantity)</span>
-        <textarea name="extra_lines" rows="3" placeholder="Monthly retainer ; 500 ; 1">
+        <div class="help">0–1, e.g. 0.21 for 21%; empty = none</div>
+      </div>
+      <div class="wide">
+        <label class="slabel">Recurring extra lines</label>
+        <textarea name="extra_lines" rows="2" placeholder="Monthly retainer ; 500 ; 1">
 {%- for x in entry.get('extra_lines', []) -%}
 {{ x['concept'] }} ; {{ x['unit_price'] }} ; {{ x['quantity'] }}
 {% endfor -%}
 </textarea>
-      </label>
+        <div class="help">One per line: description ; unit price ; quantity</div>
+      </div>
+{%- endmacro -%}
+<div id="clients-block" class="acc-list">
+  {% for key, entry in clients.items() %}
+  {% set name = entry.get('name', key) %}
+  {% set city = (entry.get('address_line2', '').split(',')[-1]).strip().split(' ')[-1] %}
+  <div class="acc-item{% if loop.first %} open{% endif %}">
+    <div class="acc-head" data-acc>
+      <span class="avatar avatar-lg">{{ initials(name) }}</span>
+      <div class="acc-title">
+        <div class="acc-name-row">
+          <span class="acc-name">{{ name }}</span>
+          {% if key == current_client_key %}<span class="pill-current">Current invoice</span>{% endif %}
+        </div>
+        <div class="hv-num acc-meta">{{ key }}{% if city %} · {{ city }}{% endif %}</div>
+      </div>
+      <span class="acc-chevron">&#8964;</span>
     </div>
-    <div class="toolbar">
-      <button type="submit" class="secondary">Save client</button>
-      <button type="button" class="text-btn"
-        hx-post="/settings/clients/delete" hx-include="closest form"
-        hx-confirm="Delete client '{{ key }}'?"
-        hx-target="#clients-block" hx-swap="outerHTML">Delete</button>
-    </div>
-  </form>
+    <form class="acc-body" hx-post="/settings/clients/save"
+      hx-target="#clients-block" hx-swap="outerHTML"{% if not loop.first %} hidden{% endif %}>
+      <input type="hidden" name="original_key" value="{{ key }}">
+      {{ client_fields(key, entry) }}
+      <div class="acc-foot">
+        <button type="button" class="btn-danger-sm"
+          hx-post="/settings/clients/delete" hx-include="closest form"
+          hx-confirm="Delete client '{{ key }}'?"
+          hx-target="#clients-block" hx-swap="outerHTML">Remove client</button>
+        <button type="submit" class="btn-primary-sm">Save client</button>
+      </div>
+    </form>
+  </div>
   {% endfor %}
 
-  <form class="client-form"
-    hx-post="/settings/clients/save" hx-target="#clients-block" hx-swap="outerHTML">
-    <input type="hidden" name="original_key" value="">
-    <p class="client-key">Add a client</p>
-    <div class="field-grid">
-      <label class="field">
-        <span class="field-label">Harvest client name (key)</span>
-        <input type="text" name="key" value="">
-      </label>
-      <label class="field">
-        <span class="field-label">Legal name for invoice</span>
-        <input type="text" name="name" value="">
-      </label>
-      <label class="field">
-        <span class="field-label">Address line 1</span>
-        <input type="text" name="address_line1" value="">
-      </label>
-      <label class="field">
-        <span class="field-label">Address line 2</span>
-        <input type="text" name="address_line2" value="">
-      </label>
-      <label class="field">
-        <span class="field-label">Country</span>
-        <input type="text" name="country" value="">
-      </label>
-      <label class="field">
-        <span class="field-label">Tax ID</span>
-        <input type="text" name="tax_id" value="">
-      </label>
-      <label class="field">
-        <span class="field-label">Tax ID label</span>
-        <input type="text" name="tax_id_label" value="">
-      </label>
-      <label class="field">
-        <span class="field-label">Email (for sending the invoice; optional)</span>
-        <input type="text" name="email" value="">
-      </label>
-      <label class="field">
-        <span class="field-label">VAT rate (0–1, e.g. 0.21; empty = none)</span>
-        <input type="number" name="vat_rate" step="0.01" min="0" max="1" value="">
-      </label>
-      <label class="field field-wide">
-        <span class="field-label">Recurring extra lines (one per line: description ; unit price ; quantity)</span>
-        <textarea name="extra_lines" rows="3" placeholder="Monthly retainer ; 500 ; 1"></textarea>
-      </label>
+  <div class="acc-item" id="new-client">
+    <div class="acc-head" data-acc>
+      <span class="avatar avatar-lg">＋</span>
+      <div class="acc-title">
+        <div class="acc-name-row"><span class="acc-name">New client</span></div>
+        <div class="acc-meta">Add billing details for another client</div>
+      </div>
+      <span class="acc-chevron">&#8964;</span>
     </div>
-    <div class="toolbar">
-      <button type="submit" class="secondary">Add client</button>
-    </div>
-  </form>
+    <form class="acc-body" data-new-client hx-post="/settings/clients/save"
+      hx-target="#clients-block" hx-swap="outerHTML" hidden>
+      <input type="hidden" name="original_key" value="">
+      {{ client_fields('', {}) }}
+      <div class="acc-foot">
+        <button type="submit" class="btn-primary-sm">Add client</button>
+      </div>
+    </form>
+  </div>
 
   <span id="clients-status" class="{{ 'status-err' if status_error else 'status-ok' }}">{{ status or '' }}</span>
 </div>

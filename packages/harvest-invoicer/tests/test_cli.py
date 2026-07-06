@@ -28,15 +28,32 @@ def test_generate_demo_invalid_month() -> None:
     assert result.exit_code != 0
 
 
-def test_edit_has_no_month_flag() -> None:
-    """edit seeds from the previous month; the UI owns dates (no --month)."""
+def test_serve_has_no_per_invoice_flags() -> None:
+    """serve hands per-invoice choices to the UI; only session flags remain."""
     runner = CliRunner()
-    result = runner.invoke(main, ["edit", "--demo", "--month", "2026-06"])
+    result = runner.invoke(main, ["serve", "--demo", "--month", "2026-06"])
     assert result.exit_code != 0
     assert "No such option" in result.output
-    help_out = runner.invoke(main, ["edit", "--help"]).output
-    assert "--month" not in help_out
-    assert "--period-start" not in help_out
+    help_out = runner.invoke(main, ["serve", "--help"]).output
+    for gone in (
+        "--month",
+        "--period-start",
+        "--user",
+        "--number",
+        "--bill-to",
+        "--merge-duplicates",
+    ):
+        assert gone not in help_out
+    for kept in ("--harvest-client", "--templates-dir", "--output", "--demo"):
+        assert kept in help_out
+
+
+def test_edit_command_renamed_to_serve() -> None:
+    """The old edit name is gone; serve is the editor entrypoint."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["edit", "--help"])
+    assert result.exit_code != 0
+    assert "serve" in runner.invoke(main, ["--help"]).output
 
 
 def test_resolve_period_defaults_to_month() -> None:
@@ -78,12 +95,11 @@ def test_generate_period_flags_require_single_month() -> None:
 
 
 def test_merge_duplicates_flag_available() -> None:
-    """Both commands expose --merge-duplicates."""
+    """Headless generate exposes --merge-duplicates (serve uses the checkbox)."""
     runner = CliRunner()
-    for cmd in ("edit", "generate"):
-        result = runner.invoke(main, [cmd, "--help"])
-        assert result.exit_code == 0
-        assert "--merge-duplicates" in result.output
+    result = runner.invoke(main, ["generate", "--help"])
+    assert result.exit_code == 0
+    assert "--merge-duplicates" in result.output
 
 
 class TestTemplatesInit:
@@ -188,16 +204,15 @@ class TestConfigResolution:
         result = runner.invoke(main, ["generate", "--month", "2026-06"])
         assert result.exit_code != 0
         assert "No issuer.json / clients.json found" in result.output
-        assert "harvest-invoicer edit" in result.output
+        assert "harvest-invoicer serve" in result.output
 
 
 def test_bill_to_flag_available() -> None:
-    """Both commands expose --bill-to."""
+    """Headless generate exposes --bill-to (serve uses the dropdown)."""
     runner = CliRunner()
-    for cmd in ("edit", "generate"):
-        result = runner.invoke(main, [cmd, "--help"])
-        assert result.exit_code == 0
-        assert "--bill-to" in result.output
+    result = runner.invoke(main, ["generate", "--help"])
+    assert result.exit_code == 0
+    assert "--bill-to" in result.output
 
 
 def test_generate_bill_to_unknown_key_errors() -> None:

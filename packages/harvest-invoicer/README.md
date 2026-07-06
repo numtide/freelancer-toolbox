@@ -31,7 +31,7 @@ export HARVEST_ACCOUNT_ID=...
 export HARVEST_BEARER_TOKEN=...
 
 # Interactive editor (previous month, opens browser)
-harvest-invoicer edit --issuer issuer.json --clients clients.json
+harvest-invoicer serve
 
 # Headless PDF generation
 harvest-invoicer generate --month 2026-06 --output-dir ./invoices/
@@ -39,15 +39,14 @@ harvest-invoicer generate --month 2026-06 --output-dir ./invoices/
 
 ## CLI reference
 
-### `edit` — interactive editor
+### `serve` — interactive editor
 
 ```
-harvest-invoicer edit [--harvest-client NAME] [--user NAME]
-                      [--issuer PATH] [--clients PATH] [--bill-to KEY]
-                      [--templates-dir DIR]
-                      [--number STR] [--output PATH.pdf]
-                      [--port N] [--no-browser]
-                      [--currency CODE] [--no-agency] [--demo]
+harvest-invoicer serve [--harvest-client NAME]
+                       [--issuer PATH] [--clients PATH]
+                       [--templates-dir DIR] [--output PATH.pdf]
+                       [--port N] [--no-browser]
+                       [--currency CODE] [--no-agency] [--demo]
 ```
 
 Starts a local Flask server on `127.0.0.1` (never exposed to the network)
@@ -100,7 +99,7 @@ hours logged under end-customer Harvest clients but invoice the agency.
 
 The bill-to entry is chosen in this order:
 
-1. `--bill-to KEY` — an explicit clients.json key (both commands).
+1. `--bill-to KEY` — an explicit clients.json key (`generate`).
 2. `default_bill_to` in issuer.json — pin your standard recipient (e.g. the
    consultancy you invoice every month).
 3. Auto-detect: the first fetched line's Harvest client name, if it matches
@@ -120,8 +119,8 @@ Without a user filter the fetch imports **everyone's** hours in the
 consultancy's Harvest account.  If you invoice only your own time:
 
 1. Set `"harvest_user": "Your Harvest Name"` in issuer.json (editable in
-   Settings) — plain `edit`/`generate` then imports only your hours.
-2. Or pass `--user "Your Harvest Name"` (always wins over the config).
+   Settings) — plain `serve`/`generate` then imports only your hours.
+2. Or pass `--user "Your Harvest Name"` to `generate` (wins over the config).
 
 The name must match your Harvest user name exactly.  On a mismatch the
 error lists the user names that do have hours in the period.  When an
@@ -179,7 +178,7 @@ Both commands resolve each file in this order:
 2. `./issuer.json` / `./clients.json` in the current directory.
 3. `~/.config/harvest-invoicer/` (respects `XDG_CONFIG_HOME`).
 
-**First run:** if `edit` finds no configuration anywhere, it opens straight
+**First run:** if `serve` finds no configuration anywhere, it opens straight
 into the Settings page instead of erroring — fill in your details and they
 are saved to `~/.config/harvest-invoicer/`.  Headless `generate` keeps the
 explicit error (it lists the searched locations).
@@ -290,7 +289,7 @@ the invoice layout, scaffold a templates folder and point the tool at it:
 harvest-invoicer templates init
 
 # Use your custom templates (packaged files act as per-file fallback)
-harvest-invoicer edit   --templates-dir ./invoice-templates ...
+harvest-invoicer serve --templates-dir ./invoice-templates ...
 harvest-invoicer generate --templates-dir ./invoice-templates ...
 ```
 

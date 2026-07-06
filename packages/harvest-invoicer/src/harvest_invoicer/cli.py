@@ -183,7 +183,7 @@ def _blank_issuer() -> dict[str, object]:
 def _missing_config_message() -> str:
     return (
         "No issuer.json / clients.json found. Searched the current directory "
-        f"and {_xdg_config_dir()}. Run 'harvest-invoicer edit' to configure "
+        f"and {_xdg_config_dir()}. Run 'harvest-invoicer serve' to configure "
         "interactively, or pass --issuer/--clients."
     )
 
@@ -254,7 +254,7 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 
 
-@main.command("edit")
+@main.command("serve")
 @click.option(
     "--harvest-client",
     "--client",
@@ -263,15 +263,6 @@ def main() -> None:
     help=(
         "Only import hours logged under this Harvest client "
         "(--client is a deprecated alias; unrelated to the invoiced client)."
-    ),
-)
-@click.option(
-    "--user",
-    "user_filter",
-    default=None,
-    help=(
-        "Only import hours logged by this Harvest user "
-        "(default: issuer.json harvest_user, else everyone)."
     ),
 )
 @click.option(
@@ -291,12 +282,6 @@ def main() -> None:
     help="Path to clients.json (default: ./clients.json, then ~/.config/harvest-invoicer/).",
 )
 @_TEMPLATES_DIR_OPTION
-@click.option(
-    "--number",
-    "number_override",
-    default=None,
-    help="Invoice number (pre-filled with YYYY-MM when omitted).",
-)
 @click.option(
     "--output",
     "output_path",
@@ -328,29 +313,24 @@ def main() -> None:
     is_flag=True,
     help="Use synthetic data (no Harvest credentials required).",
 )
-@_MERGE_DUPLICATES_OPTION
-@_BILL_TO_OPTION
-def edit(
+def serve(
     client_filter: str | None,
-    user_filter: str | None,
     issuer_path: str | None,
     clients_path: str | None,
     templates_dir: Path | None,
-    number_override: str | None,
     output_path: str | None,
     port: int,
     no_browser: bool,
     currency: str,
     no_agency: bool,
     demo: bool,
-    merge_duplicates: bool,
-    bill_to: str | None,
 ) -> None:
-    """Launch the interactive invoice editor in a local browser.
+    """Serve the interactive invoice editor in a local browser.
 
-    Everything the CLI used to seed (invoice number, billing period, import
-    range) is edited live in the browser, so the command takes no month or
-    period flags: it seeds from the previous month and hands over to the UI.
+    The invoice itself — number, dates, bill-to, whose hours to include —
+    is edited live on the page, so the command takes no per-invoice flags:
+    it seeds from the previous month and configured defaults, then hands
+    over to the UI.
     """
     month = _previous_month()
     p_start, p_end = _resolve_period(month, None, None)
@@ -377,12 +357,9 @@ def edit(
     else:
 
         def _fetch(ps: date, pe: date) -> list[InvoiceLine]:
-            # Resolve the user filter at call time: harvest_user set in the
-            # editor (Settings or a warning's click-to-pick button) applies
-            # to re-fetches without restarting.
-            cur_user = user_filter or (
-                str(issuer.get("harvest_user") or "").strip() or None
-            )
+            # Resolve the user filter at call time: harvest_user edited in
+            # Settings applies to the next fetch without restarting.
+            cur_user = str(issuer.get("harvest_user") or "").strip() or None
             return fetch_lines(
                 ps,
                 pe,
@@ -404,14 +381,12 @@ def edit(
         if demo:
             raw_import = _fetch(p_start, p_end)
             lines = list(raw_import)
-            if merge_duplicates:
-                lines = merge_duplicate_lines(lines)
-        client_entry = _resolve_bill_to_lenient(bill_to, default_bill_to, clients)
+        client_entry = _resolve_bill_to_lenient(None, default_bill_to, clients)
         lines = apply_client_vat(lines + client_extra_lines(client_entry), client_entry)
 
     number = resolve_invoice_number(
         month,
-        number_override=number_override,
+        number_override=None,
         number_template=str(issuer.get("number_template") or ""),
     )
     out_path = Path(output_path or f"invoice-{number}.pdf")
@@ -444,7 +419,8 @@ def edit(
         issuer_path=eff_issuer_path,
         clients_path=eff_clients_path,
         import_raw=raw_import,
-        import_merge=merge_duplicates,
+        # Matches the default-checked "Auto-merge duplicate entries" box.
+        import_merge=True,
     )
 
     url = (

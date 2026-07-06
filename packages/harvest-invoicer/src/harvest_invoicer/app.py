@@ -243,8 +243,12 @@ def create_app(
 
     @app.get("/favicon.ico")
     def favicon() -> Response:
-        """Return 204 to silence browser favicon requests."""
-        return Response(status=204)
+        """Serve the vendored Harvest favicon."""
+        return Response(
+            (_STATIC_DIR / "favicon.svg").read_bytes(),
+            mimetype="image/svg+xml",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
     @app.get("/pdf")
     def serve_pdf() -> Response:
@@ -376,9 +380,7 @@ def create_app(
         except ValueError:
             return _respond("Select a valid import range first.", error=True)
         if pe < ps:
-            return _respond(
-                "Import end must not be before import start.", error=True
-            )
+            return _respond("Import end must not be before import start.", error=True)
         if fetch_callback is None:
             return _respond("Re-fetching is not available in this session.", error=True)
 

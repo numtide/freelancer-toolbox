@@ -7,22 +7,34 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <img class="logo" src="/static/harvest-logo.svg" alt="Harvest">
-      <h1>Invoice editor <span class="invoice-no">{{ invoice.number }}</span></h1>
+      <a class="brand-link" href="/" title="Back to the editor">
+        <img class="logo" src="/static/harvest-logo.svg" alt="Harvest">
+      </a>
+      <h1>Invoice editor</h1>
     </div>
     <div class="actions">
       <div id="render-status"></div>
-      <a class="button" href="/settings">Settings</a>
-      <button class="primary" title="Output: {{ output_path }}"
-        hx-post="/render" hx-target="#render-status" hx-swap="outerHTML"
-        hx-disabled-elt="this">
-        Generate PDF
-      </button>
+      <a class="button icon-btn" href="/settings" title="Settings" aria-label="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></a>
+      <div class="split">
+        <button class="primary" title="Output: {{ output_path }}"
+          hx-post="/render" hx-target="#render-status" hx-swap="outerHTML"
+          hx-disabled-elt="this">
+          Generate PDF
+        </button>
+        <details class="menu">
+          <summary class="menu-caret" aria-label="More invoice actions">&#9662;</summary>
+          <div class="menu-items">
+            <button type="button" disabled
+              title="Coming soon: email the generated PDF to the client">Send Invoice</button>
+          </div>
+        </details>
+      </div>
     </div>
   </header>
 
@@ -132,14 +144,20 @@
         <section class="card">
           <div class="preview-head">
             <h2>Live preview</h2>
-            <div class="seg" role="tablist" aria-label="Preview mode">
-              <button type="button" id="mode-html" class="seg-btn active"
-                title="Instant HTML preview (same template and stylesheet as the PDF)">HTML</button>
-              <button type="button" id="mode-pdf" class="seg-btn"
-                title="Exact PDF preview — byte-identical to the generated file">PDF</button>
+            <div class="preview-actions">
+              <div class="seg" role="tablist" aria-label="Preview mode">
+                <button type="button" id="mode-html" class="seg-btn"
+                  title="Instant HTML preview (same template and stylesheet as the PDF)">HTML</button>
+                <button type="button" id="mode-pdf" class="seg-btn active"
+                  title="Exact PDF preview — byte-identical to the generated file">PDF</button>
+              </div>
+              <button type="button" id="preview-open" class="seg-btn"
+                title="Open the preview in a separate window">Open</button>
+              <button type="button" id="preview-toggle" class="seg-btn"
+                title="Hide or show the preview pane">Hide</button>
             </div>
           </div>
-          <iframe id="preview-frame" src="/preview" title="Invoice preview"></iframe>
+          <iframe id="preview-frame" src="/preview.pdf#toolbar=0" title="Invoice preview"></iframe>
         </section>
       </div>
 
@@ -147,18 +165,31 @@
   </main>
 
   <script>
-    // Preview refresh. HTML mode reloads instantly after each edit; PDF mode
-    // re-renders through WeasyPrint (~0.5-1s), so refreshes are debounced.
+    // Preview control. PDF mode (default) shows the exact WeasyPrint render
+    // and debounces refreshes (~0.5-1s per render); HTML mode is instant.
     (function () {
       var frame = document.getElementById("preview-frame");
       var htmlBtn = document.getElementById("mode-html");
       var pdfBtn = document.getElementById("mode-pdf");
-      var mode = "html";
+      var openBtn = document.getElementById("preview-open");
+      var toggleBtn = document.getElementById("preview-toggle");
+      var mode = "pdf";
+      var hidden = false;
+      var stale = false;
       var debounce = null;
 
       function srcFor(m) {
         // Cache-busting query so assigning src always re-renders the PDF.
         return m === "pdf" ? "/preview.pdf?t=" + Date.now() + "#toolbar=0" : "/preview";
+      }
+
+      function refresh() {
+        if (hidden) { stale = true; return; }
+        if (mode === "pdf") {
+          frame.src = srcFor("pdf");
+        } else if (frame.contentWindow) {
+          frame.contentWindow.location.reload();
+        }
       }
 
       function setMode(m) {
@@ -170,13 +201,19 @@
       htmlBtn.addEventListener("click", function () { setMode("html"); });
       pdfBtn.addEventListener("click", function () { setMode("pdf"); });
 
-      function refresh() {
-        if (mode === "pdf") {
-          frame.src = srcFor("pdf");
-        } else if (frame.contentWindow) {
-          frame.contentWindow.location.reload();
+      openBtn.addEventListener("click", function () {
+        window.open(srcFor(mode), "invoice-preview", "width=880,height=1100");
+      });
+
+      toggleBtn.addEventListener("click", function () {
+        hidden = !hidden;
+        frame.style.display = hidden ? "none" : "block";
+        toggleBtn.textContent = hidden ? "Show" : "Hide";
+        if (!hidden && stale) {
+          stale = false;
+          refresh();
         }
-      }
+      });
 
       document.body.addEventListener("htmx:afterRequest", function (evt) {
         if (!evt.detail.successful) return;

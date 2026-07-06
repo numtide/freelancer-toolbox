@@ -128,17 +128,13 @@ def run() -> None:
             ok = False
 
         # ------------------------------------------------------------------
-        # 5. /favicon.ico — 204
+        # 5. /favicon.ico — 200, vendored SVG
         # ------------------------------------------------------------------
-        try:
-            with urllib.request.urlopen(f"{base}/favicon.ico") as resp:
-                fav_status = resp.status
-        except urllib.error.HTTPError as exc:
-            fav_status = exc.code
-        if fav_status == 204:
-            print(f"  [PASS] GET /favicon.ico -> {fav_status}")
+        status, data = _get(f"{base}/favicon.ico")
+        if status == 200 and data.lstrip().startswith(b"<svg"):
+            print(f"  [PASS] GET /favicon.ico -> {status}, SVG")
         else:
-            print(f"  [FAIL] GET /favicon.ico -> {fav_status}")
+            print(f"  [FAIL] GET /favicon.ico -> {status}, head={data[:12]!r}")
             ok = False
 
         # ------------------------------------------------------------------

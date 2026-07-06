@@ -56,10 +56,11 @@ opens the editor in your default browser, and waits for you to click
 **Generate PDF**.  Use `--demo` to try the editor without Harvest credentials
 (loads synthetic line items and example config).
 
-The live preview has two modes: **HTML** (instant, same template and
-stylesheet the PDF uses) and **PDF** (the exact WeasyPrint render —
-byte-identical to the generated file, with real pagination and page
-footers; refreshes are debounced since each render takes about a second).
+The live preview has two modes: **PDF** (the default — the exact WeasyPrint
+render, byte-identical to the generated file, with real pagination and page
+footers; refreshes are debounced since each render takes about a second) and
+**HTML** (instant, same template and stylesheet the PDF uses).  The preview
+pane can be hidden, and opened in a separate window.
 
 ### `generate` — headless batch mode
 

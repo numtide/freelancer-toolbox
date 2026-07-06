@@ -192,7 +192,21 @@ class TestPreviewPdf:
         resp = client.get("/")
         assert b'id="mode-html"' in resp.data
         assert b'id="mode-pdf"' in resp.data
-        assert b"/preview.pdf" in resp.data
+        # PDF is the default preview mode
+        assert b'src="/preview.pdf#toolbar=0"' in resp.data
+        assert b'id="preview-open"' in resp.data
+        assert b'id="preview-toggle"' in resp.data
+
+    def test_editor_chrome(self, client: FlaskClient) -> None:
+        resp = client.get("/")
+        # No invoice number in the header title
+        assert b"invoice-no" not in resp.data
+        # Logo links back to the editor
+        assert b'class="brand-link" href="/"' in resp.data
+        # Settings is an icon button; Send Invoice placeholder exists
+        assert b'aria-label="Settings"' in resp.data
+        assert b"Send Invoice" in resp.data
+        assert b'rel="icon"' in resp.data
 
 
 class TestServicePeriod:
@@ -978,9 +992,11 @@ class TestStyleCss:
         resp = client.get("/style.css")
         assert b"table.items" in resp.data
 
-    def test_favicon_204(self, client: FlaskClient) -> None:
+    def test_favicon_served(self, client: FlaskClient) -> None:
         resp = client.get("/favicon.ico")
-        assert resp.status_code == 204
+        assert resp.status_code == 200
+        assert resp.mimetype == "image/svg+xml"
+        assert b"<svg" in resp.data
 
 
 class TestMultiUserSafetyNet:

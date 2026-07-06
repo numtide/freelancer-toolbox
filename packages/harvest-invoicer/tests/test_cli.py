@@ -13,10 +13,10 @@ from harvest_invoicer.cli import (
     _multi_user_warning,
     _resolve_bill_to,
     _resolve_bill_to_lenient,
-    _resolve_config_path,
     _resolve_period,
     main,
 )
+from harvest_invoicer.db import default_db_path
 from harvest_invoicer.model import REQUIRED_ISSUER_FIELDS, InvoiceLine
 from harvest_invoicer.render import _PACKAGED_TEMPLATES_DIR
 
@@ -102,6 +102,38 @@ def test_merge_duplicates_flag_available() -> None:
     assert "--merge-duplicates" in result.output
 
 
+class TestStateResolution:
+    """State database resolution: env override, else the XDG data dir."""
+
+    def test_env_override_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HARVEST_INVOICER_DB", "/srv/invoicer/state.db")
+        assert default_db_path() == Path("/srv/invoicer/state.db")
+
+    def test_xdg_data_home_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("HARVEST_INVOICER_DB", raising=False)
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        assert default_db_path() == tmp_path / "harvest-invoicer" / "state.db"
+
+    def test_blank_issuer_has_required_fields(self) -> None:
+        issuer = _blank_issuer()
+        assert issuer["name"] == ""
+        assert issuer["bank"] == {"iban": "", "bic": ""}
+        missing = REQUIRED_ISSUER_FIELDS - set(issuer.keys())
+        assert not missing
+
+    def test_generate_without_config_errors_helpfully(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HARVEST_INVOICER_DB", str(tmp_path / "empty.db"))
+        runner = CliRunner()
+        result = runner.invoke(main, ["generate", "--month", "2026-06"])
+        assert result.exit_code != 0
+        assert "No configuration found" in result.output
+        assert "harvest-invoicer serve" in result.output
+
+
 class TestTemplatesInit:
     def test_creates_folder_with_packaged_copies(self, tmp_path: Path) -> None:
         """templates init scaffolds the directory with both template files."""
@@ -137,74 +169,6 @@ class TestTemplatesInit:
         assert (target / "style.css").read_bytes() == (
             _PACKAGED_TEMPLATES_DIR / "style.css"
         ).read_bytes()
-
-
-class TestConfigResolution:
-    """Config lookup: explicit > ./ > XDG config dir."""
-
-    def test_explicit_wins(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.chdir(tmp_path)
-        explicit = tmp_path / "custom" / "issuer.json"
-        assert _resolve_config_path(str(explicit), "issuer.json") == explicit
-
-    def test_cwd_beats_xdg(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        cwd = tmp_path / "cwd"
-        xdg = tmp_path / "xdg"
-        (xdg / "harvest-invoicer").mkdir(parents=True)
-        (xdg / "harvest-invoicer" / "issuer.json").write_text("{}")
-        cwd.mkdir()
-        (cwd / "issuer.json").write_text("{}")
-        monkeypatch.chdir(cwd)
-        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
-        assert _resolve_config_path(None, "issuer.json") == Path("issuer.json")
-
-    def test_xdg_fallback(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        cwd = tmp_path / "empty"
-        xdg = tmp_path / "xdg"
-        (xdg / "harvest-invoicer").mkdir(parents=True)
-        xdg_file = xdg / "harvest-invoicer" / "issuer.json"
-        xdg_file.write_text("{}")
-        cwd.mkdir()
-        monkeypatch.chdir(cwd)
-        monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
-        assert _resolve_config_path(None, "issuer.json") == xdg_file
-
-    def test_nothing_found_returns_none(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        cwd = tmp_path / "empty"
-        cwd.mkdir()
-        monkeypatch.chdir(cwd)
-        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-xdg"))
-        assert _resolve_config_path(None, "issuer.json") is None
-
-    def test_blank_issuer_has_required_fields(self) -> None:
-        issuer = _blank_issuer()
-        assert issuer["name"] == ""
-        assert issuer["bank"] == {"iban": "", "bic": ""}
-        missing = REQUIRED_ISSUER_FIELDS - set(issuer.keys())
-        assert not missing
-
-    def test_generate_without_config_errors_helpfully(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        cwd = tmp_path / "empty"
-        cwd.mkdir()
-        monkeypatch.chdir(cwd)
-        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "no-xdg"))
-        monkeypatch.delenv("INVOICE_ISSUER_FILE", raising=False)
-        monkeypatch.delenv("INVOICE_CLIENTS_FILE", raising=False)
-        runner = CliRunner()
-        result = runner.invoke(main, ["generate", "--month", "2026-06"])
-        assert result.exit_code != 0
-        assert "No issuer.json / clients.json found" in result.output
-        assert "harvest-invoicer serve" in result.output
 
 
 def test_bill_to_flag_available() -> None:

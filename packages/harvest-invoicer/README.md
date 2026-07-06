@@ -43,7 +43,7 @@ harvest-invoicer generate --month 2026-06 --output-dir ./invoices/
 
 ```
 harvest-invoicer serve [--harvest-client NAME]
-                       [--issuer PATH] [--clients PATH]
+                       [--db PATH]
                        [--templates-dir DIR] [--output PATH.pdf]
                        [--port N] [--no-browser]
                        [--currency CODE] [--no-agency] [--demo]
@@ -66,7 +66,7 @@ pane can be hidden, and opened in a separate window.
 
 ```
 harvest-invoicer generate [--month YYYY-MM]... [--harvest-client NAME] [--user NAME]
-                          [--issuer PATH] [--clients PATH] [--bill-to KEY]
+                          [--db PATH] [--bill-to KEY]
                           [--templates-dir DIR]
                           [--number STR] [--output-dir DIR]
                           [--period-start YYYY-MM-DD] [--period-end YYYY-MM-DD]
@@ -99,12 +99,12 @@ hours logged under end-customer Harvest clients but invoice the agency.
 
 The bill-to entry is chosen in this order:
 
-1. `--bill-to KEY` — an explicit clients.json key (`generate`).
-2. `default_bill_to` in issuer.json — pin your standard recipient (e.g. the
+1. `--bill-to KEY` — an explicit client key (`generate`).
+2. `default_bill_to` in the issuer settings — pin your standard recipient (e.g. the
    consultancy you invoice every month).
 3. Auto-detect: the first fetched line's Harvest client name, if it matches
-   a clients.json key.
-4. The single clients.json entry, when there is exactly one.
+   a configured client key.
+4. The single configured client, when there is exactly one.
 
 In the editor, the **Bill to** dropdown (Invoice details) switches the
 invoiced client mid-session: the current line items and manual edits are
@@ -118,7 +118,7 @@ appear in the dropdown.
 Without a user filter the fetch imports **everyone's** hours in the
 consultancy's Harvest account.  If you invoice only your own time:
 
-1. Set `"harvest_user": "Your Harvest Name"` in issuer.json (editable in
+1. Set `"harvest_user": "Your Harvest Name"` in the issuer settings (in
    Settings) — plain `serve`/`generate` then imports only your hours.
 2. Or pass `--user "Your Harvest Name"` to `generate` (wins over the config).
 
@@ -128,7 +128,7 @@ import without any user filter mixes several people's hours, the editor
 shows a prominent warning (and `generate` prints one to stderr) so a
 whole-team total can't masquerade as a personal invoice.  The warning
 lists every name as a **click-to-pick button**: clicking your name sets
-`harvest_user`, saves it to issuer.json, and re-imports only your hours
+`harvest_user`, saves it, and re-imports only your hours
 on the spot.
 
 `--harvest-client NAME` (formerly `--client`, still accepted) restricts the
@@ -142,7 +142,7 @@ by real Harvest client name and the agency multiplier (inherited from
 `harvest-exporter`'s `NUMTIDE_RATE`) is applied to each developer's hourly
 rate.  "External - " prefixed clients are treated as direct-billed and are
 excluded from the output unless `--client` explicitly targets one.  The keys in
-`clients.json` must be the exact Harvest client names.
+the client settings must be the exact Harvest client names.
 
 Pass `--no-agency` to switch to **direct-billing mode**: entries are grouped by
 project name (the same grouping the Harvest exporter uses when agency is
@@ -156,34 +156,29 @@ because all entries are treated as external when there is no agency rate.
 |----------|-------------|
 | `HARVEST_ACCOUNT_ID` | Harvest account ID (needed when fetching; `generate` requires it) |
 | `HARVEST_BEARER_TOKEN` | Harvest API bearer token (needed when fetching; `generate` requires it) |
-| `INVOICE_ISSUER_FILE` | Path to issuer.json (default: `./issuer.json`) |
-| `INVOICE_CLIENTS_FILE` | Path to clients.json (default: `./clients.json`) |
+| `HARVEST_INVOICER_DB` | State database path (default: `~/.local/share/harvest-invoicer/state.db`) |
 | `INVOICE_TEMPLATES_DIR` | Directory for custom templates (same as `--templates-dir`) |
 
 ## Configuration
 
-Configuration lives in two JSON files (`issuer.json` and `clients.json`),
-but you don't have to edit them by hand: the editor's **Settings** page
-(top-right button) provides validated forms for the issuer details and for
-adding, editing, or removing clients.  Saves apply to the running session
-immediately (the live preview updates) and are written back to the config
-files.  In `--demo` mode changes apply to the session only.
+All configuration lives in a single SQLite state database, managed entirely
+through the editor's **Settings** page — issuer identity, banking, invoice
+defaults, and per-client billing details.  Saves apply to the running
+session immediately (the live preview updates) and persist transactionally.
+In `--demo` mode changes apply to the session only.
 
-### Where config is found
+### Where state lives
 
-Both commands resolve each file in this order:
+1. `--db PATH` or `HARVEST_INVOICER_DB` — explicit location (use this for
+   a server deployment, e.g. `/var/lib/harvest-invoicer/state.db`).
+2. Default: `~/.local/share/harvest-invoicer/state.db` (respects
+   `XDG_DATA_HOME`).
 
-1. Explicit `--issuer` / `--clients` flag or `INVOICE_ISSUER_FILE` /
-   `INVOICE_CLIENTS_FILE` environment variable.
-2. `./issuer.json` / `./clients.json` in the current directory.
-3. `~/.config/harvest-invoicer/` (respects `XDG_CONFIG_HOME`).
+**First run:** with an empty database, `serve` opens straight into the
+Settings page — fill in your details and they are saved.  Headless
+`generate` errors until configured.
 
-**First run:** if `serve` finds no configuration anywhere, it opens straight
-into the Settings page instead of erroring — fill in your details and they
-are saved to `~/.config/harvest-invoicer/`.  Headless `generate` keeps the
-explicit error (it lists the searched locations).
-
-### issuer.json
+### Issuer fields
 
 ```json
 {
@@ -214,7 +209,7 @@ explicit error (it lists the searched locations).
 | `legal_note` | _(absent)_ | Legal text at the invoice footer; omitted entirely when not set |
 | `number_template` | _(absent)_ | Invoice number template with `{year}` and `{month}` placeholders |
 | `harvest_user` | _(absent)_ | Only import this Harvest user's hours (see "Whose hours are imported") |
-| `default_bill_to` | _(absent)_ | clients.json key billed by default (see "Bill-to selection") |
+| `default_bill_to` | _(absent)_ | Client key billed by default (see "Bill-to selection") |
 
 **Examples of `date_format`:**
 
@@ -225,9 +220,9 @@ explicit error (it lists the searched locations).
 | `%d.%m.%Y` | 01.06.2026 |
 | `%B %d, %Y` | June 01, 2026 |
 
-### clients.json
+### Client fields
 
-A JSON object keyed by the exact Harvest client name:
+Clients are keyed by the exact Harvest client name:
 
 ```json
 {
@@ -282,7 +277,7 @@ The default invoice number is the invoiced month string `YYYY-MM`
 (e.g. `2026-06`).  Override via:
 
 1. `--number` CLI flag (single-month only).
-2. `number_template` in issuer.json using `{year}` and `{month}` placeholders
+2. `number_template` in the issuer settings using `{year}` and `{month}` placeholders
    (e.g. `"{year}-{month}"` → `"2026-06"`).
 
 ## Custom templates
@@ -325,4 +320,4 @@ fake-data configs.  A Spanish setup example:
 ```
 
 Country-specific labels, date formats, and legal notes belong in your
-`issuer.json` and `clients.json` — not in the tool itself.
+your issuer and client settings — not in the tool itself.

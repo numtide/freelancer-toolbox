@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from harvest_invoicer import db as state_db
 from harvest_invoicer.app import create_app
 from harvest_invoicer.model import InvoiceLine
 
@@ -594,8 +594,8 @@ class TestExtraLinesInEditor:
     def test_settings_saves_extra_lines(self, tmp_path: Path) -> None:
         issuer = _fake_issuer()
         clients = {"Acme Corp": _fake_client()}
-        clients_path = tmp_path / "clients.json"
-        clients_path.write_text(json.dumps(clients))
+        clients_path = tmp_path / "state.db"
+        state_db.save_clients(clients_path, clients)
         app = create_app(
             lines=_fake_lines(),
             issuer=issuer,
@@ -603,7 +603,7 @@ class TestExtraLinesInEditor:
             invoice_number="2026-06",
             output_path=tmp_path / "invoice.pdf",
             clients=clients,
-            clients_path=clients_path,
+            db_path=clients_path,
         )
         app.config["TESTING"] = True
         form = {
@@ -623,7 +623,7 @@ class TestExtraLinesInEditor:
             assert b"saved" in resp.data
             # Round-trips into the re-rendered textarea
             assert b"Monthly retainer ; 500.0 ; 1.0" in resp.data
-        saved = json.loads(clients_path.read_text())
+        saved = state_db.get_clients(clients_path)
         assert saved["Acme Corp"]["extra_lines"] == [
             {"concept": "Monthly retainer", "unit_price": 500.0, "quantity": 1.0},
             {"concept": "License", "unit_price": 20.0, "quantity": 3.0},
@@ -705,10 +705,9 @@ class TestSettings:
     def _make_app(self, tmp_path: Path):  # noqa: ANN202
         issuer = _fake_issuer()
         clients = {"Acme Corp": _fake_client(), "Other Client": _fake_client()}
-        issuer_path = tmp_path / "issuer.json"
-        clients_path = tmp_path / "clients.json"
-        issuer_path.write_text(json.dumps(issuer))
-        clients_path.write_text(json.dumps(clients))
+        db_path = tmp_path / "state.db"
+        state_db.save_issuer(db_path, issuer)
+        state_db.save_clients(db_path, clients)
         app = create_app(
             lines=_fake_lines(),
             issuer=issuer,
@@ -716,11 +715,10 @@ class TestSettings:
             invoice_number="2026-06",
             output_path=tmp_path / "invoice.pdf",
             clients=clients,
-            issuer_path=issuer_path,
-            clients_path=clients_path,
+            db_path=db_path,
         )
         app.config["TESTING"] = True
-        return app, issuer_path, clients_path
+        return app, db_path, db_path
 
     def _issuer_form(self, **overrides: str) -> dict[str, str]:
         base = {
@@ -781,15 +779,15 @@ class TestSettings:
             # The preview reflects the new issuer immediately
             preview = c.get("/preview")
         assert b"New Name S.L." in preview.data
-        assert json.loads(issuer_path.read_text())["name"] == "New Name S.L."
+        assert state_db.get_issuer(issuer_path)["name"] == "New Name S.L."
 
     def test_issuer_save_missing_required_rejected(self, tmp_path: Path) -> None:
         app, issuer_path, _ = self._make_app(tmp_path)
-        before = issuer_path.read_text()
+        before = state_db.get_issuer(issuer_path)
         with app.test_client() as c:
             resp = c.post("/settings/issuer", data=self._issuer_form(name=""))
         assert b"Missing required fields" in resp.data
-        assert issuer_path.read_text() == before  # untouched
+        assert state_db.get_issuer(issuer_path) == before  # untouched
 
     def test_client_edit_updates_current_invoice(self, tmp_path: Path) -> None:
         app, _, clients_path = self._make_app(tmp_path)
@@ -805,19 +803,19 @@ class TestSettings:
             assert b"saved" in resp.data
             preview = c.get("/preview")
         assert b"Acme Corp International" in preview.data
-        saved = json.loads(clients_path.read_text())
+        saved = state_db.get_clients(clients_path)
         assert saved["Acme Corp"]["name"] == "Acme Corp International"
 
     def test_client_add_and_delete(self, tmp_path: Path) -> None:
         app, _, clients_path = self._make_app(tmp_path)
         with app.test_client() as c:
             c.post("/settings/clients/save", data=self._client_form())
-            assert "New Client" in json.loads(clients_path.read_text())
+            assert "New Client" in state_db.get_clients(clients_path)
             resp = c.post(
                 "/settings/clients/delete", data={"original_key": "New Client"}
             )
             assert b"deleted" in resp.data
-        assert "New Client" not in json.loads(clients_path.read_text())
+        assert "New Client" not in state_db.get_clients(clients_path)
 
     def test_delete_current_client_rejected(self, tmp_path: Path) -> None:
         app, _, clients_path = self._make_app(tmp_path)
@@ -826,7 +824,7 @@ class TestSettings:
                 "/settings/clients/delete", data={"original_key": "Acme Corp"}
             )
         assert b"Cannot delete" in resp.data
-        assert "Acme Corp" in json.loads(clients_path.read_text())
+        assert "Acme Corp" in state_db.get_clients(clients_path)
 
     def test_client_language_saved_and_validated(self, tmp_path: Path) -> None:
         app, _, clients_path = self._make_app(tmp_path)
@@ -845,7 +843,7 @@ class TestSettings:
                 ),
             )
             assert b"Unsupported language" in resp.data
-        saved = json.loads(clients_path.read_text())
+        saved = state_db.get_clients(clients_path)
         assert saved["Acme Corp"]["language"] == "es"
 
     def test_client_invalid_vat_rejected(self, tmp_path: Path) -> None:
@@ -860,7 +858,7 @@ class TestSettings:
     def test_rename_onto_existing_key_rejected(self, tmp_path: Path) -> None:
         """Renaming a client to another client's key must not overwrite it."""
         app, _, clients_path = self._make_app(tmp_path)
-        before = clients_path.read_text()
+        before = state_db.get_clients(clients_path)
         with app.test_client() as c:
             resp = c.post(
                 "/settings/clients/save",
@@ -871,8 +869,8 @@ class TestSettings:
                 ),
             )
         assert b"already exists" in resp.data
-        assert clients_path.read_text() == before
-        assert set(json.loads(clients_path.read_text())) == {
+        assert state_db.get_clients(clients_path) == before
+        assert set(state_db.get_clients(clients_path)) == {
             "Acme Corp",
             "Other Client",
         }
@@ -901,12 +899,12 @@ class TestSettings:
                 ),
             )
             assert b"saved" in resp.data
-        saved = json.loads(clients_path.read_text())
+        saved = state_db.get_clients(clients_path)
         assert saved["Acme Corp"]["email"] == "billing@acme.example"
 
     def test_client_invalid_email_rejected(self, tmp_path: Path) -> None:
         app, _, clients_path = self._make_app(tmp_path)
-        before = clients_path.read_text()
+        before = state_db.get_clients(clients_path)
         with app.test_client() as c:
             resp = c.post(
                 "/settings/clients/save",
@@ -915,7 +913,7 @@ class TestSettings:
                 ),
             )
         assert b"valid address" in resp.data
-        assert clients_path.read_text() == before
+        assert state_db.get_clients(clients_path) == before
 
     def test_no_paths_saves_session_only(self, tmp_path: Path) -> None:
         """Demo mode: settings apply in memory, nothing written anywhere."""
@@ -1309,8 +1307,8 @@ class TestIssuerDefaultsSettings:
     def _make_app(self, tmp_path: Path):  # noqa: ANN202
         issuer = _fake_issuer()
         clients = {"Numtide": _fake_client()}
-        issuer_path = tmp_path / "issuer.json"
-        issuer_path.write_text(json.dumps(issuer))
+        issuer_path = tmp_path / "state.db"
+        state_db.save_issuer(issuer_path, issuer)
         app = create_app(
             lines=_fake_lines(),
             issuer=issuer,
@@ -1318,7 +1316,7 @@ class TestIssuerDefaultsSettings:
             invoice_number="2026-06",
             output_path=tmp_path / "invoice.pdf",
             clients=clients,
-            issuer_path=issuer_path,
+            db_path=issuer_path,
         )
         app.config["TESTING"] = True
         return app, issuer_path
@@ -1352,17 +1350,17 @@ class TestIssuerDefaultsSettings:
                 data=self._form(harvest_user="Aldo Borrero", default_bill_to="Numtide"),
             )
             assert b"Issuer saved" in resp.data
-        saved = json.loads(issuer_path.read_text())
+        saved = state_db.get_issuer(issuer_path)
         assert saved["harvest_user"] == "Aldo Borrero"
         assert saved["default_bill_to"] == "Numtide"
 
     def test_unknown_default_bill_to_rejected(self, tmp_path: Path) -> None:
         app, issuer_path = self._make_app(tmp_path)
-        before = issuer_path.read_text()
+        before = state_db.get_issuer(issuer_path)
         with app.test_client() as c:
             resp = c.post("/settings/issuer", data=self._form(default_bill_to="Nope"))
         assert b"not a clients.json key" in resp.data
-        assert issuer_path.read_text() == before
+        assert state_db.get_issuer(issuer_path) == before
 
     def test_settings_page_shows_default_fields(self, tmp_path: Path) -> None:
         app, _ = self._make_app(tmp_path)

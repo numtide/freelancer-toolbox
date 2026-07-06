@@ -10,7 +10,7 @@
         hx-target="#line-rows" hx-swap="outerHTML">
       {% if line.origin == 'extra' %}
       <span class="pill-extra"
-        title="Recurring line from clients.json (re-added on every import)">extra</span>
+        title="Recurring line from the client settings (re-added on every import)">extra</span>
       {% endif %}
     </div>
     <input type="number" class="hv-num" name="quantity" value="{{ '%.2f' | format(line.quantity) }}" step="0.01"

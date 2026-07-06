@@ -41,7 +41,7 @@ class InvoiceLine:
 
     ``origin`` distinguishes where the line came from: ``"harvest"`` for
     imported time entries, ``"extra"`` for recurring lines configured per
-    client in clients.json.  Extra lines are never merged with Harvest
+    client settings.  Extra lines are never merged with Harvest
     lines and are re-added on every import.
     """
 

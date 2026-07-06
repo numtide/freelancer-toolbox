@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import json
 import os
-import tempfile
 import threading
 from datetime import date, timedelta
 from pathlib import Path
@@ -16,6 +14,7 @@ from urllib.parse import urlparse
 from flask import Flask, Response, render_template, request
 from markupsafe import escape
 
+from harvest_invoicer.db import save_clients, save_issuer
 from harvest_invoicer.fetch import apply_client_vat, client_extra_lines
 from harvest_invoicer.i18n import SUPPORTED_LANGUAGES
 from harvest_invoicer.model import (
@@ -73,8 +72,7 @@ def create_app(
     period_end: date | None = None,
     fetch_callback: Callable[[date, date], list[InvoiceLine]] | None = None,
     clients: dict[str, dict[str, str]] | None = None,
-    issuer_path: Path | None = None,
-    clients_path: Path | None = None,
+    db_path: Path | None = None,
     import_raw: list[InvoiceLine] | None = None,
     import_merge: bool = True,
 ) -> Flask:
@@ -91,10 +89,10 @@ def create_app(
     the editor's "Fetch from Harvest" button.  When ``None`` the button
     reports that re-fetching is unavailable.
 
-    ``clients`` is the full clients.json mapping (for the settings page);
-    ``issuer_path`` / ``clients_path`` are the config files the settings
-    routes write back to.  When a path is ``None`` (demo mode, tests)
-    settings edits apply to the running session only.
+    ``clients`` is the full client mapping (for the settings page);
+    ``db_path`` is the state database the settings routes persist to.
+    When ``None`` (demo mode, tests) settings edits apply to the running
+    session only.
 
     ``import_raw`` is the raw per-person result of the initial Harvest
     fetch (pre merge/VAT/extras).  It feeds the import roster: person chips
@@ -723,26 +721,19 @@ def create_app(
 
     # --- Settings ---
 
-    def _persist_json(
-        path: Path | None, data: dict[str, object] | dict[str, dict[str, object]]
-    ) -> str:
-        """Write config back to disk; describe where (or that we couldn't)."""
-        if path is None:
-            return " (this session only; no config file to write)"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic: write a sibling temp file, then replace, so a crash
-        # mid-write can never truncate the config.
-        fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-        tmp_file = Path(tmp_name)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                fh.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
-            tmp_file.replace(path)
-        except BaseException:
-            with contextlib.suppress(OSError):
-                tmp_file.unlink()
-            raise
-        return f" and written to {path}"
+    def _persist_issuer() -> str:
+        """Persist the issuer record; note when running session-only."""
+        if db_path is None:
+            return " (this session only; no state database)"
+        save_issuer(db_path, issuer)
+        return f" to {db_path}"
+
+    def _persist_clients() -> str:
+        """Persist the full client mapping in one transaction."""
+        if db_path is None:
+            return " (this session only; no state database)"
+        save_clients(db_path, app.state["clients"])  # type: ignore[attr-defined]
+        return f" to {db_path}"
 
     def _render_clients_block(
         status: str | None = None,
@@ -843,7 +834,7 @@ def create_app(
         bank["iban"] = iban
         bank["bic"] = bic
 
-        suffix = _persist_json(issuer_path, issuer)
+        suffix = _persist_issuer()
         return _status("Issuer saved" + suffix)
 
     def _parse_extra_lines(
@@ -955,7 +946,7 @@ def create_app(
         if original and original == app.state["current_client_key"]:  # type: ignore[attr-defined]
             app.state["current_client_key"] = new_key  # type: ignore[attr-defined]
 
-        suffix = _persist_json(clients_path, clients_map)
+        suffix = _persist_clients()
         return _render_clients_block(
             f"Client '{new_key}' saved{suffix}", open_key=new_key
         )
@@ -973,7 +964,7 @@ def create_app(
         if original not in clients_map:
             return _render_clients_block(f"Client '{original}' not found.", error=True)
         del clients_map[original]
-        suffix = _persist_json(clients_path, clients_map)
+        suffix = _persist_clients()
         return _render_clients_block(f"Client '{original}' deleted{suffix}")
 
     # --- PDF render ---

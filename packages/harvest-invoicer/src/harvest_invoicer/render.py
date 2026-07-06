@@ -79,7 +79,7 @@ def render_html(
     """Render invoice.html to an HTML string.
 
     ``issuer`` is the parsed issuer.json dict; ``client`` is the per-client
-    dict from clients.json (already resolved by fetch.resolve_client).
+    client record (already resolved by the CLI).
 
     When *user_templates_dir* is set the ChoiceLoader checks that directory
     first, falling back to the packaged templates.

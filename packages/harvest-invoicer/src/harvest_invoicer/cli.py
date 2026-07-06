@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import webbrowser
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
@@ -10,6 +9,7 @@ from pathlib import Path
 
 import click
 
+from harvest_invoicer.db import default_db_path, get_clients, get_issuer
 from harvest_invoicer.fetch import (
     apply_client_vat,
     client_extra_lines,
@@ -48,6 +48,15 @@ _TEMPLATES_DIR_OPTION = click.option(
     ),
 )
 
+_DB_OPTION = click.option(
+    "--db",
+    "db_path",
+    envvar="HARVEST_INVOICER_DB",
+    default=None,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="State database (default: ~/.local/share/harvest-invoicer/state.db).",
+)
+
 _MERGE_DUPLICATES_OPTION = click.option(
     "--merge-duplicates",
     "merge_duplicates",
@@ -64,7 +73,7 @@ _BILL_TO_OPTION = click.option(
     default=None,
     metavar="KEY",
     help=(
-        "clients.json key of the client to bill. Decoupled from "
+        "Configured client key to bill. Decoupled from "
         "--harvest-client (the fetch filter). Default: issuer.json "
         "default_bill_to, then auto-detect from fetched data, then the "
         "single clients.json entry."
@@ -148,29 +157,6 @@ def _previous_month() -> str:
     return f"{today.year}-{today.month - 1:02d}"
 
 
-def _xdg_config_dir() -> Path:
-    """Return the app's XDG config directory (~/.config/harvest-invoicer)."""
-    base = os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
-    return Path(base) / "harvest-invoicer"
-
-
-def _resolve_config_path(explicit: str | None, filename: str) -> Path | None:
-    """Locate a config file: explicit flag/env > ./<filename> > XDG dir.
-
-    Returns ``None`` when nothing was passed explicitly and neither the
-    current directory nor the XDG config directory has the file.
-    """
-    if explicit:
-        return Path(explicit)
-    cwd_candidate = Path(filename)
-    if cwd_candidate.exists():
-        return cwd_candidate
-    xdg_candidate = _xdg_config_dir() / filename
-    if xdg_candidate.exists():
-        return xdg_candidate
-    return None
-
-
 def _blank_issuer() -> dict[str, object]:
     """Empty issuer skeleton so the editor can render before configuration."""
     issuer: dict[str, object] = dict.fromkeys(
@@ -180,11 +166,11 @@ def _blank_issuer() -> dict[str, object]:
     return issuer
 
 
-def _missing_config_message() -> str:
+def _missing_config_message(db_file: Path) -> str:
     return (
-        "No issuer.json / clients.json found. Searched the current directory "
-        f"and {_xdg_config_dir()}. Run 'harvest-invoicer serve' to configure "
-        "interactively, or pass --issuer/--clients."
+        f"No configuration found in {db_file}. Run 'harvest-invoicer serve' "
+        "to configure interactively (or point --db/HARVEST_INVOICER_DB at "
+        "an existing state database)."
     )
 
 
@@ -265,22 +251,7 @@ def main() -> None:
         "(--client is a deprecated alias; unrelated to the invoiced client)."
     ),
 )
-@click.option(
-    "--issuer",
-    "issuer_path",
-    envvar="INVOICE_ISSUER_FILE",
-    default=None,
-    type=click.Path(),
-    help="Path to issuer.json (default: ./issuer.json, then ~/.config/harvest-invoicer/).",
-)
-@click.option(
-    "--clients",
-    "clients_path",
-    envvar="INVOICE_CLIENTS_FILE",
-    default=None,
-    type=click.Path(),
-    help="Path to clients.json (default: ./clients.json, then ~/.config/harvest-invoicer/).",
-)
+@_DB_OPTION
 @_TEMPLATES_DIR_OPTION
 @click.option(
     "--output",
@@ -315,8 +286,7 @@ def main() -> None:
 )
 def serve(
     client_filter: str | None,
-    issuer_path: str | None,
-    clients_path: str | None,
+    db_path: Path | None,
     templates_dir: Path | None,
     output_path: str | None,
     port: int,
@@ -335,17 +305,17 @@ def serve(
     month = _previous_month()
     p_start, p_end = _resolve_period(month, None, None)
 
-    issuer_file = _resolve_config_path(issuer_path, "issuer.json")
-    clients_file = _resolve_config_path(clients_path, "clients.json")
-    # First run without config: skip fetching and open Settings to create it.
-    onboarding = not demo and (issuer_file is None or clients_file is None)
-
+    db_file = db_path or default_db_path()
     if demo:
+        onboarding = False
         issuer = load_issuer(str(_ISSUER_EXAMPLE))
         clients = load_clients(str(_CLIENTS_EXAMPLE))
     else:
-        issuer = load_issuer(str(issuer_file)) if issuer_file else _blank_issuer()
-        clients = load_clients(str(clients_file)) if clients_file else {}
+        stored_issuer = get_issuer(db_file)
+        # First run (no issuer configured): skip fetching and open Settings.
+        onboarding = stored_issuer is None
+        issuer = stored_issuer or _blank_issuer()
+        clients = get_clients(db_file)
 
     # Persistent defaults from issuer.json: the flags always win.
     default_bill_to = str(issuer.get("default_bill_to") or "").strip() or None
@@ -393,15 +363,6 @@ def serve(
 
     from harvest_invoicer.app import create_app  # noqa: PLC0415
 
-    # Settings saves land where the config was found; on first run they
-    # default to the XDG config directory.  Demo config lives inside the
-    # package and is never written back.
-    if demo:
-        eff_issuer_path = eff_clients_path = None
-    else:
-        eff_issuer_path = issuer_file or _xdg_config_dir() / "issuer.json"
-        eff_clients_path = clients_file or _xdg_config_dir() / "clients.json"
-
     app = create_app(
         lines,
         issuer,
@@ -416,8 +377,8 @@ def serve(
         # client's vat_rate and extra lines per request.
         fetch_callback=_fetch,
         clients=clients,
-        issuer_path=eff_issuer_path,
-        clients_path=eff_clients_path,
+        # Demo state lives inside the package; never written back.
+        db_path=None if demo else db_file,
         import_raw=raw_import,
         # Matches the default-checked "Auto-merge duplicate entries" box.
         import_merge=True,
@@ -431,7 +392,7 @@ def serve(
     if onboarding:
         click.echo(
             "No configuration found — opening Settings to create it "
-            f"(saved to {_xdg_config_dir()})."
+            f"(saved to {db_file})."
         )
     click.echo(f"Starting editor at {url}")
     click.echo("Press Ctrl-C to stop.")
@@ -474,22 +435,7 @@ def serve(
         "(default: issuer.json harvest_user, else everyone)."
     ),
 )
-@click.option(
-    "--issuer",
-    "issuer_path",
-    envvar="INVOICE_ISSUER_FILE",
-    default=None,
-    type=click.Path(),
-    help="Path to issuer.json (default: ./issuer.json, then ~/.config/harvest-invoicer/).",
-)
-@click.option(
-    "--clients",
-    "clients_path",
-    envvar="INVOICE_CLIENTS_FILE",
-    default=None,
-    type=click.Path(),
-    help="Path to clients.json (default: ./clients.json, then ~/.config/harvest-invoicer/).",
-)
+@_DB_OPTION
 @_TEMPLATES_DIR_OPTION
 @click.option(
     "--number",
@@ -533,8 +479,7 @@ def generate(
     months: tuple[str, ...],
     client_filter: str | None,
     user_filter: str | None,
-    issuer_path: str | None,
-    clients_path: str | None,
+    db_path: Path | None,
     templates_dir: Path | None,
     number_override: str | None,
     output_dir: str,
@@ -550,18 +495,15 @@ def generate(
     from harvest_invoicer.render import render_pdf  # noqa: PLC0415
 
     if demo:
-        issuer_path = str(_ISSUER_EXAMPLE)
-        clients_path = str(_CLIENTS_EXAMPLE)
+        issuer = load_issuer(str(_ISSUER_EXAMPLE))
+        clients = load_clients(str(_CLIENTS_EXAMPLE))
     else:
-        issuer_file = _resolve_config_path(issuer_path, "issuer.json")
-        clients_file = _resolve_config_path(clients_path, "clients.json")
-        if issuer_file is None or clients_file is None:
-            raise click.ClickException(_missing_config_message())
-        issuer_path = str(issuer_file)
-        clients_path = str(clients_file)
-
-    issuer = load_issuer(issuer_path)
-    clients = load_clients(clients_path)
+        db_file = db_path or default_db_path()
+        stored_issuer = get_issuer(db_file)
+        if stored_issuer is None:
+            raise click.ClickException(_missing_config_message(db_file))
+        issuer = stored_issuer
+        clients = get_clients(db_file)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

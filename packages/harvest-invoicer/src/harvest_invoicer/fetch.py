@@ -218,7 +218,7 @@ def load_issuer(issuer_file: str) -> dict[str, object]:
 
 
 def load_clients(clients_file: str) -> dict[str, dict[str, str]]:
-    """Load clients.json (a dict keyed by Harvest client name).
+    """Parse a clients mapping (dict keyed by Harvest client name).
 
     Each value must have at minimum: name, address_line1, address_line2,
     country, tax_id. ``tax_id_label`` is optional (default "Tax ID").
@@ -237,7 +237,7 @@ def load_clients(clients_file: str) -> dict[str, dict[str, str]]:
     result: dict[str, dict[str, str]] = {}
     for key, entry in data.items():
         if not isinstance(entry, dict):
-            msg = f"clients.json entry for '{key}' must be an object."
+            msg = f"Client entry '{key}' must be an object."
             raise click.ClickException(msg)
         vat = entry.get("vat_rate")
         if vat is not None:
@@ -247,14 +247,14 @@ def load_clients(clients_file: str) -> dict[str, dict[str, str]]:
                 vat_val = -1.0
             if not 0.0 <= vat_val <= 1.0:
                 msg = (
-                    f"clients.json entry for '{key}': vat_rate must be a number "
+                    f"Client entry '{key}': vat_rate must be a number "
                     f"between 0 and 1 (e.g. 0.21 for 21%), got {vat!r}."
                 )
                 raise click.ClickException(msg)
         extra = entry.get("extra_lines")
         if extra is not None:
             if not isinstance(extra, list):
-                msg = f"clients.json entry for '{key}': extra_lines must be a list."
+                msg = f"Client entry '{key}': extra_lines must be a list."
                 raise click.ClickException(msg)
             for i, item in enumerate(extra):
                 valid = isinstance(item, dict) and str(item.get("concept", "")).strip()
@@ -266,7 +266,7 @@ def load_clients(clients_file: str) -> dict[str, dict[str, str]]:
                         valid = False
                 if not valid:
                     msg = (
-                        f"clients.json entry for '{key}': extra_lines[{i}] must "
+                        f"Client entry '{key}': extra_lines[{i}] must "
                         "be an object with 'concept' (string) and numeric "
                         "'unit_price' (optional numeric 'quantity')."
                     )
@@ -309,7 +309,7 @@ def apply_client_vat(
     lines: list[InvoiceLine],
     client_entry: dict[str, str],
 ) -> list[InvoiceLine]:
-    """Apply the client's optional ``vat_rate`` (clients.json) to every line.
+    """Apply the client's optional ``vat_rate`` to every line.
 
     Lines keep their existing rate when the client entry has no
     ``vat_rate``.  Returns the same list for chaining.
@@ -328,7 +328,7 @@ def resolve_client(
     clients: dict[str, dict[str, str]],
     lines: list[InvoiceLine],
 ) -> dict[str, str]:
-    """Pick the correct client entry from clients.json.
+    """Pick the correct client entry from the configured clients.
 
     When a ``--client`` filter is given, look it up directly.
     Otherwise, infer the client name from the first line's concept prefix.
@@ -337,7 +337,7 @@ def resolve_client(
         if client_filter not in clients:
             available = ", ".join(sorted(clients.keys())) or "(none)"
             msg = (
-                f"Client '{client_filter}' not found in clients.json.\n"
+                f"Client '{client_filter}' not found in the configured clients.\n"
                 f"  Available keys: {available}"
             )
             raise click.ClickException(msg)

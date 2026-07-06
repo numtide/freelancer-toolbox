@@ -353,10 +353,11 @@ def create_app(
 
     @app.post("/lines/fetch")
     def fetch_lines_route() -> Response:
-        """Re-import line items from Harvest for the selected period.
+        """Re-import line items from Harvest for the import range.
 
-        Reads period_start/period_end from the form, replaces the invoice
-        lines with freshly fetched data, and updates the invoice period.
+        Reads fetch_start/fetch_end from the form and replaces the invoice
+        lines with freshly fetched data.  The invoice's service period is
+        independent and never modified here — edit it in the details form.
         Errors are reported inline without touching the current lines.
         """
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
@@ -370,12 +371,14 @@ def create_app(
             )
 
         try:
-            ps = date.fromisoformat(request.form.get("period_start", "").strip())
-            pe = date.fromisoformat(request.form.get("period_end", "").strip())
+            ps = date.fromisoformat(request.form.get("fetch_start", "").strip())
+            pe = date.fromisoformat(request.form.get("fetch_end", "").strip())
         except ValueError:
-            return _respond("Select a valid period start and end first.", error=True)
+            return _respond("Select a valid import range first.", error=True)
         if pe < ps:
-            return _respond("Period end must not be before period start.", error=True)
+            return _respond(
+                "Import end must not be before import start.", error=True
+            )
         if fetch_callback is None:
             return _respond("Re-fetching is not available in this session.", error=True)
 
@@ -400,8 +403,6 @@ def create_app(
 
         _snapshot_lines(inv)
         inv.lines[:] = new_lines
-        inv.period_start = ps
-        inv.period_end = pe
 
         people = {line.user for line in new_lines if line.user}
         if not user_filter_active and len(people) > 1:

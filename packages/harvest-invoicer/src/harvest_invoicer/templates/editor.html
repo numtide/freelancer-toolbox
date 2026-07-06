@@ -53,11 +53,23 @@
           <form id="meta-form">
             {% include "partials/meta.html" %}
           </form>
+          <div class="field-grid fetch-range">
+            <label class="field">
+              <span class="field-label">Import from Harvest — start</span>
+              <input type="date" id="fetch-start" name="fetch_start"
+                value="{{ invoice.period_start.isoformat() if invoice.period_start else '' }}">
+            </label>
+            <label class="field">
+              <span class="field-label">Import from Harvest — end</span>
+              <input type="date" id="fetch-end" name="fetch_end"
+                value="{{ invoice.period_end.isoformat() if invoice.period_end else '' }}">
+            </label>
+          </div>
           <div class="toolbar">
             <button type="button" class="secondary"
-              title="Import time entries from Harvest for the selected period (replaces current line items)"
-              hx-post="/lines/fetch" hx-include="#meta-form, #merge-on-fetch"
-              hx-confirm="Replace the current line items with data fetched for the selected period?"
+              title="Import time entries from Harvest for the import range (replaces current line items; the invoice period fields above are independent)"
+              hx-post="/lines/fetch" hx-include="#fetch-start, #fetch-end, #merge-on-fetch"
+              hx-confirm="Replace the current line items with data fetched for the import range?"
               hx-indicator="#fetch-indicator" hx-disabled-elt="this"
               hx-target="#line-rows" hx-swap="outerHTML">Fetch from Harvest</button>
             <label class="check-inline"

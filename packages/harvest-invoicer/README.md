@@ -82,12 +82,12 @@ The service period drives **both** the Harvest import range and the
 of `--month`; customize it with `--period-start` / `--period-end`
 (single-month only) to import and bill a partial month.
 
-In the interactive editor the period is editable, and **Fetch from Harvest**
-re-imports the line items for the selected range on the spot — change the
-dates, click the button, and the table, totals, and preview update (a
-confirmation guards against overwriting manual edits).  Editing the period
-fields alone only relabels the invoice; clearing both removes the Period
-row.
+In the interactive editor the two concepts are separate rows: the invoice's
+**Period start/end** fields only relabel the document (clearing both removes
+the Period row), while the **Import from Harvest — start/end** fields plus
+the **Fetch from Harvest** button re-import the line items for that range on
+the spot (a confirmation guards against overwriting manual edits).  Fetching
+never modifies the invoice's period fields.
 
 ### Bill-to selection
 

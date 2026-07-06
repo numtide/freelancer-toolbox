@@ -266,7 +266,7 @@ class TestFetchFromEditor:
         app.config["TESTING"] = True
         return app
 
-    def test_fetch_replaces_lines_and_period(self, tmp_path: Path) -> None:
+    def test_fetch_replaces_lines_keeps_period(self, tmp_path: Path) -> None:
         def fake_fetch(ps: date, pe: date) -> list[InvoiceLine]:
             assert ps == date(2026, 5, 1)
             assert pe == date(2026, 5, 31)
@@ -276,15 +276,16 @@ class TestFetchFromEditor:
         with app.test_client() as c:
             resp = c.post(
                 "/lines/fetch",
-                data={"period_start": "2026-05-01", "period_end": "2026-05-31"},
+                data={"fetch_start": "2026-05-01", "fetch_end": "2026-05-31"},
             )
         assert resp.status_code == 200
         assert b"May Work" in resp.data
         assert b"Imported 1 lines" in resp.data
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         assert len(inv.lines) == 1
-        assert inv.period_start == date(2026, 5, 1)
-        assert inv.period_end == date(2026, 5, 31)
+        # The invoice's service period is independent of the import range.
+        assert inv.period_start == date(2026, 6, 1)
+        assert inv.period_end == date(2026, 6, 30)
 
     def test_fetch_error_keeps_lines(self, tmp_path: Path) -> None:
         def failing_fetch(ps: date, pe: date) -> list[InvoiceLine]:
@@ -295,7 +296,7 @@ class TestFetchFromEditor:
         with app.test_client() as c:
             resp = c.post(
                 "/lines/fetch",
-                data={"period_start": "2026-05-01", "period_end": "2026-05-31"},
+                data={"fetch_start": "2026-05-01", "fetch_end": "2026-05-31"},
             )
         assert resp.status_code == 200
         assert b"No time entries found" in resp.data
@@ -306,15 +307,15 @@ class TestFetchFromEditor:
     def test_fetch_invalid_dates_rejected(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path, lambda *_args: [])
         with app.test_client() as c:
-            resp = c.post("/lines/fetch", data={"period_start": "", "period_end": ""})
-        assert b"valid period" in resp.data
+            resp = c.post("/lines/fetch", data={"fetch_start": "", "fetch_end": ""})
+        assert b"valid import range" in resp.data
 
     def test_fetch_end_before_start_rejected(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path, lambda *_args: [])
         with app.test_client() as c:
             resp = c.post(
                 "/lines/fetch",
-                data={"period_start": "2026-06-30", "period_end": "2026-06-01"},
+                data={"fetch_start": "2026-06-30", "fetch_end": "2026-06-01"},
             )
         assert b"must not be before" in resp.data
 
@@ -323,7 +324,7 @@ class TestFetchFromEditor:
         with app.test_client() as c:
             resp = c.post(
                 "/lines/fetch",
-                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
         assert b"not available" in resp.data
 
@@ -333,6 +334,8 @@ class TestFetchFromEditor:
         assert b'id="fetch-status"' in resp.data
         assert b'id="merge-on-fetch"' in resp.data
         assert b'id="fetch-indicator"' in resp.data
+        assert b'id="fetch-start"' in resp.data
+        assert b'id="fetch-end"' in resp.data
 
     def test_fetch_merges_duplicates_when_checked(self, tmp_path: Path) -> None:
         def dup_fetch(ps: date, pe: date) -> list[InvoiceLine]:
@@ -347,8 +350,8 @@ class TestFetchFromEditor:
             resp = c.post(
                 "/lines/fetch",
                 data={
-                    "period_start": "2026-06-01",
-                    "period_end": "2026-06-30",
+                    "fetch_start": "2026-06-01",
+                    "fetch_end": "2026-06-30",
                     "merge_duplicates": "on",
                 },
             )
@@ -368,7 +371,7 @@ class TestFetchFromEditor:
         with app.test_client() as c:
             c.post(
                 "/lines/fetch",
-                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         assert len(inv.lines) == 2
@@ -470,7 +473,7 @@ class TestBillToSwitch:
             c.post("/invoice/client", data={"client_key": "Domestic"})
             c.post(
                 "/lines/fetch",
-                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         concepts = [line.concept for line in inv.lines]
@@ -517,8 +520,8 @@ class TestExtraLinesInEditor:
             c.post(
                 "/lines/fetch",
                 data={
-                    "period_start": "2026-06-01",
-                    "period_end": "2026-06-30",
+                    "fetch_start": "2026-06-01",
+                    "fetch_end": "2026-06-30",
                     "merge_duplicates": "on",
                 },
             )
@@ -875,7 +878,7 @@ class TestUndo:
         with app.test_client() as c:
             c.post(
                 "/lines/fetch",
-                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
             resp = c.post("/lines/undo")
         assert b"Backend Development" in resp.data
@@ -1018,7 +1021,7 @@ class TestMultiUserSafetyNet:
         with app.test_client() as c:
             resp = c.post(
                 "/lines/fetch",
-                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
         assert b"WARNING: hours for 2 people" in resp.data
         assert b"Alice" in resp.data
@@ -1044,7 +1047,7 @@ class TestMultiUserSafetyNet:
         with app.test_client() as c:
             resp = c.post(
                 "/lines/fetch",
-                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
         assert b"WARNING" not in resp.data
 

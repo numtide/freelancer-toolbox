@@ -400,3 +400,5 @@ select:focus {
   margin: 0 0 16px;
 }
 .config-note a { color: var(--orange); }
+
+.fetch-range { margin-top: 16px; }

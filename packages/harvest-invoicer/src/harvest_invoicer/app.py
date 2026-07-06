@@ -215,9 +215,7 @@ def create_app(
         """Rebuild the invoice lines from the stored import + selection."""
         raw: list[InvoiceLine] = app.state["import_raw"]  # type: ignore[attr-defined]
         selected: set[str] = app.state["selected_people"]  # type: ignore[attr-defined]
-        lines = [
-            copy.deepcopy(ln) for ln in raw if not ln.user or ln.user in selected
-        ]
+        lines = [copy.deepcopy(ln) for ln in raw if not ln.user or ln.user in selected]
         if app.state["import_merge"]:  # type: ignore[attr-defined]
             lines = merge_duplicate_lines(lines)
         cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
@@ -238,9 +236,7 @@ def create_app(
             "selected": selected,
             "you": str(issuer.get("harvest_user") or "").strip(),
             "total_hours": round(sum(hours.values()), 2),
-            "selected_hours": round(
-                sum(h for n, h in roster if n in selected), 2
-            ),
+            "selected_hours": round(sum(h for n, h in roster if n in selected), 2),
         }
 
     def _import_note_oob() -> str:

@@ -1006,7 +1006,7 @@ class TestStyleCss:
 class TestImportRoster:
     """Person chips: choose whose hours the invoice includes."""
 
-    def _team_fetch(self, ps: date, pe: date) -> list[InvoiceLine]:  # noqa: ARG002
+    def _team_fetch(self, ps: date, pe: date) -> list[InvoiceLine]:
         return [
             InvoiceLine(concept="Dev", unit_price=100.0, quantity=10.0, user="Alice"),
             InvoiceLine(concept="Ops", unit_price=90.0, quantity=5.0, user="Bob"),
@@ -1046,7 +1046,7 @@ class TestImportRoster:
         assert resp.data.count(b'class="chip on') == 2
 
     def test_single_person_import_has_no_chips(self, tmp_path: Path) -> None:
-        def solo(ps: date, pe: date) -> list[InvoiceLine]:  # noqa: ARG001
+        def solo(ps: date, pe: date) -> list[InvoiceLine]:
             return [
                 InvoiceLine(concept="Dev", unit_price=100.0, quantity=8.0, user="Al")
             ]

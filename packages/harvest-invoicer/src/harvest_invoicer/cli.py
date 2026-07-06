@@ -98,6 +98,33 @@ def _resolve_bill_to(
     return resolve_client(client_filter, clients, lines)
 
 
+def _resolve_bill_to_lenient(
+    bill_to: str | None,
+    default_bill_to: str | None,
+    clients: dict[str, dict[str, str]],
+) -> dict[str, str]:
+    """Bill-to for the editor's lazy start (no fetched data to detect from).
+
+    Explicit choices still fail loudly on unknown keys; otherwise fall back
+    to the first clients.json entry — the editor's Bill-to dropdown can
+    switch it at any time.
+    """
+    chosen = bill_to or default_bill_to
+    if chosen:
+        if chosen not in clients:
+            available = ", ".join(sorted(clients.keys())) or "(none)"
+            source = "--bill-to" if bill_to else "issuer.json default_bill_to"
+            msg = (
+                f"{source} '{chosen}' not found in clients.json.\n"
+                f"  Available keys: {available}"
+            )
+            raise click.ClickException(msg)
+        return clients[chosen]
+    if clients:
+        return next(iter(clients.values()))
+    return {}
+
+
 def _multi_user_warning(
     lines: list[InvoiceLine], user_filter: str | None
 ) -> str | None:
@@ -347,9 +374,6 @@ def edit(
         clients = load_clients(str(clients_file)) if clients_file else {}
 
     # Persistent defaults from issuer.json: the flags always win.
-    effective_user = user_filter or (
-        str(issuer.get("harvest_user") or "").strip() or None
-    )
     default_bill_to = str(issuer.get("default_bill_to") or "").strip() or None
 
     if demo:
@@ -374,21 +398,21 @@ def edit(
                 use_agency=not no_agency,
             )
 
+    # The editor starts without touching the Harvest API: lines are imported
+    # from the web page (Fetch from Harvest). --month still seeds the invoice
+    # number, the billing period, and the default import range.  Demo mode
+    # keeps the eager load so the sample invoice appears immediately.
     raw_import: list[InvoiceLine] = []
+    lines: list[InvoiceLine] = []
     if onboarding:
-        lines: list[InvoiceLine] = []
         client_entry: dict[str, str] = {}
     else:
-        raw_import = _fetch(p_start, p_end)
-        lines = list(raw_import)
-        warning = _multi_user_warning(lines, effective_user)
-        if warning:
-            click.echo(f"warning: {warning}", err=True)
-        if merge_duplicates:
-            lines = merge_duplicate_lines(lines)
-        client_entry = _resolve_bill_to(
-            bill_to, default_bill_to, client_filter, clients, lines
-        )
+        if demo:
+            raw_import = _fetch(p_start, p_end)
+            lines = list(raw_import)
+            if merge_duplicates:
+                lines = merge_duplicate_lines(lines)
+        client_entry = _resolve_bill_to_lenient(bill_to, default_bill_to, clients)
         lines = apply_client_vat(lines + client_extra_lines(client_entry), client_entry)
 
     number = resolve_invoice_number(

@@ -51,10 +51,12 @@ harvest-invoicer edit [--month YYYY-MM] [--harvest-client NAME] [--user NAME]
                       [--currency CODE] [--no-agency] [--demo]
 ```
 
-Starts a local Flask server on `127.0.0.1` (never exposed to the network),
-opens the editor in your default browser, and waits for you to click
-**Generate PDF**.  Use `--demo` to try the editor without Harvest credentials
-(loads synthetic line items and example config).
+Starts a local Flask server on `127.0.0.1` (never exposed to the network)
+and opens the editor in your default browser.  The editor starts **without
+fetching** — `--month` seeds the invoice number, billing period, and default
+import range, and you import the hours from the page with **Fetch from
+Harvest** (credentials are only needed at that point).  Use `--demo` to try
+the editor with synthetic data pre-loaded.
 
 The live preview has two modes: **PDF** (the default — the exact WeasyPrint
 render, byte-identical to the generated file, with real pagination and page
@@ -153,8 +155,8 @@ because all entries are treated as external when there is no agency rate.
 
 | Variable | Description |
 |----------|-------------|
-| `HARVEST_ACCOUNT_ID` | Harvest account ID (required unless `--demo`) |
-| `HARVEST_BEARER_TOKEN` | Harvest API bearer token (required unless `--demo`) |
+| `HARVEST_ACCOUNT_ID` | Harvest account ID (needed when fetching; `generate` requires it) |
+| `HARVEST_BEARER_TOKEN` | Harvest API bearer token (needed when fetching; `generate` requires it) |
 | `INVOICE_ISSUER_FILE` | Path to issuer.json (default: `./issuer.json`) |
 | `INVOICE_CLIENTS_FILE` | Path to clients.json (default: `./clients.json`) |
 | `INVOICE_TEMPLATES_DIR` | Directory for custom templates (same as `--templates-dir`) |

@@ -12,6 +12,7 @@ from harvest_invoicer.cli import (
     _blank_issuer,
     _multi_user_warning,
     _resolve_bill_to,
+    _resolve_bill_to_lenient,
     _resolve_config_path,
     _resolve_period,
     main,
@@ -258,3 +259,26 @@ def test_harvest_client_flag_and_alias() -> None:
         # Fails on the month, never on the option name
         assert "No such option" not in result.output
         assert result.exit_code != 0
+
+
+class TestLenientBillTo:
+    """Editor lazy start: bill-to resolves without fetched data."""
+
+    def test_explicit_key_wins(self) -> None:
+        clients = {"a": {"name": "A"}, "b": {"name": "B"}}
+        assert _resolve_bill_to_lenient("b", None, clients) is clients["b"]
+
+    def test_unknown_explicit_key_errors(self) -> None:
+        with pytest.raises(click.ClickException, match="Available keys"):
+            _resolve_bill_to_lenient("nope", None, {"a": {"name": "A"}})
+
+    def test_default_bill_to_used(self) -> None:
+        clients = {"a": {"name": "A"}, "b": {"name": "B"}}
+        assert _resolve_bill_to_lenient(None, "b", clients) is clients["b"]
+
+    def test_falls_back_to_first_entry(self) -> None:
+        clients = {"first": {"name": "F"}, "second": {"name": "S"}}
+        assert _resolve_bill_to_lenient(None, None, clients) is clients["first"]
+
+    def test_empty_clients_gives_empty_entry(self) -> None:
+        assert _resolve_bill_to_lenient(None, None, {}) == {}

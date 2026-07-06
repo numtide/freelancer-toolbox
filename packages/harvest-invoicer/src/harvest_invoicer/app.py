@@ -72,6 +72,8 @@ def create_app(
     clients: dict[str, dict[str, str]] | None = None,
     issuer_path: Path | None = None,
     clients_path: Path | None = None,
+    startup_notice: str | None = None,
+    user_filter_active: bool = False,
 ) -> Flask:
     """Create and configure the Flask editor application.
 
@@ -90,6 +92,11 @@ def create_app(
     ``issuer_path`` / ``clients_path`` are the config files the settings
     routes write back to.  When a path is ``None`` (demo mode, tests)
     settings edits apply to the running session only.
+
+    ``startup_notice`` is shown in the fetch status area on load (e.g. the
+    multi-user import warning).  ``user_filter_active`` records whether a
+    Harvest user filter constrains fetches; when it doesn't, re-fetches
+    mixing several people's hours warn inline.
     """
     app = Flask(
         __name__,
@@ -171,6 +178,7 @@ def create_app(
             fmt_qty=fmt_qty,
             fmt_date=lambda d: fmt_date(d, date_format),
             output_path=str(output_path),
+            startup_notice=startup_notice,
         )
 
     @app.get("/static/htmx.min.js")
@@ -390,6 +398,16 @@ def create_app(
         inv.lines[:] = new_lines
         inv.period_start = ps
         inv.period_end = pe
+
+        people = {line.user for line in new_lines if line.user}
+        if not user_filter_active and len(people) > 1:
+            return _respond(
+                f"Imported {len(new_lines)} lines{merged_note} for {ps} to "
+                f"{pe} — WARNING: hours for {len(people)} people; set "
+                "harvest_user in Settings or pass --user to import only "
+                "your own.",
+                error=True,
+            )
         return _respond(
             f"Imported {len(new_lines)} lines{merged_note} for {ps} to {pe}."
         )
@@ -549,6 +567,8 @@ def create_app(
             "date_format",
             "legal_note",
             "number_template",
+            "harvest_user",
+            "default_bill_to",
         )
         values = {f: request.form.get(f, "").strip() for f in text_fields}
         iban = request.form.get("iban", "").strip()
@@ -570,6 +590,15 @@ def create_app(
             missing.append("bic")
         if missing:
             return _status("Missing required fields: " + ", ".join(missing), error=True)
+        dbt = values["default_bill_to"]
+        clients_map_i: dict[str, dict[str, object]] = app.state["clients"]  # type: ignore[attr-defined]
+        if dbt and dbt not in clients_map_i:
+            available = ", ".join(sorted(clients_map_i.keys())) or "(none)"
+            return _status(
+                f"default_bill_to '{dbt}' is not a clients.json key. "
+                f"Available: {available}.",
+                error=True,
+            )
 
         # Mutate the shared issuer dict in place so the preview updates too.
         for f in text_fields:

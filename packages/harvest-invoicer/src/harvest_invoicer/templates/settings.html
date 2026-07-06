@@ -74,6 +74,14 @@
             <span class="field-label">Invoice number template (e.g. {{ '{year}-{month}' }})</span>
             <input type="text" name="number_template" value="{{ issuer.get('number_template', '') }}">
           </label>
+          <label class="field">
+            <span class="field-label">Harvest user (only import this person's hours)</span>
+            <input type="text" name="harvest_user" value="{{ issuer.get('harvest_user', '') }}">
+          </label>
+          <label class="field">
+            <span class="field-label">Default bill-to (clients.json key)</span>
+            <input type="text" name="default_bill_to" value="{{ issuer.get('default_bill_to', '') }}">
+          </label>
           <label class="field field-wide">
             <span class="field-label">Legal note (shown at the bottom of the invoice)</span>
             <input type="text" name="legal_note" value="{{ issuer.get('legal_note', '') }}">

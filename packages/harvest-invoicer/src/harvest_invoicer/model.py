@@ -50,6 +50,7 @@ class InvoiceLine:
     quantity: float
     vat_rate: float = 0.0
     origin: str = "harvest"
+    user: str | None = None  # Harvest user the hours belong to (provenance)
 
     @property
     def base(self) -> float:
@@ -137,11 +138,14 @@ def merge_duplicate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
                 unit_price=line.unit_price,
                 quantity=line.quantity,
                 vat_rate=line.vat_rate,
+                user=line.user,
             )
             grouped[key] = merged
             result.append(merged)
         else:
             existing.quantity = round(existing.quantity + line.quantity, 4)
+            if existing.user != line.user:
+                existing.user = None  # merged across people
     return result
 
 

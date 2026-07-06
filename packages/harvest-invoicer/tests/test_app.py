@@ -978,3 +978,139 @@ class TestStyleCss:
     def test_favicon_204(self, client: FlaskClient) -> None:
         resp = client.get("/favicon.ico")
         assert resp.status_code == 204
+
+
+class TestMultiUserSafetyNet:
+    """Warnings when an import mixes several people's hours."""
+
+    def test_startup_notice_rendered(self, tmp_path: Path) -> None:
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            startup_notice="Imported hours for 5 people — set harvest_user.",
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            resp = c.get("/")
+        assert b"Imported hours for 5 people" in resp.data
+        assert b"fetch-err" in resp.data
+
+    def test_refetch_warns_without_user_filter(self, tmp_path: Path) -> None:
+        def team_fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            return [
+                InvoiceLine(concept="Dev", unit_price=1.0, quantity=1.0, user="Alice"),
+                InvoiceLine(concept="Dev2", unit_price=1.0, quantity=1.0, user="Bob"),
+            ]
+
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            fetch_callback=team_fetch,
+            user_filter_active=False,
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+            )
+        assert b"WARNING: hours for 2 people" in resp.data
+
+    def test_refetch_quiet_with_user_filter(self, tmp_path: Path) -> None:
+        def team_fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            return [
+                InvoiceLine(concept="Dev", unit_price=1.0, quantity=1.0, user="Alice"),
+                InvoiceLine(concept="Dev2", unit_price=1.0, quantity=1.0, user="Bob"),
+            ]
+
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            fetch_callback=team_fetch,
+            user_filter_active=True,
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"period_start": "2026-06-01", "period_end": "2026-06-30"},
+            )
+        assert b"WARNING" not in resp.data
+
+
+class TestIssuerDefaultsSettings:
+    """harvest_user / default_bill_to editable through Settings."""
+
+    def _make_app(self, tmp_path: Path):  # noqa: ANN202
+        issuer = _fake_issuer()
+        clients = {"Numtide": _fake_client()}
+        issuer_path = tmp_path / "issuer.json"
+        issuer_path.write_text(json.dumps(issuer))
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=issuer,
+            client=clients["Numtide"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+            issuer_path=issuer_path,
+        )
+        app.config["TESTING"] = True
+        return app, issuer_path
+
+    def _form(self, **overrides: str) -> dict[str, str]:
+        base = {
+            "name": "Jane Doe Consulting",
+            "address_line1": "12 Example St",
+            "address_line2": "10115 Berlin",
+            "country": "Germany",
+            "tax_id": "DE000000000",
+            "tax_id_label": "",
+            "phone": "+49 30 0000",
+            "email": "jane@example.com",
+            "iban": "DE00",
+            "bic": "EXX",
+            "date_format": "",
+            "legal_note": "",
+            "number_template": "",
+            "harvest_user": "",
+            "default_bill_to": "",
+        }
+        base.update(overrides)
+        return base
+
+    def test_defaults_saved(self, tmp_path: Path) -> None:
+        app, issuer_path = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/issuer",
+                data=self._form(harvest_user="Aldo Borrero", default_bill_to="Numtide"),
+            )
+            assert b"Issuer saved" in resp.data
+        saved = json.loads(issuer_path.read_text())
+        assert saved["harvest_user"] == "Aldo Borrero"
+        assert saved["default_bill_to"] == "Numtide"
+
+    def test_unknown_default_bill_to_rejected(self, tmp_path: Path) -> None:
+        app, issuer_path = self._make_app(tmp_path)
+        before = issuer_path.read_text()
+        with app.test_client() as c:
+            resp = c.post("/settings/issuer", data=self._form(default_bill_to="Nope"))
+        assert b"not a clients.json key" in resp.data
+        assert issuer_path.read_text() == before
+
+    def test_settings_page_shows_default_fields(self, tmp_path: Path) -> None:
+        app, _ = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.get("/settings")
+        assert b'name="harvest_user"' in resp.data
+        assert b'name="default_bill_to"' in resp.data

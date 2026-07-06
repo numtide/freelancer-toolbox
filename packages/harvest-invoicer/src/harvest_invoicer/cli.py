@@ -63,30 +63,53 @@ _BILL_TO_OPTION = click.option(
     default=None,
     metavar="KEY",
     help=(
-        "clients.json key of the client to bill. Decoupled from --client "
-        "(the Harvest fetch filter). Default: auto-detect from fetched data, "
-        "falling back to the single clients.json entry."
+        "clients.json key of the client to bill. Decoupled from "
+        "--harvest-client (the fetch filter). Default: issuer.json "
+        "default_bill_to, then auto-detect from fetched data, then the "
+        "single clients.json entry."
     ),
 )
 
 
 def _resolve_bill_to(
     bill_to: str | None,
+    default_bill_to: str | None,
     client_filter: str | None,
     clients: dict[str, dict[str, str]],
     lines: list[InvoiceLine],
 ) -> dict[str, str]:
-    """Pick the invoice's bill-to entry: explicit --bill-to wins."""
-    if bill_to:
-        if bill_to not in clients:
+    """Pick the invoice's bill-to entry.
+
+    Precedence: --bill-to flag > issuer.json default_bill_to > auto-detect
+    from fetched data > single clients.json entry.
+    """
+    chosen = bill_to or default_bill_to
+    if chosen:
+        if chosen not in clients:
             available = ", ".join(sorted(clients.keys())) or "(none)"
+            source = "--bill-to" if bill_to else "issuer.json default_bill_to"
             msg = (
-                f"--bill-to '{bill_to}' not found in clients.json.\n"
+                f"{source} '{chosen}' not found in clients.json.\n"
                 f"  Available keys: {available}"
             )
             raise click.ClickException(msg)
-        return clients[bill_to]
+        return clients[chosen]
     return resolve_client(client_filter, clients, lines)
+
+
+def _multi_user_warning(
+    lines: list[InvoiceLine], user_filter: str | None
+) -> str | None:
+    """Warn when an unfiltered import mixes several people's hours."""
+    if user_filter:
+        return None
+    people = {line.user for line in lines if line.user}
+    if len(people) <= 1:
+        return None
+    return (
+        f"Imported hours for {len(people)} people — set harvest_user in "
+        "Settings or pass --user to import only your own."
+    )
 
 
 def _previous_month() -> str:
@@ -210,9 +233,24 @@ def main() -> None:
     help="Month to invoice (default: previous month).",
 )
 @click.option(
-    "--client", "client_filter", default=None, help="Harvest client name filter."
+    "--harvest-client",
+    "--client",
+    "client_filter",
+    default=None,
+    help=(
+        "Only import hours logged under this Harvest client "
+        "(--client is a deprecated alias; unrelated to the invoiced client)."
+    ),
 )
-@click.option("--user", "user_filter", default=None, help="Harvest user name filter.")
+@click.option(
+    "--user",
+    "user_filter",
+    default=None,
+    help=(
+        "Only import hours logged by this Harvest user "
+        "(default: issuer.json harvest_user, else everyone)."
+    ),
+)
 @click.option(
     "--issuer",
     "issuer_path",
@@ -306,6 +344,12 @@ def edit(
         issuer = load_issuer(str(issuer_file)) if issuer_file else _blank_issuer()
         clients = load_clients(str(clients_file)) if clients_file else {}
 
+    # Persistent defaults from issuer.json: the flags always win.
+    effective_user = user_filter or (
+        str(issuer.get("harvest_user") or "").strip() or None
+    )
+    default_bill_to = str(issuer.get("default_bill_to") or "").strip() or None
+
     if demo:
 
         def _fetch(ps: date, pe: date) -> list[InvoiceLine]:
@@ -317,19 +361,25 @@ def edit(
                 ps,
                 pe,
                 client_filter=client_filter,
-                user_filter=user_filter,
+                user_filter=effective_user,
                 currency=currency,
                 use_agency=not no_agency,
             )
 
+    startup_notice: str | None = None
     if onboarding:
         lines: list[InvoiceLine] = []
         client_entry: dict[str, str] = {}
     else:
         lines = _fetch(p_start, p_end)
+        startup_notice = _multi_user_warning(lines, effective_user)
+        if startup_notice:
+            click.echo(f"warning: {startup_notice}", err=True)
         if merge_duplicates:
             lines = merge_duplicate_lines(lines)
-        client_entry = _resolve_bill_to(bill_to, client_filter, clients, lines)
+        client_entry = _resolve_bill_to(
+            bill_to, default_bill_to, client_filter, clients, lines
+        )
         lines = apply_client_vat(lines + client_extra_lines(client_entry), client_entry)
 
     number = resolve_invoice_number(
@@ -366,6 +416,8 @@ def edit(
         clients=clients,
         issuer_path=eff_issuer_path,
         clients_path=eff_clients_path,
+        startup_notice=startup_notice,
+        user_filter_active=bool(effective_user),
     )
 
     url = (
@@ -400,9 +452,24 @@ def edit(
     help="Month(s) to invoice (repeatable; default: previous month).",
 )
 @click.option(
-    "--client", "client_filter", default=None, help="Harvest client name filter."
+    "--harvest-client",
+    "--client",
+    "client_filter",
+    default=None,
+    help=(
+        "Only import hours logged under this Harvest client "
+        "(--client is a deprecated alias; unrelated to the invoiced client)."
+    ),
 )
-@click.option("--user", "user_filter", default=None, help="Harvest user name filter.")
+@click.option(
+    "--user",
+    "user_filter",
+    default=None,
+    help=(
+        "Only import hours logged by this Harvest user "
+        "(default: issuer.json harvest_user, else everyone)."
+    ),
+)
 @click.option(
     "--issuer",
     "issuer_path",
@@ -494,6 +561,12 @@ def generate(
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Persistent defaults from issuer.json: the flags always win.
+    effective_user = user_filter or (
+        str(issuer.get("harvest_user") or "").strip() or None
+    )
+    default_bill_to = str(issuer.get("default_bill_to") or "").strip() or None
+
     resolved_months = list(months) if months else [_previous_month()]
 
     if number_override and len(resolved_months) > 1:
@@ -516,13 +589,18 @@ def generate(
                     p_start,
                     p_end,
                     client_filter=client_filter,
-                    user_filter=user_filter,
+                    user_filter=effective_user,
                     currency=currency,
                     use_agency=not no_agency,
                 )
+            warning = _multi_user_warning(lines, effective_user)
+            if warning:
+                click.echo(f"  warning: {warning}", err=True)
             if merge_duplicates:
                 lines = merge_duplicate_lines(lines)
-            client_entry = _resolve_bill_to(bill_to, client_filter, clients, lines)
+            client_entry = _resolve_bill_to(
+                bill_to, default_bill_to, client_filter, clients, lines
+            )
             lines = apply_client_vat(
                 lines + client_extra_lines(client_entry), client_entry
             )

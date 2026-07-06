@@ -42,7 +42,7 @@ harvest-invoicer generate --month 2026-06 --output-dir ./invoices/
 ### `edit` — interactive editor
 
 ```
-harvest-invoicer edit [--month YYYY-MM] [--client NAME] [--user NAME]
+harvest-invoicer edit [--month YYYY-MM] [--harvest-client NAME] [--user NAME]
                       [--issuer PATH] [--clients PATH] [--bill-to KEY]
                       [--templates-dir DIR]
                       [--number STR] [--output PATH.pdf]
@@ -64,7 +64,7 @@ footers; refreshes are debounced since each render takes about a second).
 ### `generate` — headless batch mode
 
 ```
-harvest-invoicer generate [--month YYYY-MM]... [--client NAME] [--user NAME]
+harvest-invoicer generate [--month YYYY-MM]... [--harvest-client NAME] [--user NAME]
                           [--issuer PATH] [--clients PATH] [--bill-to KEY]
                           [--templates-dir DIR]
                           [--number STR] [--output-dir DIR]
@@ -98,9 +98,11 @@ hours logged under end-customer Harvest clients but invoice the agency.
 The bill-to entry is chosen in this order:
 
 1. `--bill-to KEY` — an explicit clients.json key (both commands).
-2. Auto-detect: the first fetched line's Harvest client name, if it matches
+2. `default_bill_to` in issuer.json — pin your standard recipient (e.g. the
+   consultancy you invoice every month).
+3. Auto-detect: the first fetched line's Harvest client name, if it matches
    a clients.json key.
-3. The single clients.json entry, when there is exactly one.
+4. The single clients.json entry, when there is exactly one.
 
 In the editor, the **Bill to** dropdown (Invoice details) switches the
 invoiced client mid-session: the current line items and manual edits are
@@ -108,6 +110,25 @@ kept, the previous client's recurring extra lines are swapped for the new
 client's, and its `vat_rate` is applied.  Switching never re-fetches;
 subsequent fetches follow the selected client.  Clients added in Settings
 appear in the dropdown.
+
+### Whose hours are imported
+
+Without a user filter the fetch imports **everyone's** hours in the
+consultancy's Harvest account.  If you invoice only your own time:
+
+1. Set `"harvest_user": "Your Harvest Name"` in issuer.json (editable in
+   Settings) — plain `edit`/`generate` then imports only your hours.
+2. Or pass `--user "Your Harvest Name"` (always wins over the config).
+
+The name must match your Harvest user name exactly.  On a mismatch the
+error lists the user names that do have hours in the period.  When an
+import without any user filter mixes several people's hours, the editor
+shows a prominent warning (and `generate` prints one to stderr) so a
+whole-team total can't masquerade as a personal invoice.
+
+`--harvest-client NAME` (formerly `--client`, still accepted) restricts the
+import to hours logged under one Harvest client; it is unrelated to the
+invoiced (bill-to) client.
 
 ### Agency mode and `--no-agency`
 
@@ -187,6 +208,8 @@ explicit error (it lists the searched locations).
 | `date_format` | `"%Y-%m-%d"` | Python strftime pattern for all dates |
 | `legal_note` | _(absent)_ | Legal text at the invoice footer; omitted entirely when not set |
 | `number_template` | _(absent)_ | Invoice number template with `{year}` and `{month}` placeholders |
+| `harvest_user` | _(absent)_ | Only import this Harvest user's hours (see "Whose hours are imported") |
+| `default_bill_to` | _(absent)_ | clients.json key billed by default (see "Bill-to selection") |
 
 **Examples of `date_format`:**
 

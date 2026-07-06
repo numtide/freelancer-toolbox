@@ -4,20 +4,20 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+import click
+import pytest
 from click.testing import CliRunner
 from harvest_invoicer.cli import (
     _blank_issuer,
+    _multi_user_warning,
+    _resolve_bill_to,
     _resolve_config_path,
     _resolve_period,
     main,
 )
-from harvest_invoicer.model import REQUIRED_ISSUER_FIELDS
+from harvest_invoicer.model import REQUIRED_ISSUER_FIELDS, InvoiceLine
 from harvest_invoicer.render import _PACKAGED_TEMPLATES_DIR
-
-if TYPE_CHECKING:
-    import pytest
 
 
 def test_generate_demo_invalid_month() -> None:
@@ -205,3 +205,54 @@ def test_generate_bill_to_unknown_key_errors() -> None:
     assert result.exit_code != 0
     assert "Nonexistent" in result.output
     assert "Available keys" in result.output
+
+
+class TestPersistentDefaults:
+    """issuer.json harvest_user / default_bill_to and the multi-user warning."""
+
+    def test_bill_to_flag_beats_default(self) -> None:
+        clients = {"A": {"name": "A"}, "B": {"name": "B"}}
+        entry = _resolve_bill_to("A", "B", None, clients, [])
+        assert entry is clients["A"]
+
+    def test_default_bill_to_used_without_flag(self) -> None:
+        clients = {"A": {"name": "A"}, "B": {"name": "B"}}
+        entry = _resolve_bill_to(None, "B", None, clients, [])
+        assert entry is clients["B"]
+
+    def test_default_bill_to_unknown_key_errors(self) -> None:
+        clients = {"A": {"name": "A"}}
+        with pytest.raises(click.ClickException, match="default_bill_to"):
+            _resolve_bill_to(None, "Nope", None, clients, [])
+
+    def test_multi_user_warning_without_filter(self) -> None:
+        lines = [
+            InvoiceLine(concept="X", unit_price=1.0, quantity=1.0, user="Alice"),
+            InvoiceLine(concept="Y", unit_price=1.0, quantity=1.0, user="Bob"),
+        ]
+        warning = _multi_user_warning(lines, None)
+        assert warning is not None
+        assert "2 people" in warning
+
+    def test_no_warning_with_filter_or_single_user(self) -> None:
+        lines = [
+            InvoiceLine(concept="X", unit_price=1.0, quantity=1.0, user="Alice"),
+            InvoiceLine(concept="Y", unit_price=1.0, quantity=1.0, user="Bob"),
+        ]
+        assert _multi_user_warning(lines, "Alice") is None
+        single = [InvoiceLine(concept="X", unit_price=1.0, quantity=1.0, user="Al")]
+        assert _multi_user_warning(single, None) is None
+
+
+def test_harvest_client_flag_and_alias() -> None:
+    """--harvest-client is the primary name; --client still parses."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["edit", "--help"])
+    assert "--harvest-client" in result.output
+    for flag in ("--harvest-client", "--client"):
+        result = runner.invoke(
+            main, ["edit", "--demo", "--month", "junk", flag, "X", "--no-browser"]
+        )
+        # Fails on the month, never on the option name
+        assert "No such option" not in result.output
+        assert result.exit_code != 0

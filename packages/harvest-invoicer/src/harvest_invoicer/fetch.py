@@ -118,6 +118,7 @@ def fetch_lines(
                         unit_price=rate,
                         quantity=qty,
                         vat_rate=vat_rate,
+                        user=user_name,
                     )
                 )
 
@@ -128,6 +129,9 @@ def fetch_lines(
             f"No billable entries found between {start} and {end}"
             f"{client_info}{user_info}."
         )
+        if user_filter and user_filter not in users:
+            available = ", ".join(sorted(users.keys())) or "(none)"
+            msg += f" Users with hours in this period: {available}."
         raise click.ClickException(msg)
     return lines
 

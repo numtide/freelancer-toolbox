@@ -468,7 +468,8 @@ def edit(
     if not no_browser:
         webbrowser.open(url)
 
-    app.run(host="127.0.0.1", port=port, debug=False)
+    # threaded: a ~1s WeasyPrint preview render must not block edits.
+    app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
 
 
 # ---------------------------------------------------------------------------

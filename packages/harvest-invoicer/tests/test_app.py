@@ -856,6 +856,18 @@ class TestSettings:
             "Other Client",
         }
 
+    def test_saved_client_stays_open(self, tmp_path: Path) -> None:
+        """M2: the accordion of the just-saved client remains open."""
+        app, _, _ = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/clients/save",
+                data=self._client_form(original_key="Other Client", key="Other Client"),
+            )
+        html = resp.data.decode()
+        open_idx = html.index('class="acc-item open"')
+        assert "Other Client" in html[open_idx : open_idx + 900]
+
     def test_client_email_saved(self, tmp_path: Path) -> None:
         app, _, clients_path = self._make_app(tmp_path)
         with app.test_client() as c:
@@ -959,6 +971,33 @@ class TestUndo:
     def test_editor_has_undo_button(self, client: FlaskClient) -> None:
         resp = client.get("/")
         assert b"/lines/undo" in resp.data
+
+
+class TestReviewPolish:
+    """M1/M2/L2 from the adversarial review."""
+
+    def test_stale_range_guard_in_editor_js(self, client: FlaskClient) -> None:
+        """M1: fetching with use-period on and an empty period is blocked."""
+        resp = client.get("/")
+        assert b"Never fall back to a stale range" in resp.data
+        assert b"Set the invoice billing period first" in resp.data
+
+    def test_custom_terms_label_when_due_before_issue(
+        self, client: FlaskClient
+    ) -> None:
+        """L2: due date before issue renders Custom, not 'Net -N'."""
+        resp = client.post(
+            "/meta/update",
+            data={
+                "number": "2026-06",
+                "issue_date": "2026-07-06",
+                "due_date": "2026-07-01",
+                "legal_note": "",
+            },
+        )
+        assert b"Custom" in resp.data
+        assert b"Net -" not in resp.data
+        assert b"in -" not in resp.data
 
 
 class TestMergeDuplicates:
@@ -1133,6 +1172,85 @@ class TestImportRoster:
             resp = c.post("/lines/people", data={"all": "1"})
             assert b"2 of 2 selected" in resp.data
         assert len(app.state["invoice"].lines) == 2  # type: ignore[attr-defined]
+
+    def test_manual_row_survives_rederive(self, tmp_path: Path) -> None:
+        """H1: rows added by hand are preserved when chips re-slice."""
+        app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
+        with app.test_client() as c:
+            c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+            c.post("/lines/add")
+            c.post(
+                "/lines/update/2",
+                data={"concept": "Hand-added fee", "quantity": "1", "unit_price": "50"},
+            )
+            c.post("/lines/people", data={"toggle": "Bob"})
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        concepts = [ln.concept for ln in inv.lines]
+        assert "Hand-added fee" in concepts  # manual row survived
+        assert "Ops" not in concepts  # Bob's imported line excluded
+
+    def test_dirty_edit_arms_chip_confirm(self, tmp_path: Path) -> None:
+        """H1: editing an imported line arms hx-confirm on roster controls."""
+        app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+            assert b"Re-slicing re-imports" not in resp.data  # clean after fetch
+            resp = c.post(
+                "/lines/update/0",
+                data={"concept": "Edited", "quantity": "10", "unit_price": "100"},
+            )
+            assert b"Re-slicing re-imports" in resp.data  # confirm armed
+            # A re-derive clears the dirty flag again
+            resp = c.post("/lines/people", data={"toggle": "Bob"})
+            assert b"Re-slicing re-imports" not in resp.data
+
+    def test_undo_restores_import_generation(self, tmp_path: Path) -> None:
+        """H2: undo after a second fetch restores the earlier import too."""
+
+        def by_range(ps: date, pe: date) -> list[InvoiceLine]:
+            if ps.month == 6:
+                return [
+                    InvoiceLine(
+                        concept="June", unit_price=100.0, quantity=10.0, user="Alice"
+                    ),
+                    InvoiceLine(
+                        concept="JuneOps", unit_price=90.0, quantity=5.0, user="Bob"
+                    ),
+                ]
+            return [
+                InvoiceLine(
+                    concept="July", unit_price=100.0, quantity=7.0, user="Carol"
+                )
+            ]
+
+        app = self._make_app(tmp_path, fetch_callback=by_range)
+        with app.test_client() as c:
+            c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+            c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-07-01", "fetch_end": "2026-07-31"},
+            )
+            resp = c.post("/lines/undo")
+            # The roster note reflects the restored June import (15h, 2 people)
+            assert b"15h" in resp.data
+            assert b"2 people" in resp.data
+            # A chip toggle now derives from the June import, not July
+            c.post("/lines/people", data={"toggle": "Bob"})
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert [ln.concept for ln in inv.lines] == ["June"]
+        assert app.state["last_fetch_range"] == (  # type: ignore[attr-defined]
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
 
     def test_toggle_is_undoable(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path, fetch_callback=self._team_fetch)

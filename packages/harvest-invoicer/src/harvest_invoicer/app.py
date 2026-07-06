@@ -21,9 +21,7 @@ from harvest_invoicer.model import (
     DEFAULT_PAYMENT_TERM_DAYS,
     Invoice,
     InvoiceLine,
-    fmt_date,
     fmt_money,
-    fmt_qty,
     merge_duplicate_lines,
 )
 from harvest_invoicer.render import _effective_base_url, render_html
@@ -144,6 +142,9 @@ def create_app(
         "import_raw": copy.deepcopy(import_raw) if import_raw else [],
         "selected_people": {ln.user for ln in (import_raw or []) if ln.user},
         "import_merge": import_merge,
+        # True once imported (origin "harvest") lines were hand-edited;
+        # roster re-derives then ask for confirmation before discarding.
+        "lines_dirty": False,
     }
 
     @app.before_request
@@ -164,8 +165,6 @@ def create_app(
             return Response("Forbidden: cross-origin request rejected.", status=403)
         return None
 
-    date_format = str(issuer.get("date_format") or "%Y-%m-%d")
-
     # ------------------------------------------------------------------
     # Template helpers
     # ------------------------------------------------------------------
@@ -175,7 +174,6 @@ def create_app(
             "partials/rows.html",
             invoice=inv,
             fmt_money=fmt_money,
-            fmt_qty=fmt_qty,
         )
 
     def _render_totals(inv: Invoice) -> str:
@@ -196,6 +194,10 @@ def create_app(
             "lines": copy.deepcopy(inv.lines),
             "client_key": app.state["current_client_key"],  # type: ignore[attr-defined]
             "selected_people": set(app.state["selected_people"]),  # type: ignore[attr-defined]
+            "import_raw": copy.deepcopy(app.state["import_raw"]),  # type: ignore[attr-defined]
+            "import_merge": app.state["import_merge"],  # type: ignore[attr-defined]
+            "last_fetch_range": app.state["last_fetch_range"],  # type: ignore[attr-defined]
+            "lines_dirty": app.state["lines_dirty"],  # type: ignore[attr-defined]
         }
 
     _undo_svg = (
@@ -226,7 +228,7 @@ def create_app(
             f'hx-post="/lines/undo" hx-target="#line-rows" hx-swap="outerHTML">'
             f"{_undo_svg}</button>"
         )
-        return meta + pcount + undo
+        return meta + pcount + undo + _import_note_oob()
 
     def _store_import(raw_lines: list[InvoiceLine], merge: bool) -> None:
         """Remember the raw per-person import for chip-based re-derives."""
@@ -235,18 +237,27 @@ def create_app(
             ln.user for ln in raw_lines if ln.user
         }
         app.state["import_merge"] = merge  # type: ignore[attr-defined]
+        app.state["lines_dirty"] = False  # type: ignore[attr-defined]
 
     def _derive_from_import(inv: Invoice) -> None:
-        """Rebuild the invoice lines from the stored import + selection."""
+        """Rebuild the invoice lines from the stored import + selection.
+
+        Imported ("harvest") lines are rebuilt from the raw import; rows the
+        user added by hand (origin "manual") are preserved as-is; the
+        client's recurring extras are re-appended.  Rebuilding discards any
+        hand edits to imported lines, so callers gate on ``lines_dirty``.
+        """
         raw: list[InvoiceLine] = app.state["import_raw"]  # type: ignore[attr-defined]
         selected: set[str] = app.state["selected_people"]  # type: ignore[attr-defined]
         lines = [copy.deepcopy(ln) for ln in raw if not ln.user or ln.user in selected]
         if app.state["import_merge"]:  # type: ignore[attr-defined]
             lines = merge_duplicate_lines(lines)
+        manual = [ln for ln in inv.lines if ln.origin == "manual"]
         cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
         inv.lines[:] = apply_client_vat(
-            lines + client_extra_lines(cur_client), cur_client
+            lines + manual + client_extra_lines(cur_client), cur_client
         )
+        app.state["lines_dirty"] = False  # type: ignore[attr-defined]
 
     def _import_note_ctx() -> dict[str, object]:
         raw: list[InvoiceLine] = app.state["import_raw"]  # type: ignore[attr-defined]
@@ -259,6 +270,7 @@ def create_app(
         return {
             "roster": roster,
             "selected": selected,
+            "lines_dirty": app.state["lines_dirty"],  # type: ignore[attr-defined]
             "you": str(issuer.get("harvest_user") or "").strip(),
             "total_hours": round(sum(hours.values()), 2),
             "selected_hours": round(sum(h for n, h in roster if n in selected), 2),
@@ -291,8 +303,6 @@ def create_app(
             clients=app.state["clients"],  # type: ignore[attr-defined]
             current_client_key=app.state["current_client_key"],  # type: ignore[attr-defined]
             fmt_money=fmt_money,
-            fmt_qty=fmt_qty,
-            fmt_date=lambda d: fmt_date(d, date_format),
             output_path=str(output_path),
             has_undo=app.state["undo"] is not None,  # type: ignore[attr-defined]
             **_import_note_ctx(),
@@ -390,6 +400,10 @@ def create_app(
         if 0 <= idx < len(inv.lines):
             _snapshot_lines(inv)
             line = inv.lines[idx]
+            if line.origin == "harvest":
+                # Hand edit to an imported line: roster re-derives would
+                # discard it, so they must confirm from now on.
+                app.state["lines_dirty"] = True  # type: ignore[attr-defined]
             line.concept = request.form.get("concept", line.concept)
             with contextlib.suppress(ValueError):
                 line.quantity = float(request.form.get("quantity", str(line.quantity)))
@@ -404,6 +418,8 @@ def create_app(
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         if 0 <= idx < len(inv.lines):
             _snapshot_lines(inv)
+            if inv.lines[idx].origin == "harvest":
+                app.state["lines_dirty"] = True  # type: ignore[attr-defined]
             inv.lines.pop(idx)
         return _lines_response(inv)
 
@@ -411,7 +427,9 @@ def create_app(
     def add_line() -> Response:
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         _snapshot_lines(inv)
-        inv.lines.append(InvoiceLine(concept="", unit_price=0.0, quantity=0.0))
+        inv.lines.append(
+            InvoiceLine(concept="", unit_price=0.0, quantity=0.0, origin="manual")
+        )
         return _lines_response(inv)
 
     @app.post("/lines/delete-selected")
@@ -422,6 +440,8 @@ def create_app(
         valid = sorted((i for i in selected if i < len(inv.lines)), reverse=True)
         if valid:
             _snapshot_lines(inv)
+            if any(inv.lines[i].origin == "harvest" for i in valid):
+                app.state["lines_dirty"] = True  # type: ignore[attr-defined]
             for i in valid:
                 inv.lines.pop(i)
         return _lines_response(inv)
@@ -452,6 +472,7 @@ def create_app(
             vat_rate=first_line.vat_rate,
         )
         _snapshot_lines(inv)
+        app.state["lines_dirty"] = True  # type: ignore[attr-defined]
         # Remove selected (highest index first to preserve positions)
         for i in sorted(selected_idx, reverse=True):
             if i < len(inv.lines):
@@ -505,15 +526,14 @@ def create_app(
         except Exception as exc:  # noqa: BLE001 — surface fetch errors inline
             return _respond(str(exc), error=True)
 
-        _store_import(raw_lines, request.form.get("merge_duplicates") == "on")
+        # Snapshot before storing: undo must restore the previous import
+        # generation together with the previous lines.
         _snapshot_lines(inv)
+        _store_import(raw_lines, request.form.get("merge_duplicates") == "on")
         _derive_from_import(inv)
         app.state["last_fetch_range"] = (ps, pe)  # type: ignore[attr-defined]
 
-        return _respond(
-            f"Imported {len(inv.lines)} lines for {ps} to {pe}.",
-            extra_html=_import_note_oob(),
-        )
+        return _respond(f"Imported {len(inv.lines)} lines for {ps} to {pe}.")
 
     @app.post("/lines/people")
     def toggle_people() -> Response:
@@ -535,10 +555,10 @@ def create_app(
                 selected.discard(name)
             elif name in roster_names:
                 selected.add(name)
-        app.state["selected_people"] = selected  # type: ignore[attr-defined]
         _snapshot_lines(inv)
+        app.state["selected_people"] = selected  # type: ignore[attr-defined]
         _derive_from_import(inv)
-        return _lines_response(inv, _import_note_oob())
+        return _lines_response(inv)
 
     def _client_inset_oob() -> str:
         """OOB re-render of the client picker and details inset."""
@@ -587,6 +607,8 @@ def create_app(
         """Collapse lines with identical concept, rate, and VAT into one."""
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         _snapshot_lines(inv)
+        if len(merge_duplicate_lines(inv.lines)) != len(inv.lines):
+            app.state["lines_dirty"] = True  # type: ignore[attr-defined]
         inv.lines[:] = merge_duplicate_lines(inv.lines)
         return _lines_response(inv)
 
@@ -607,6 +629,10 @@ def create_app(
             "lines": copy.deepcopy(inv.lines),
             "client_key": app.state["current_client_key"],  # type: ignore[attr-defined]
             "selected_people": set(app.state["selected_people"]),  # type: ignore[attr-defined]
+            "import_raw": copy.deepcopy(app.state["import_raw"]),  # type: ignore[attr-defined]
+            "import_merge": app.state["import_merge"],  # type: ignore[attr-defined]
+            "last_fetch_range": app.state["last_fetch_range"],  # type: ignore[attr-defined]
+            "lines_dirty": app.state["lines_dirty"],  # type: ignore[attr-defined]
         }
         inv.lines[:] = snapshot["lines"]
         clients_map: dict[str, dict[str, str]] = app.state["clients"]  # type: ignore[attr-defined]
@@ -615,7 +641,11 @@ def create_app(
             app.state["client"] = clients_map[key]  # type: ignore[attr-defined]
             app.state["current_client_key"] = key  # type: ignore[attr-defined]
         app.state["selected_people"] = snapshot["selected_people"]  # type: ignore[attr-defined]
-        return _lines_response(inv, _client_inset_oob() + _import_note_oob())
+        app.state["import_raw"] = snapshot["import_raw"]  # type: ignore[attr-defined]
+        app.state["import_merge"] = snapshot["import_merge"]  # type: ignore[attr-defined]
+        app.state["last_fetch_range"] = snapshot["last_fetch_range"]  # type: ignore[attr-defined]
+        app.state["lines_dirty"] = snapshot["lines_dirty"]  # type: ignore[attr-defined]
+        return _lines_response(inv, _client_inset_oob())
 
     @app.post("/lines/reorder")
     def reorder_lines() -> Response:
@@ -633,6 +663,8 @@ def create_app(
             order = []
         if order and sorted(order) == list(range(len(inv.lines))):
             _snapshot_lines(inv)
+            if order != list(range(len(inv.lines))):
+                app.state["lines_dirty"] = True  # type: ignore[attr-defined]
             inv.lines[:] = [inv.lines[i] for i in order]
         return _lines_response(inv)
 
@@ -702,13 +734,19 @@ def create_app(
             raise
         return f" and written to {path}"
 
-    def _render_clients_block(status: str | None = None, *, error: bool = False) -> str:
+    def _render_clients_block(
+        status: str | None = None,
+        *,
+        error: bool = False,
+        open_key: str | None = None,
+    ) -> str:
         return render_template(
             "partials/settings_clients.html",
             clients=app.state["clients"],  # type: ignore[attr-defined]
             current_client_key=app.state["current_client_key"],  # type: ignore[attr-defined]
             status=status,
             status_error=error,
+            open_key=open_key,
         )
 
     @app.get("/settings")
@@ -898,7 +936,9 @@ def create_app(
             app.state["current_client_key"] = new_key  # type: ignore[attr-defined]
 
         suffix = _persist_json(clients_path, clients_map)
-        return _render_clients_block(f"Client '{new_key}' saved{suffix}")
+        return _render_clients_block(
+            f"Client '{new_key}' saved{suffix}", open_key=new_key
+        )
 
     @app.post("/settings/clients/delete")
     def settings_clients_delete() -> str:

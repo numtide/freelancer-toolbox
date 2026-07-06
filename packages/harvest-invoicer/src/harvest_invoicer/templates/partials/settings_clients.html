@@ -57,7 +57,8 @@
   {% for key, entry in clients.items() %}
   {% set name = entry.get('name', key) %}
   {% set city = (entry.get('address_line2', '').split(',')[-1]).strip().split(' ')[-1] %}
-  <div class="acc-item{% if loop.first %} open{% endif %}">
+  {% set is_open = (key == open_key) if open_key else loop.first %}
+  <div class="acc-item{% if is_open %} open{% endif %}">
     <div class="acc-head" data-acc>
       <span class="avatar avatar-lg">{{ initials(name) }}</span>
       <div class="acc-title">
@@ -70,7 +71,7 @@
       <span class="acc-chevron">&#8964;</span>
     </div>
     <form class="acc-body" hx-post="/settings/clients/save"
-      hx-target="#clients-block" hx-swap="outerHTML"{% if not loop.first %} hidden{% endif %}>
+      hx-target="#clients-block" hx-swap="outerHTML"{% if not is_open %} hidden{% endif %}>
       <input type="hidden" name="original_key" value="{{ key }}">
       {{ client_fields(key, entry) }}
       <div class="acc-foot">

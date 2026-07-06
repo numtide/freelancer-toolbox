@@ -13,10 +13,12 @@
     <div class="ctl-actions">
       <button type="button" class="ctl-all"
         hx-post="/lines/people" hx-vals='{"all": "1"}'
+        {% if lines_dirty %}hx-confirm="Re-slicing re-imports the affected lines — your edits to imported rows will be lost. Continue?"{% endif %}
         hx-target="#line-rows" hx-swap="outerHTML">Everyone</button>
       <span class="ctl-dot">·</span>
       <button type="button" class="ctl-clear"
         hx-post="/lines/people" hx-vals='{"none": "1"}'
+        {% if lines_dirty %}hx-confirm="Re-slicing re-imports the affected lines — your edits to imported rows will be lost. Continue?"{% endif %}
         hx-target="#line-rows" hx-swap="outerHTML">Clear</button>
     </div>
   </div>
@@ -25,6 +27,7 @@
     {% set on = name in selected %}
     <button type="button" class="chip{{ ' on' if on }}{{ ' is-you' if name == you }}"
       hx-post="/lines/people" hx-vals='{{ {"toggle": name} | tojson }}'
+      {% if lines_dirty %}hx-confirm="Re-slicing re-imports the affected lines — your edits to imported rows will be lost. Continue?"{% endif %}
       hx-target="#line-rows" hx-swap="outerHTML">
       {%- if on %}<span class="chip-check">&#10003;</span>{% endif %}
       {%- if name == you %}<span class="chip-you">You · </span>{% endif %}{{ name }}

@@ -338,8 +338,17 @@
         if (use && use.checked) {
           var ps = document.querySelector('[name="period_start"]');
           var pe = document.querySelector('[name="period_end"]');
-          if (ps && ps.value) evt.detail.parameters.fetch_start = ps.value;
-          if (pe && pe.value) evt.detail.parameters.fetch_end = pe.value;
+          if (!ps || !pe || !ps.value || !pe.value) {
+            // Never fall back to a stale range: block and explain.
+            evt.preventDefault();
+            var st = document.getElementById("fetch-status");
+            st.className = "fetch-err";
+            st.textContent =
+              "Set the invoice billing period first (or untick to enter a range).";
+            return;
+          }
+          evt.detail.parameters.fetch_start = ps.value;
+          evt.detail.parameters.fetch_end = pe.value;
         }
       });
     })();

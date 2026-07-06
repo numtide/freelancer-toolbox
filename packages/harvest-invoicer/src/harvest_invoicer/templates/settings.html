@@ -206,6 +206,9 @@
     });
 
     // Save bar: submit the issuer form and every client form with content.
+    // The client posts run in parallel and each swaps #clients-block; the
+    // server applies them cumulatively, so the final render is consistent
+    // (an interleaved error status can be overwritten — acceptable).
     document.getElementById("save-all-btn").addEventListener("click", function () {
       htmx.trigger(document.getElementById("issuer-form"), "submit");
       document.querySelectorAll("#clients-block form").forEach(function (f) {

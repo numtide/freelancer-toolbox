@@ -1,6 +1,6 @@
 {% set known_terms = {0: "Due on receipt", 15: "Net 15", 30: "Net 30", 45: "Net 45"} %}
 {% set terms_days = (invoice.due_date - invoice.issue_date).days %}
-{% set terms_label = known_terms.get(terms_days, "Net " ~ terms_days) %}
+{% set terms_label = "Custom" if terms_days < 0 else known_terms.get(terms_days, "Net " ~ terms_days) %}
 <div id="meta-block" data-terms-days="{{ terms_days }}">
   <div class="grid2 field-gap">
     <div>
@@ -36,7 +36,10 @@
       <div class="computed hv-num">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(29,30,28,0.45)" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>
         {{ invoice.due_date.isoformat() }}
-        <span class="hint">{% if terms_days == 0 %}on issue{% else %}in {{ terms_days }} days{% endif %}</span>
+        <span class="hint">
+          {%- if terms_days == 0 %}on issue
+          {%- elif terms_days > 0 %}in {{ terms_days }} days
+          {%- endif %}</span>
       </div>
       <input type="hidden" id="due-input" name="due_date" value="{{ invoice.due_date.isoformat() }}"
         hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"

@@ -480,6 +480,27 @@ def create_app(
         totals_html = _render_totals(inv)
         return Response(rows_html + totals_html, content_type="text/html")
 
+    @app.post("/lines/reorder")
+    def reorder_lines() -> Response:
+        """Apply a new line order from the editor's drag-and-drop.
+
+        ``order`` is a comma-separated list of the current indices in their
+        new sequence; anything that is not a complete permutation is
+        ignored (the table is re-rendered as-is).
+        """
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        raw = request.form.get("order", "")
+        try:
+            order = [int(s) for s in raw.split(",") if s.strip() != ""]
+        except ValueError:
+            order = []
+        if order and sorted(order) == list(range(len(inv.lines))):
+            _snapshot_lines(inv)
+            inv.lines[:] = [inv.lines[i] for i in order]
+        rows_html = _render_rows(inv)
+        totals_html = _render_totals(inv)
+        return Response(rows_html + totals_html, content_type="text/html")
+
     # --- Metadata edits ---
 
     @app.post("/meta/update")

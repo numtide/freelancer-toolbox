@@ -221,6 +221,46 @@
         debounce = setTimeout(refresh, mode === "pdf" ? 600 : 0);
       });
     })();
+
+    // Drag-and-drop reordering of line items. Document-level delegation so
+    // the handlers survive htmx swaps of the tbody.
+    (function () {
+      var dragRow = null;
+
+      document.addEventListener("dragstart", function (e) {
+        var handle = e.target.closest && e.target.closest(".drag-handle");
+        if (!handle) return;
+        dragRow = handle.closest("tr");
+        dragRow.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", "");
+      });
+
+      document.addEventListener("dragover", function (e) {
+        if (!dragRow) return;
+        var row = e.target.closest && e.target.closest("#line-rows tr");
+        if (!row || row === dragRow) return;
+        e.preventDefault();
+        var rect = row.getBoundingClientRect();
+        var after = e.clientY > rect.top + rect.height / 2;
+        row.parentNode.insertBefore(dragRow, after ? row.nextSibling : row);
+      });
+
+      document.addEventListener("dragend", function () {
+        if (!dragRow) return;
+        dragRow.classList.remove("dragging");
+        dragRow = null;
+        var order = Array.prototype.map.call(
+          document.querySelectorAll("#line-rows tr"),
+          function (tr) { return tr.dataset.idx; }
+        ).join(",");
+        htmx.ajax("POST", "/lines/reorder", {
+          target: "#line-rows",
+          swap: "outerHTML",
+          values: { order: order },
+        });
+      });
+    })();
   </script>
 </body>
 </html>

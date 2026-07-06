@@ -466,3 +466,16 @@ select:focus {
   cursor: default;
   opacity: 1;
 }
+
+/* ===== Drag-and-drop reordering ===== */
+.grab-cell { white-space: nowrap; }
+.drag-handle {
+  cursor: grab;
+  color: var(--text-3);
+  font-size: 13px;
+  letter-spacing: -3px;
+  padding-right: 6px;
+  user-select: none;
+}
+.drag-handle:active { cursor: grabbing; }
+#line-rows tr.dragging { opacity: 0.5; background: rgba(250, 93, 0, 0.05); }

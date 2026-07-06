@@ -1135,3 +1135,35 @@ class TestIssuerDefaultsSettings:
             resp = c.get("/settings")
         assert b'name="harvest_user"' in resp.data
         assert b'name="default_bill_to"' in resp.data
+
+
+class TestReorder:
+    """POST /lines/reorder applies the drag-and-drop order."""
+
+    def test_reorder_applies_permutation(self, client: FlaskClient) -> None:
+        resp = client.post("/lines/reorder", data={"order": "1,0"})
+        assert resp.status_code == 200
+        # "Code Review" (was index 1) now renders before "Backend Development"
+        assert resp.data.index(b"Code Review") < resp.data.index(
+            b"Backend Development"
+        )
+
+    def test_reorder_is_undoable(self, client: FlaskClient) -> None:
+        client.post("/lines/reorder", data={"order": "1,0"})
+        resp = client.post("/lines/undo")
+        assert resp.data.index(b"Backend Development") < resp.data.index(
+            b"Code Review"
+        )
+
+    def test_incomplete_or_bad_order_ignored(self, client: FlaskClient) -> None:
+        for bad in ("0", "0,0", "0,2", "a,b", ""):
+            resp = client.post("/lines/reorder", data={"order": bad})
+            assert resp.status_code == 200
+            assert resp.data.index(b"Backend Development") < resp.data.index(
+                b"Code Review"
+            )
+
+    def test_editor_has_drag_handles(self, client: FlaskClient) -> None:
+        resp = client.get("/")
+        assert resp.data.count(b'class="drag-handle"') == 2
+        assert b"/lines/reorder" in resp.data

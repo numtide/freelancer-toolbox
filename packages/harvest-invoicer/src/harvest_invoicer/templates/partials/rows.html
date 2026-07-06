@@ -1,7 +1,10 @@
 <tbody id="line-rows" hx-target="this" hx-swap="outerHTML">
   {% for line in invoice.lines %}
-  <tr>
-    <td><input type="checkbox" name="selected" value="{{ loop.index0 }}" form="merge-form"></td>
+  <tr data-idx="{{ loop.index0 }}">
+    <td class="grab-cell">
+      <span class="drag-handle" draggable="true" title="Drag to reorder">&#8942;&#8942;</span>
+      <input type="checkbox" name="selected" value="{{ loop.index0 }}" form="merge-form">
+    </td>
     <td>
       <div class="cell-desc">
         <input type="text" name="concept" value="{{ line.concept }}"

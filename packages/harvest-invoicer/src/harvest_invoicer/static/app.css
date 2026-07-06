@@ -479,3 +479,7 @@ select:focus {
 }
 .drag-handle:active { cursor: grabbing; }
 #line-rows tr.dragging { opacity: 0.5; background: rgba(250, 93, 0, 0.05); }
+
+/* Preview fully collapsed: the editor column takes the whole width. */
+.layout.preview-hidden { grid-template-columns: minmax(0, 1fr); }
+.layout.preview-hidden .preview-col { display: none; }

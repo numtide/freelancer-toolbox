@@ -1144,16 +1144,12 @@ class TestReorder:
         resp = client.post("/lines/reorder", data={"order": "1,0"})
         assert resp.status_code == 200
         # "Code Review" (was index 1) now renders before "Backend Development"
-        assert resp.data.index(b"Code Review") < resp.data.index(
-            b"Backend Development"
-        )
+        assert resp.data.index(b"Code Review") < resp.data.index(b"Backend Development")
 
     def test_reorder_is_undoable(self, client: FlaskClient) -> None:
         client.post("/lines/reorder", data={"order": "1,0"})
         resp = client.post("/lines/undo")
-        assert resp.data.index(b"Backend Development") < resp.data.index(
-            b"Code Review"
-        )
+        assert resp.data.index(b"Backend Development") < resp.data.index(b"Code Review")
 
     def test_incomplete_or_bad_order_ignored(self, client: FlaskClient) -> None:
         for bad in ("0", "0,0", "0,2", "a,b", ""):

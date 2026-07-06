@@ -22,7 +22,12 @@ pkgs.python3.pkgs.buildPythonApplication {
     "PYTHONPATH"
   ];
 
-  doCheck = false;
+  # Run the full pytest suite as part of the build, so `nix flake check`
+  # gates on it (blueprint surfaces package builds as checks).  The
+  # WeasyPrint-dependent tests use their own env-guard and simply skip if
+  # the native libraries are ever unavailable in the sandbox.
+  doCheck = true;
+  nativeCheckInputs = [ pkgs.python3.pkgs.pytestCheckHook ];
 
   meta.mainProgram = "harvest-invoicer";
 }

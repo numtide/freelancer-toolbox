@@ -88,13 +88,17 @@ class Invoice:
 
     @property
     def subtotal(self) -> float:
-        """Sum of all line bases (before VAT)."""
-        return sum(line.base for line in self.lines)
+        """Sum of all line bases (before VAT).
+
+        Each line is rounded to cents first — the invoice displays rounded
+        per-line amounts, and those must add up exactly to the totals.
+        """
+        return sum(round(line.base, 2) for line in self.lines)
 
     @property
     def vat_total(self) -> float:
-        """Sum of all line VAT amounts."""
-        return sum(line.vat for line in self.lines)
+        """Sum of all line VAT amounts (each rounded to cents first)."""
+        return sum(round(line.vat, 2) for line in self.lines)
 
     @property
     def grand_total(self) -> float:

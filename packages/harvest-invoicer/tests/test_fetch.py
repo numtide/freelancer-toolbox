@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from fractions import Fraction
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -48,9 +49,16 @@ def _entry(
 
 @pytest.fixture(autouse=True)
 def _harvest_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Inject fake Harvest credentials so fetch_lines skips the credential check."""
+    """Fake credentials and a stubbed FX rate: no network in unit tests.
+
+    harvest_exporter's exchange_rate calls the Transferwise API even for
+    same-currency conversions, which fails in the Nix build sandbox.
+    """
     monkeypatch.setenv("HARVEST_ACCOUNT_ID", "test-id")
     monkeypatch.setenv("HARVEST_BEARER_TOKEN", "test-token")
+    monkeypatch.setattr(
+        "harvest_exporter.exchange_rate", lambda *_currencies: Fraction(1)
+    )
 
 
 class TestAgencyModeWiring:

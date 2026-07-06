@@ -129,3 +129,24 @@ def test_merge_duplicates_preserves_extra_lines() -> None:
     extras = [ln for ln in merged if ln.origin == "extra"]
     assert harvest[0].quantity == 15.0
     assert extras[0].quantity == 1.0
+
+
+def test_totals_match_displayed_line_amounts() -> None:
+    """Per-line cents rounding: displayed lines must add up to the totals.
+
+    1.005 stored as float is just below 1.005, so each line displays 1.00;
+    an unrounded sum would show a 2.01 subtotal next to two 1.00 lines.
+    """
+    inv = Invoice(
+        number="X",
+        issue_date=date(2026, 6, 1),
+        due_date=date(2026, 6, 15),
+        lines=[
+            InvoiceLine(concept="A", unit_price=1.005, quantity=1.0),
+            InvoiceLine(concept="B", unit_price=1.005, quantity=1.0),
+        ],
+    )
+    per_line = [fmt_money(round(line.base, 2)) for line in inv.lines]
+    assert per_line == ["1.00", "1.00"]
+    assert fmt_money(inv.subtotal) == "2.00"
+    assert fmt_money(inv.grand_total) == "2.00"

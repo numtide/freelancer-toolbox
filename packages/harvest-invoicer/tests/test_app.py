@@ -498,6 +498,30 @@ class TestBillToSwitch:
         assert "Retainer" in concepts  # switched client's extras applied
         assert all(line.vat_rate == 0.21 for line in inv.lines)
 
+    def test_undo_after_switch_restores_client_too(self, tmp_path: Path) -> None:
+        """Undo of a bill-to switch must restore the client with the lines."""
+        app = self._make_app(tmp_path)
+        with app.test_client() as c:
+            c.post("/invoice/client", data={"client_key": "Domestic"})
+            resp = c.post("/lines/undo")
+            preview = c.get("/preview")
+        # Bill-to and lines are consistent again: Numtide, no VAT, no extras
+        assert app.state["current_client_key"] == "Numtide"  # type: ignore[attr-defined]
+        assert app.state["client"] is app.state["clients"]["Numtide"]  # type: ignore[attr-defined]
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert all(line.vat_rate == 0.0 for line in inv.lines)
+        assert all(line.origin != "extra" for line in inv.lines)
+        assert b"Numtide Sarl" in preview.data
+        # The response carries the picker/inset refresh for the UI
+        assert b"client-inset" in resp.data
+        # Undo again = redo: back to Domestic with its VAT and extras
+        with app.test_client() as c:
+            c.post("/lines/undo")
+        assert app.state["current_client_key"] == "Domestic"  # type: ignore[attr-defined]
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert any(line.origin == "extra" for line in inv.lines)
+        assert all(line.vat_rate == 0.21 for line in inv.lines)
+
     def test_editor_renders_picker(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path)
         with app.test_client() as c:
@@ -811,6 +835,26 @@ class TestSettings:
                 data=self._client_form(vat_rate="21"),
             )
         assert b"between 0 and 1" in resp.data
+
+    def test_rename_onto_existing_key_rejected(self, tmp_path: Path) -> None:
+        """Renaming a client to another client's key must not overwrite it."""
+        app, _, clients_path = self._make_app(tmp_path)
+        before = clients_path.read_text()
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/clients/save",
+                data=self._client_form(
+                    original_key="Other Client",
+                    key="Acme Corp",  # collides with the existing entry
+                    name="Other Client Renamed",
+                ),
+            )
+        assert b"already exists" in resp.data
+        assert clients_path.read_text() == before
+        assert set(json.loads(clients_path.read_text())) == {
+            "Acme Corp",
+            "Other Client",
+        }
 
     def test_client_email_saved(self, tmp_path: Path) -> None:
         app, _, clients_path = self._make_app(tmp_path)
@@ -1169,6 +1213,33 @@ class TestIssuerDefaultsSettings:
             resp = c.get("/settings")
         assert b'name="harvest_user"' in resp.data
         assert b'name="default_bill_to"' in resp.data
+
+
+class TestCsrfGuard:
+    """Mutating requests must be same-origin (local editor only)."""
+
+    def test_cross_origin_post_rejected(self, client: FlaskClient) -> None:
+        resp = client.post("/lines/add", headers={"Origin": "https://evil.example"})
+        assert resp.status_code == 403
+
+    def test_cross_origin_referer_rejected(self, client: FlaskClient) -> None:
+        resp = client.post(
+            "/settings/issuer", headers={"Referer": "https://evil.example/x"}
+        )
+        assert resp.status_code == 403
+
+    def test_local_origin_allowed(self, client: FlaskClient) -> None:
+        resp = client.post("/lines/add", headers={"Origin": "http://localhost"})
+        assert resp.status_code == 200
+
+    def test_no_origin_allowed(self, client: FlaskClient) -> None:
+        """htmx same-origin posts may omit Origin; those stay allowed."""
+        resp = client.post("/lines/add")
+        assert resp.status_code == 200
+
+    def test_get_unaffected(self, client: FlaskClient) -> None:
+        resp = client.get("/", headers={"Origin": "https://evil.example"})
+        assert resp.status_code == 200
 
 
 class TestReorder:

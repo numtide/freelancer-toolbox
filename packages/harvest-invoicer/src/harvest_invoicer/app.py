@@ -6,16 +6,15 @@ import contextlib
 import copy
 import json
 import os
+import tempfile
 import threading
 from datetime import date, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from flask import Flask, Response, render_template, request
 from markupsafe import escape
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 from harvest_invoicer.fetch import apply_client_vat, client_extra_lines
 from harvest_invoicer.model import (
@@ -28,6 +27,11 @@ from harvest_invoicer.model import (
     merge_duplicate_lines,
 )
 from harvest_invoicer.render import _effective_base_url, render_html
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+_LOCAL_HOSTNAMES = ("127.0.0.1", "localhost")
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -142,6 +146,24 @@ def create_app(
         "import_merge": import_merge,
     }
 
+    @app.before_request
+    def _reject_cross_origin() -> Response | None:
+        """CSRF guard: mutating requests must come from the local editor.
+
+        The server binds to 127.0.0.1 with no auth, so a malicious web page
+        could otherwise fire state-changing (and config-writing) POSTs at
+        it.  Require a local Host, and when the browser sends an Origin or
+        Referer, require it to be local too.
+        """
+        if request.method not in ("POST", "PUT", "DELETE", "PATCH"):
+            return None
+        if (request.host.rsplit(":", 1)[0]) not in _LOCAL_HOSTNAMES:
+            return Response("Forbidden: non-local Host.", status=403)
+        origin = request.headers.get("Origin") or request.headers.get("Referer")
+        if origin and urlparse(origin).hostname not in _LOCAL_HOSTNAMES:
+            return Response("Forbidden: cross-origin request rejected.", status=403)
+        return None
+
     date_format = str(issuer.get("date_format") or "%Y-%m-%d")
 
     # ------------------------------------------------------------------
@@ -164,8 +186,17 @@ def create_app(
         )
 
     def _snapshot_lines(inv: Invoice) -> None:
-        """Remember the current lines so the next Undo can restore them."""
-        app.state["undo"] = copy.deepcopy(inv.lines)  # type: ignore[attr-defined]
+        """Remember the current editing state so Undo can restore it.
+
+        Lines alone are not enough: a bill-to switch changes VAT/extras on
+        the lines, so restoring them must also restore the client (and the
+        roster selection) they belong to.
+        """
+        app.state["undo"] = {  # type: ignore[attr-defined]
+            "lines": copy.deepcopy(inv.lines),
+            "client_key": app.state["current_client_key"],  # type: ignore[attr-defined]
+            "selected_people": set(app.state["selected_people"]),  # type: ignore[attr-defined]
+        }
 
     _undo_svg = (
         '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
@@ -178,12 +209,6 @@ def create_app(
         the line-items header meta, the preview count, and the undo button
         (greyed out while there is no history)."""
         count = len(inv.lines)
-        meta = (
-            f'<span id="items-meta" hx-swap-oob="outerHTML" class="hv-num card-meta">'
-            f"{count} · {fmt_money(inv.grand_total)} {escape(inv.currency)} EUR"
-            f"</span>"
-        )
-        # currency displayed once; strip duplicate token
         meta = (
             f'<span id="items-meta" hx-swap-oob="outerHTML" class="hv-num card-meta">'
             f"{count} · {fmt_money(inv.grand_total)} {escape(inv.currency)}"
@@ -439,8 +464,7 @@ def create_app(
     ) -> str:
         """OOB status span swapped into #fetch-status next to the button.
 
-        ``extra_html`` must already be escaped/safe markup (e.g. the
-        click-to-pick user buttons).
+        ``extra_html`` must already be escaped/safe markup.
         """
         css = "fetch-err" if error else "fetch-ok"
         return (
@@ -516,45 +540,6 @@ def create_app(
         _derive_from_import(inv)
         return _lines_response(inv, _import_note_oob())
 
-    @app.post("/settings/harvest-user")
-    def pick_harvest_user() -> Response:
-        """Set harvest_user from a warning button and re-import.
-
-        Persists the choice to issuer.json (when a config path exists) and
-        re-fetches the last import range so the table immediately shows
-        only the picked person's hours.
-        """
-        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
-
-        def _respond2(status: str, *, error: bool = False) -> Response:
-            return _lines_response(inv, _fetch_status(status, error=error))
-
-        name = request.form.get("user", "").strip()
-        if not name:
-            return _respond2("No user name given.", error=True)
-        issuer["harvest_user"] = name
-        suffix = _persist_json(issuer_path, issuer)
-
-        rng = app.state["last_fetch_range"]  # type: ignore[attr-defined]
-        if fetch_callback is None or rng is None:
-            return _respond2(f"harvest_user set to '{name}'{suffix}.")
-        ps, pe = rng
-        try:
-            raw_lines = fetch_callback(ps, pe)
-        except Exception as exc:  # noqa: BLE001 — surface fetch errors inline
-            return _respond2(str(exc), error=True)
-        _store_import(raw_lines, merge=True)
-        _snapshot_lines(inv)
-        _derive_from_import(inv)
-        return _lines_response(
-            inv,
-            _fetch_status(
-                f"harvest_user set to '{name}'{suffix}; imported "
-                f"{len(inv.lines)} lines for {ps} to {pe}."
-            )
-            + _import_note_oob(),
-        )
-
     def _client_inset_oob() -> str:
         """OOB re-render of the client picker and details inset."""
         ctx = {
@@ -580,7 +565,6 @@ def create_app(
         clients_map: dict[str, dict[str, str]] = app.state["clients"]  # type: ignore[attr-defined]
         key = request.form.get("client_key", "").strip()
         entry = clients_map.get(key)
-
         if entry is None:
             return _lines_response(inv)
 
@@ -608,17 +592,30 @@ def create_app(
 
     @app.post("/lines/undo")
     def undo_lines() -> Response:
-        """Restore the line items from before the last change.
+        """Restore the editing state from before the last change.
 
-        The current lines become the new snapshot, so a second Undo
-        re-applies the change (acts as redo).  No-op without history.
+        Restores the lines together with the bill-to client and roster
+        selection they were derived from.  The replaced state becomes the
+        new snapshot, so a second Undo re-applies the change (acts as
+        redo).  No-op without history.
         """
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         snapshot = app.state["undo"]  # type: ignore[attr-defined]
-        if snapshot is not None:
-            app.state["undo"] = copy.deepcopy(inv.lines)  # type: ignore[attr-defined]
-            inv.lines[:] = snapshot
-        return _lines_response(inv)
+        if snapshot is None:
+            return _lines_response(inv)
+        app.state["undo"] = {  # type: ignore[attr-defined]
+            "lines": copy.deepcopy(inv.lines),
+            "client_key": app.state["current_client_key"],  # type: ignore[attr-defined]
+            "selected_people": set(app.state["selected_people"]),  # type: ignore[attr-defined]
+        }
+        inv.lines[:] = snapshot["lines"]
+        clients_map: dict[str, dict[str, str]] = app.state["clients"]  # type: ignore[attr-defined]
+        key = snapshot["client_key"]
+        if key is not None and key in clients_map:
+            app.state["client"] = clients_map[key]  # type: ignore[attr-defined]
+            app.state["current_client_key"] = key  # type: ignore[attr-defined]
+        app.state["selected_people"] = snapshot["selected_people"]  # type: ignore[attr-defined]
+        return _lines_response(inv, _client_inset_oob() + _import_note_oob())
 
     @app.post("/lines/reorder")
     def reorder_lines() -> Response:
@@ -691,10 +688,18 @@ def create_app(
         if path is None:
             return " (this session only; no config file to write)"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        # Atomic: write a sibling temp file, then replace, so a crash
+        # mid-write can never truncate the config.
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        tmp_file = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+            tmp_file.replace(path)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                tmp_file.unlink()
+            raise
         return f" and written to {path}"
 
     def _render_clients_block(status: str | None = None, *, error: bool = False) -> str:
@@ -817,10 +822,16 @@ def create_app(
         clients_map: dict[str, dict[str, object]] = app.state["clients"]  # type: ignore[attr-defined]
         original = request.form.get("original_key", "").strip()
         new_key = request.form.get("key", "").strip()
+        key_error: str | None = None
         if not new_key:
-            return _render_clients_block(
-                "Harvest client name (key) is required.", error=True
+            key_error = "Harvest client name (key) is required."
+        elif original and new_key != original and new_key in clients_map:
+            key_error = (
+                f"A client named '{new_key}' already exists — renaming "
+                f"'{original}' to it would overwrite that entry."
             )
+        if key_error:
+            return _render_clients_block(key_error, error=True)
 
         fields = (
             "name",

@@ -179,6 +179,8 @@ button { color: var(--ink); }
   cursor: pointer;
 }
 .split-main:hover { background: var(--orange-hover); }
+/* No dropdown (sending unavailable): the primary button is fully rounded. */
+.split-main.solo { border-radius: 11px; }
 .menu { position: relative; display: flex; }
 .menu-caret {
   list-style: none;
@@ -1329,6 +1331,16 @@ button:focus-visible, a:focus-visible {
 
 /* ===== Email settings (token picker, test footer) ===== */
 .opt { font-weight: 400; color: var(--text-4); }
+.radio-row { display: flex; gap: 20px; }
+.radio-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.radio-opt input { accent-color: var(--orange); width: 16px; height: 16px; }
 .email-foot {
   display: flex;
   align-items: center;

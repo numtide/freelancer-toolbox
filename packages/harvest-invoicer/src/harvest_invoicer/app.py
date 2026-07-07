@@ -608,6 +608,8 @@ def create_app(
             output_path=str(output_path),
             has_undo=bool(app.state["undo_stack"]),  # type: ignore[attr-defined]
             has_redo=bool(app.state["redo_stack"]),  # type: ignore[attr-defined]
+            send_available=_smtp_enabled(),
+            default_action=_default_action(),
             **_source_ctx(),
         )
 
@@ -1124,7 +1126,24 @@ def create_app(
         "username",
         "subject_template",
         "message_template",
+        "default_action",
     )
+
+    def _smtp_enabled() -> bool:
+        """Whether sending is configured (host set in the DB or the env)."""
+        cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
+        return bool(str(cfg.get("host") or "").strip()) or bool(
+            os.environ.get("HARVEST_INVOICER_SMTP_HOST", "").strip()
+        )
+
+    def _default_action() -> str:
+        """Which action the split-button's primary runs: 'generate' or 'send'.
+
+        Only 'send' when sending is actually enabled.
+        """
+        cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
+        action = str(cfg.get("default_action") or "generate")
+        return "send" if action == "send" and _smtp_enabled() else "generate"
 
     @app.get("/settings")
     def settings_page() -> str:
@@ -1142,10 +1161,12 @@ def create_app(
         email["message_template"] = (
             email["message_template"] or DEFAULT_MESSAGE_TEMPLATE
         )
+        email["default_action"] = email["default_action"] or "generate"
         # Whether a password is available from the environment (never shown).
         email["password_set"] = bool(
             os.environ.get("HARVEST_INVOICER_SMTP_PASSWORD", "").strip()
         )
+        email["smtp_enabled"] = _smtp_enabled()
         return render_template(
             "settings.html",
             issuer=issuer,

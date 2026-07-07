@@ -323,11 +323,11 @@ class TestPreviewPdf:
         resp = client.get("/")
         # Logo links back to the editor
         assert b'class="brand-link" href="/"' in resp.data
-        # Settings icon button, split-button dropdown with Send invoice
+        # Settings icon button + the Generate PDF split button.
         assert b'aria-label="Settings"' in resp.data
-        assert b"Send invoice" in resp.data
-        assert b'class="split-main"' in resp.data
-        # Generate PDF lives only on the primary button, not in the dropdown
+        assert b"split-main" in resp.data
+        # SMTP is not configured in this fixture, so Send invoice is hidden.
+        assert b"Send invoice" not in resp.data
         assert resp.data.count(b"Generate PDF") == 1
         assert b'rel="icon"' in resp.data
         # Dark totals bar and ghost add button per the design handoff
@@ -2090,10 +2090,48 @@ class TestSendInvoice:
         assert b"Invoice 2026-06" in body  # subject resolved
         assert b'name="copy_self"' in body
 
-    def test_send_button_opens_modal(self, client: FlaskClient) -> None:
-        resp = client.get("/")
+    def test_send_button_opens_modal_when_smtp_enabled(self, tmp_path: Path) -> None:
+        app = self._app(tmp_path, email_config={"host": "smtp.test"})
+        resp = app.test_client().get("/")
         assert b'hx-get="/send/modal"' in resp.data
         assert b'id="modal-root"' in resp.data
+
+
+class TestToolbarButton:
+    """The split-button shows Send invoice only when SMTP is configured, and
+    honors the configured default (primary) action."""
+
+    def _body(self, tmp_path: Path, email: dict[str, object]) -> bytes:
+        app = _make_app(tmp_path, email_config=email)
+        return app.test_client().get("/").data
+
+    def test_send_hidden_when_smtp_disabled(self, tmp_path: Path) -> None:
+        body = self._body(tmp_path, {})
+        assert b"Send invoice" not in body
+        assert b"menu-caret" not in body  # no dropdown at all
+        assert b"split-main solo" in body  # fully-rounded standalone button
+
+    def test_send_in_dropdown_when_enabled_default_generate(
+        self, tmp_path: Path
+    ) -> None:
+        body = self._body(tmp_path, {"host": "smtp.test"})
+        assert b"menu-caret" in body
+        assert b'hx-get="/send/modal"' in body  # send available
+        # Primary is Generate PDF (posts /render); send is the dropdown row.
+        primary = body[body.index(b'class="split-main"') :].split(b"</button>", 1)[0]
+        assert b'hx-post="/render"' in primary
+
+    def test_send_is_primary_when_default_send(self, tmp_path: Path) -> None:
+        body = self._body(tmp_path, {"host": "smtp.test", "default_action": "send"})
+        primary = body[body.index(b'class="split-main"') :].split(b"</button>", 1)[0]
+        assert b'hx-get="/send/modal"' in primary  # Send invoice is primary
+        assert b'hx-post="/render"' in body  # Generate moved to dropdown
+
+    def test_default_send_ignored_without_host(self, tmp_path: Path) -> None:
+        # Asking for 'send' default but no SMTP host -> falls back to Generate.
+        body = self._body(tmp_path, {"default_action": "send"})
+        assert b"Send invoice" not in body
+        assert b"split-main solo" in body
 
 
 class TestEmailSettings:

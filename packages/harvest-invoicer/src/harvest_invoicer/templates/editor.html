@@ -34,24 +34,44 @@
         <a class="icon-btn" href="/settings" title="Settings" aria-label="Settings">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         </a>
+        {# The split-button's primary action is the configured default; the
+           other action moves to the dropdown. "Send invoice" only appears
+           when SMTP is configured (send_available). #}
+        {%- macro generate_attrs() -%}
+          title="Output: {{ output_path }}" hx-post="/render" hx-target="#render-status" hx-swap="outerHTML" hx-disabled-elt="this"
+        {%- endmacro -%}
+        {%- macro send_attrs() -%}
+          title="Compose and email the invoice PDF to the client" hx-get="/send/modal" hx-target="#modal-root" hx-swap="innerHTML"
+        {%- endmacro -%}
+        {% set icon_file %}<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>{% endset %}
+        {% set icon_plane %}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FA5D00" stroke-width="1.8"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4z"></path></svg>{% endset %}
+        {% set primary_send = send_available and default_action == 'send' %}
         <div class="split">
-          <button type="button" class="split-main" title="Output: {{ output_path }}"
-            hx-post="/render" hx-target="#render-status" hx-swap="outerHTML"
-            hx-disabled-elt="this">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
-            Generate PDF
+          {% if primary_send %}
+          <button type="button" class="split-main" {{ send_attrs() }}>
+            {{ icon_plane }} Send invoice
           </button>
+          {% else %}
+          <button type="button" class="split-main{{ '' if send_available else ' solo' }}" {{ generate_attrs() }}>
+            {{ icon_file }} Generate PDF
+          </button>
+          {% endif %}
+          {% if send_available %}
           <details class="menu">
             <summary class="menu-caret" aria-label="More invoice actions">&#9662;</summary>
             <div class="menu-items">
-              <button type="button" class="send-row"
-                title="Compose and email the invoice PDF to the client"
-                hx-get="/send/modal" hx-target="#modal-root" hx-swap="innerHTML">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FA5D00" stroke-width="1.8"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4z"></path></svg>
-                Send invoice
+              {% if primary_send %}
+              <button type="button" {{ generate_attrs() }}>
+                {{ icon_file }} Generate PDF
               </button>
+              {% else %}
+              <button type="button" class="send-row" {{ send_attrs() }}>
+                {{ icon_plane }} Send invoice
+              </button>
+              {% endif %}
             </div>
           </details>
+          {% endif %}
         </div>
       </div>
     </div>

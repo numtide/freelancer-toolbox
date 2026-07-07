@@ -237,6 +237,19 @@
                   value="{{ '••••••••' if email.password_set else '' }}" disabled>
                 <div class="help">Set via the HARVEST_INVOICER_SMTP_PASSWORD environment variable — never stored here.</div>
               </div>
+              <div class="wide">
+                <label class="slabel">Primary toolbar action</label>
+                <div class="radio-row">
+                  <label class="radio-opt"><input type="radio" name="default_action" value="generate"
+                    {{ 'checked' if email.default_action != 'send' }}> Generate PDF</label>
+                  <label class="radio-opt"><input type="radio" name="default_action" value="send"
+                    {{ 'checked' if email.default_action == 'send' }}> Send invoice</label>
+                </div>
+                <div class="help">
+                  Which action the main toolbar button runs; the other moves to the dropdown.
+                  {%- if not email.smtp_enabled %} "Send invoice" only appears once an SMTP host is set.{% endif %}
+                </div>
+              </div>
             </div>
 
             <div class="subgroup bordered">Default message</div>

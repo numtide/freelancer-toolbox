@@ -330,6 +330,20 @@ button { color: var(--ink); }
   padding: 16px 18px;
 }
 .source-pane .eyebrow { margin-bottom: 12px; }
+/* The range grid lives in a fixed-width pane; let its columns and the date
+   inputs shrink (grid items default to min-width:auto and won't otherwise),
+   and use the smaller field size the design calls for so both fit. */
+.source-pane .grid2 { gap: 10px; }
+.source-pane .grid2 > div { min-width: 0; }
+/* When "Use the invoice billing period" is checked the manual range is
+   hidden — but .grid2's display:grid would otherwise beat the [hidden]
+   attribute, so the From/To fields must be explicitly collapsed. */
+.grid2[hidden] { display: none; }
+.source-pane input[type=date] {
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 13px;
+}
 .pane-divider { height: 1px; background: var(--line); margin: 14px 0; }
 .roster-pane { padding: 0; overflow: hidden; }
 .roster-head {

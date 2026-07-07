@@ -45,10 +45,8 @@
             <summary class="menu-caret" aria-label="More invoice actions">&#9662;</summary>
             <div class="menu-items">
               <button type="button" class="send-row"
-                title="Email the invoice PDF to the bill-to client (SMTP via HARVEST_INVOICER_SMTP_* environment)"
-                hx-post="/send" hx-target="#render-status" hx-swap="outerHTML"
-                hx-disabled-elt="this"
-                hx-confirm="Email the invoice PDF to the bill-to client now?">
+                title="Compose and email the invoice PDF to the client"
+                hx-get="/send/modal" hx-target="#modal-root" hx-swap="innerHTML">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FA5D00" stroke-width="1.8"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4z"></path></svg>
                 Send invoice
               </button>
@@ -167,7 +165,36 @@
 
   </main>
 
+  <!-- Send-invoice modal is fetched here on demand. -->
+  <div id="modal-root"></div>
+
   <script>
+    // ---- Send-invoice modal: close on backdrop / × / Cancel / Escape ----
+    (function () {
+      function closeModal() {
+        var root = document.getElementById("modal-root");
+        if (root) root.innerHTML = "";
+      }
+      document.addEventListener("click", function (e) {
+        var closer = e.target.closest("[data-modal-close]");
+        if (!closer) return;
+        // The overlay only closes on a direct backdrop click, not on clicks
+        // that bubbled up from inside the card.
+        if (closer.classList.contains("modal-overlay") && e.target !== closer) return;
+        closeModal();
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && document.querySelector(".modal-overlay")) closeModal();
+      });
+      // Focus the first field when the modal loads.
+      document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.target && evt.target.id === "modal-root") {
+          var f = evt.target.querySelector('input[name="to"]');
+          if (f) f.focus();
+        }
+      });
+    })();
+
     // ---- Preview control: PDF mode default, Open in window, eye toggle ----
     (function () {
       var frame = document.getElementById("preview-frame");

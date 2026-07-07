@@ -6,7 +6,7 @@ import hashlib
 import json
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Any, Self
 
 import pytest
 from harvest_invoicer import db as state_db
@@ -1958,109 +1958,202 @@ class TestPdfCache:
         assert (tmp_path / "invoice-2026-06.pdf").read_bytes() == b"%PDF-fake"
 
 
+class _FakeSMTP:
+    """Records sent messages; stands in for smtplib.SMTP / SMTP_SSL."""
+
+    sent: list[Any] = []  # noqa: RUF012 — shared capture across instances
+
+    def __init__(self, host: str, port: int, timeout: int = 0) -> None:
+        self.host, self.port = host, port
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def ehlo(self) -> None:
+        pass
+
+    def has_extn(self, _name: str) -> bool:
+        return True
+
+    def starttls(self) -> None:
+        pass
+
+    def login(self, _user: str, _password: str) -> None:
+        pass
+
+    def noop(self) -> tuple[int, bytes]:
+        return (250, b"ok")
+
+    def send_message(self, msg: Any, to_addrs: list[str] | None = None) -> None:
+        type(self).sent.append((msg, to_addrs))
+
+
 class TestSendInvoice:
-    """POST /send emails the PDF to the bill-to client via env-configured SMTP."""
+    """POST /send emails the PDF using the modal fields + stored SMTP config.
+
+    The password is env-only; every other setting comes from the DB record.
+    """
 
     @pytest.fixture(autouse=True)
     def _fake_renderer(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("harvest_invoicer.app.render_html", lambda *_a, **_k: "<x>")
         monkeypatch.setattr(
-            "harvest_invoicer.app.pdf_from_html",
-            lambda _html, _utd=None: b"%PDF-fake",
+            "harvest_invoicer.app.pdf_from_html", lambda _h, _u=None: b"%PDF-fake"
         )
-        for var in ("HOST", "PORT", "USERNAME", "PASSWORD", "FROM"):
+        for var in ("HOST", "PORT", "USERNAME", "PASSWORD", "FROM", "ENCRYPTION"):
             monkeypatch.delenv(f"HARVEST_INVOICER_SMTP_{var}", raising=False)
+        _FakeSMTP.sent = []
 
-    def test_send_without_smtp_config_reports_inline(self, tmp_path: Path) -> None:
+    def _app(self, tmp_path: Path, **overrides: object):  # noqa: ANN202
         client_entry = _fake_client() | {"email": "billing@acme.test"}
-        c = _make_app(tmp_path, client=client_entry).test_client()
-        resp = c.post("/send")
+        return _make_app(tmp_path, client=client_entry, **overrides)
+
+    def _send(self, c: FlaskClient, **form: str):  # noqa: ANN202
+        data = {"to": "billing@acme.test", "subject": "S", "message": "M", **form}
+        return c.post("/send", data=data)
+
+    def test_send_without_smtp_config_errs(self, tmp_path: Path) -> None:
+        resp = self._send(self._app(tmp_path).test_client())
         assert resp.status_code == 200
-        assert b"render-err" in resp.data
-        assert b"SMTP is not configured" in resp.data
+        assert _toast_kind(resp) == "err"
+        assert "host is not configured" in _toast_msg(resp)
 
-    def test_send_without_client_email_reports_inline(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("HARVEST_INVOICER_SMTP_HOST", "smtp.test")
-        c = _make_app(tmp_path).test_client()
-        resp = c.post("/send")
-        assert b"render-err" in resp.data
-        assert b"no email address" in resp.data
+    def test_send_without_recipient_errs(self, tmp_path: Path) -> None:
+        app = self._app(tmp_path, email_config={"host": "smtp.test"})
+        resp = self._send(app.test_client(), to="")
+        assert _toast_kind(resp) == "err"
+        assert "No recipient" in _toast_msg(resp)
 
-    def test_send_success_attaches_pdf(
+    def test_send_success_attaches_pdf_and_copies_self(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import smtplib  # noqa: PLC0415
 
-        sent = []
-
-        class FakeSMTP:
-            def __init__(self, host: str, port: int, timeout: int = 0) -> None:
-                self.host, self.port = host, port
-
-            def __enter__(self) -> Self:
-                return self
-
-            def __exit__(self, *exc: object) -> None:
-                return None
-
-            def ehlo(self) -> None:
-                pass
-
-            def has_extn(self, _name: str) -> bool:
-                return False
-
-            def login(self, _user: str, _password: str) -> None:
-                pass
-
-            def send_message(self, msg: object) -> None:
-                sent.append(msg)
-
-        monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
-        monkeypatch.setenv("HARVEST_INVOICER_SMTP_HOST", "smtp.test")
-        client_entry = _fake_client() | {"email": "billing@acme.test"}
-        c = _make_app(tmp_path, client=client_entry).test_client()
-        resp = c.post("/send")
-        assert b"emailed to billing@acme.test" in resp.data
-        assert len(sent) == 1
-        msg = sent[0]
+        monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+        app = self._app(
+            tmp_path,
+            issuer=_fake_issuer() | {"email": "me@jane.test"},
+            email_config={"host": "smtp.test", "from_address": "me@jane.test"},
+        )
+        resp = self._send(app.test_client(), copy_self="on")
+        assert _toast_kind(resp) == "ok"
+        assert "Invoice sent" in _toast_msg(resp)
+        assert len(_FakeSMTP.sent) == 1
+        msg, to_addrs = _FakeSMTP.sent[0]
         assert msg["To"] == "billing@acme.test"
-        assert "Invoice 2026-06" in msg["Subject"]
-        attachments = list(msg.iter_attachments())
-        assert attachments[0].get_filename() == "invoice-2026-06.pdf"
-        assert attachments[0].get_content() == b"%PDF-fake"
+        assert msg["Cc"] == "me@jane.test"
+        assert to_addrs == ["billing@acme.test", "me@jane.test"]
+        att = next(iter(msg.iter_attachments()))
+        assert att.get_filename() == "invoice-2026-06.pdf"
+        assert att.get_content() == b"%PDF-fake"
+        # Success returns an empty body so htmx clears #modal-root (closes it).
+        assert resp.data == b""
 
-    def test_smtp_failure_reports_inline(
+    def test_send_error_keeps_modal_open(self, tmp_path: Path) -> None:
+        # An error must not swap #modal-root away — the edits survive a retry.
+        resp = self._send(self._app(tmp_path).test_client())  # no SMTP host
+        assert _toast_kind(resp) == "err"
+        assert resp.headers.get("HX-Reswap") == "none"
+
+    def test_smtp_failure_errs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import smtplib  # noqa: PLC0415
 
-        def boom(*_args: object, **_kwargs: object) -> object:
+        def boom(*_a: object, **_k: object) -> object:
             raise smtplib.SMTPConnectError(421, "unreachable")
 
         monkeypatch.setattr(smtplib, "SMTP", boom)
-        monkeypatch.setenv("HARVEST_INVOICER_SMTP_HOST", "smtp.test")
-        client_entry = _fake_client() | {"email": "billing@acme.test"}
-        c = _make_app(tmp_path, client=client_entry).test_client()
-        resp = c.post("/send")
-        assert b"render-err" in resp.data
-        assert b"Send failed" in resp.data
+        app = self._app(tmp_path, email_config={"host": "smtp.test"})
+        resp = self._send(app.test_client())
+        assert _toast_kind(resp) == "err"
+        assert "Send failed" in _toast_msg(resp)
 
-    def test_bad_smtp_port_reports_inline(
+    def test_bad_port_errs(self, tmp_path: Path) -> None:
+        app = self._app(
+            tmp_path, email_config={"host": "smtp.test", "port": "not-a-port"}
+        )
+        resp = self._send(app.test_client())
+        assert _toast_kind(resp) == "err"
+        assert "port must be a number" in _toast_msg(resp).lower()
+
+    def test_modal_seeded_from_templates(self, tmp_path: Path) -> None:
+        app = self._app(
+            tmp_path,
+            email_config={"subject_template": "{company} — Invoice {number}"},
+        )
+        body = app.test_client().get("/send/modal").data
+        assert b'value="billing@acme.test"' in body  # To prefilled
+        assert b"Invoice 2026-06" in body  # subject resolved
+        assert b'name="copy_self"' in body
+
+    def test_send_button_opens_modal(self, client: FlaskClient) -> None:
+        resp = client.get("/")
+        assert b'hx-get="/send/modal"' in resp.data
+        assert b'id="modal-root"' in resp.data
+
+
+class TestEmailSettings:
+    """Settings > Email: persisted config (no password) + connection test."""
+
+    def test_email_section_rendered(self, tmp_path: Path) -> None:
+        c = _make_app(tmp_path).test_client()
+        body = c.get("/settings").data
+        assert b'id="email"' in body
+        assert b'name="host"' in body
+        assert b'name="encryption"' in body
+        assert b"Insert token" in body
+        assert b"{company}" in body
+        # The password field is never populated from anywhere.
+        assert b'name="_password_display"' in body
+
+    def test_save_email_persists_without_password(self, tmp_path: Path) -> None:
+        db = tmp_path / "state.db"
+        app = _make_app(tmp_path, db_path=db)
+        with app.test_client() as c:
+            resp = c.post(
+                "/settings/email",
+                data={
+                    "host": "smtp.test",
+                    "port": "465",
+                    "encryption": "ssl",
+                    "from_address": "me@jane.test",
+                    "subject_template": "{company} INV {number}",
+                },
+            )
+        assert _toast_kind(resp) == "ok"
+        saved = state_db.get_email(db)
+        assert saved["host"] == "smtp.test"
+        assert saved["encryption"] == "ssl"
+        assert "password" not in saved  # never stored
+
+    def test_save_email_validates_port(self, tmp_path: Path) -> None:
+        c = _make_app(tmp_path, db_path=tmp_path / "s.db").test_client()
+        resp = c.post("/settings/email", data={"port": "abc"})
+        assert _toast_kind(resp) == "err"
+        assert "Port must be a number" in _toast_msg(resp)
+
+    def test_send_test_verifies_connection(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("HARVEST_INVOICER_SMTP_HOST", "smtp.test")
-        monkeypatch.setenv("HARVEST_INVOICER_SMTP_PORT", "not-a-port")
-        client_entry = _fake_client() | {"email": "billing@acme.test"}
-        c = _make_app(tmp_path, client=client_entry).test_client()
-        resp = c.post("/send")
-        assert resp.status_code == 200
-        assert b"render-err" in resp.data
-        assert b"SMTP_PORT must be a number" in resp.data
+        import smtplib  # noqa: PLC0415
 
-    def test_send_button_wired_in_editor(self, client: FlaskClient) -> None:
-        resp = client.get("/")
-        assert b'hx-post="/send"' in resp.data
+        monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+        c = _make_app(tmp_path).test_client()
+        resp = c.post(
+            "/send/test", data={"host": "smtp.test", "encryption": "starttls"}
+        )
+        assert resp.status_code == 204
+        assert _toast_kind(resp) == "ok"
+        assert "verified" in _toast_msg(resp).lower()
+
+    def test_send_test_reports_missing_host(self, tmp_path: Path) -> None:
+        c = _make_app(tmp_path).test_client()
+        resp = c.post("/send/test", data={})
+        assert _toast_kind(resp) == "err"
 
 
 class TestToasts:

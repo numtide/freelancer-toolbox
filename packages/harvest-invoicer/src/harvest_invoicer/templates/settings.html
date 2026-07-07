@@ -41,6 +41,7 @@
       <a class="snav-link active" href="#issuer">Issuer</a>
       <a class="snav-link" href="#banking">Banking</a>
       <a class="snav-link" href="#defaults">Invoice defaults</a>
+      <a class="snav-link" href="#email">Email</a>
       <a class="snav-link" href="#clients">Clients</a>
     </nav>
 
@@ -168,6 +169,127 @@
 
       </form>
 
+      <form id="email-form" hx-post="/settings/email" hx-target="#email-status"
+        hx-swap="outerHTML" style="display:contents;">
+        <section id="email" class="scard">
+          <div class="scard-head">
+            <div>
+              <h2>Email</h2>
+              <p>SMTP server used to send invoices to your clients. The password is
+                read from the environment (HARVEST_INVOICER_SMTP_PASSWORD) and never stored.</p>
+            </div>
+          </div>
+          <div class="scard-body">
+            <div class="subgroup">Sender</div>
+            <div class="sgrid" style="margin-bottom:24px;">
+              <div>
+                <label class="slabel">From name</label>
+                <input type="text" name="from_name" value="{{ email.from_name }}" placeholder="{{ issuer.get('name', '') }}">
+              </div>
+              <div>
+                <label class="slabel">From address</label>
+                <input type="text" class="hv-num" name="from_address" value="{{ email.from_address }}" placeholder="{{ issuer.get('email', '') }}">
+              </div>
+              <div class="wide">
+                <label class="slabel">Reply-to <span class="opt">(optional)</span></label>
+                <input type="text" class="hv-num" name="reply_to" value="{{ email.reply_to }}">
+              </div>
+            </div>
+
+            <div class="subgroup bordered">SMTP server</div>
+            <div class="sgrid" style="grid-template-columns:2fr 0.7fr 1fr;margin-bottom:16px;">
+              <div>
+                <label class="slabel">Host</label>
+                <input type="text" class="hv-num" name="host" value="{{ email.host }}" placeholder="smtp.example.com">
+              </div>
+              <div>
+                <label class="slabel">Port</label>
+                <input type="text" class="hv-num" name="port" value="{{ email.port }}" placeholder="587">
+              </div>
+              <div>
+                <label class="slabel">Encryption</label>
+                <div class="dd" id="enc-dd">
+                  <button type="button" class="input-like dd-btn" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="enc-label" data-labels>{{ {'starttls':'STARTTLS','ssl':'SSL/TLS','none':'None'}[email.encryption] }}</span>
+                    <span class="dd-caret">&#9662;</span>
+                  </button>
+                  <div class="dd-panel" role="listbox" aria-label="Encryption" hidden>
+                    {% for val, lab in [('starttls','STARTTLS'), ('ssl','SSL/TLS'), ('none','None')] %}
+                    <div class="dd-row enc-row" role="option" tabindex="-1"
+                      data-value="{{ val }}" data-label="{{ lab }}"
+                      aria-selected="{{ 'true' if email.encryption == val else 'false' }}">{{ lab }}
+                      {%- if email.encryption == val %}<span class="dd-check">&#10003;</span>{% endif %}</div>
+                    {% endfor %}
+                  </div>
+                  <input type="hidden" name="encryption" id="enc-input" value="{{ email.encryption }}">
+                </div>
+                <div class="help">STARTTLS (587) or SSL/TLS (465).</div>
+              </div>
+            </div>
+            <div class="sgrid">
+              <div>
+                <label class="slabel">Username</label>
+                <input type="text" class="hv-num" name="username" value="{{ email.username }}">
+              </div>
+              <div>
+                <label class="slabel">Password</label>
+                <input type="password" name="_password_display" autocomplete="off"
+                  value="{{ '••••••••' if email.password_set else '' }}" disabled>
+                <div class="help">Set via the HARVEST_INVOICER_SMTP_PASSWORD environment variable — never stored here.</div>
+              </div>
+            </div>
+
+            <div class="subgroup bordered">Default message</div>
+            <div class="sgrid">
+              {% set tokens = [
+                ('company', 'Client legal name'),
+                ('number', 'Invoice number'),
+                ('total', 'Invoice total with currency'),
+                ('due', 'Due date'),
+                ('issued', 'Issue date'),
+                ('period', 'Billing period')] %}
+              {% macro token_menu(target) %}
+              <div class="token-menu" data-menu-for="{{ target }}" hidden>
+                <div class="token-menu-head">Insert a token</div>
+                {% for tok, desc in tokens %}
+                <button type="button" class="token-row" data-token="{{ '{' ~ tok ~ '}' }}">
+                  <span class="hv-num token-chip">{{ '{' ~ tok ~ '}' }}</span>
+                  <span class="token-desc">{{ desc }}</span>
+                </button>
+                {% endfor %}
+              </div>
+              {% endmacro %}
+              <div class="wide token-field">
+                <div class="token-head">
+                  <label class="slabel">Subject template</label>
+                  <button type="button" class="token-btn" data-target="subject_template">
+                    <span class="token-icon">{&nbsp;}</span> Insert token</button>
+                  {{ token_menu('subject_template') }}
+                </div>
+                <input type="text" name="subject_template" id="subject_template" value="{{ email.subject_template }}">
+              </div>
+              <div class="wide token-field">
+                <div class="token-head">
+                  <label class="slabel">Message template</label>
+                  <button type="button" class="token-btn" data-target="message_template">
+                    <span class="token-icon">{&nbsp;}</span> Insert token</button>
+                  {{ token_menu('message_template') }}
+                </div>
+                <textarea name="message_template" id="message_template" rows="6" style="resize:vertical;line-height:1.5;">{{ email.message_template }}</textarea>
+              </div>
+            </div>
+            <div class="email-foot">
+              <button type="button" class="btn-outline" id="send-test-btn"
+                hx-post="/send/test" hx-include="#email-form" hx-swap="none">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4z"></path></svg>
+                Send test email
+              </button>
+              <span id="email-status"></span>
+            </div>
+          </div>
+        </section>
+      </form>
+
       <section id="clients" class="scard">
         <div class="scard-head">
           <div>
@@ -231,11 +353,70 @@
     // (an interleaved error status can be overwritten — acceptable).
     document.getElementById("save-all-btn").addEventListener("click", function () {
       htmx.trigger(document.getElementById("issuer-form"), "submit");
+      htmx.trigger(document.getElementById("email-form"), "submit");
       document.querySelectorAll("#clients-block form").forEach(function (f) {
         var key = f.querySelector('[name="key"]');
         if (key && key.value.trim() !== "") htmx.trigger(f, "submit");
       });
     });
+
+    // Encryption custom dropdown (updates the hidden #enc-input).
+    (function () {
+      var dd = document.getElementById("enc-dd");
+      if (!dd) return;
+      var btn = dd.querySelector(".dd-btn");
+      var panel = dd.querySelector(".dd-panel");
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        panel.hidden = !panel.hidden;
+        btn.setAttribute("aria-expanded", String(!panel.hidden));
+        btn.classList.toggle("open", !panel.hidden);
+      });
+      dd.querySelectorAll(".enc-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          document.getElementById("enc-input").value = row.dataset.value;
+          document.getElementById("enc-label").textContent = row.dataset.label;
+          panel.hidden = true;
+          btn.classList.remove("open");
+          dd.querySelectorAll(".enc-row").forEach(function (r) {
+            r.setAttribute("aria-selected", String(r === row));
+          });
+          document.querySelector(".settings-content")
+            .dispatchEvent(new Event("input", { bubbles: true }));
+        });
+      });
+    })();
+
+    // "Insert token" popups: one open at a time; click a token to append it.
+    (function () {
+      function closeAll() {
+        document.querySelectorAll(".token-menu").forEach(function (m) { m.hidden = true; });
+      }
+      document.addEventListener("click", function (e) {
+        var trigger = e.target.closest(".token-btn");
+        if (trigger) {
+          e.stopPropagation();
+          var menu = trigger.parentElement.querySelector(".token-menu");
+          var wasHidden = menu.hidden;
+          closeAll();
+          menu.hidden = !wasHidden;
+          return;
+        }
+        var row = e.target.closest(".token-row");
+        if (row) {
+          var forField = row.closest(".token-menu").dataset.menuFor;
+          var field = document.getElementById(forField);
+          var tok = row.dataset.token;
+          var sep = field.value && field.tagName === "INPUT" ? " " : "";
+          field.value = field.value + sep + tok;
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+          closeAll();
+          field.focus();
+          return;
+        }
+        if (!e.target.closest(".token-menu")) closeAll();
+      });
+    })();
     // Unsaved-changes guard: warn before leaving with pending edits.
     (function () {
       var dirty = false;

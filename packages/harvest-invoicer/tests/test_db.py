@@ -9,9 +9,11 @@ from harvest_invoicer.db import (
     default_db_path,
     get_clients,
     get_draft,
+    get_email,
     get_issuer,
     save_clients,
     save_draft,
+    save_email,
     save_issuer,
 )
 
@@ -93,4 +95,34 @@ def test_v1_database_migrates_to_v2(tmp_path: Path) -> None:
     assert get_draft(db) is None  # migration ran, table exists
     save_draft(db, {"key": "x"})
     assert get_draft(db) == {"key": "x"}
+    assert get_issuer(db) == {"name": "Jane"}  # existing data untouched
+
+
+def test_email_roundtrip(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    assert get_email(db) is None
+    cfg = {"host": "smtp.test", "port": "587", "encryption": "starttls"}
+    save_email(db, cfg)
+    assert get_email(db) == cfg
+
+
+def test_v2_database_migrates_to_v3(tmp_path: Path) -> None:
+    """A pre-email (schema v2) database gains the email table transparently."""
+    import sqlite3  # noqa: PLC0415
+
+    db = tmp_path / "state.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE issuer (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL);
+        CREATE TABLE draft (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL);
+        INSERT INTO issuer (id, data) VALUES (1, '{"name": "Jane"}');
+        PRAGMA user_version = 2;
+        """
+    )
+    conn.commit()
+    conn.close()
+    assert get_email(db) is None  # migration ran, table exists
+    save_email(db, {"host": "smtp.test"})
+    assert get_email(db) == {"host": "smtp.test"}
     assert get_issuer(db) == {"name": "Jane"}  # existing data untouched

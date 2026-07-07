@@ -1327,6 +1327,156 @@ button:focus-visible, a:focus-visible {
 .status-ok { color: var(--ok); font-weight: 600; font-size: 14px; }
 .status-err { color: var(--danger); font-weight: 600; font-size: 14px; }
 
+/* ===== Email settings (token picker, test footer) ===== */
+.opt { font-weight: 400; color: var(--text-4); }
+.email-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(var(--ink-tint), 0.07);
+}
+.token-field { position: relative; }
+.token-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.token-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--orange);
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0 6px;
+}
+.token-icon { font-family: var(--font); font-weight: 700; }
+.token-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 2px);
+  z-index: 30;
+  width: 290px;
+  max-width: calc(100vw - 40px);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-menu);
+  padding: 6px;
+}
+.token-menu-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-4);
+  padding: 6px 8px 8px;
+}
+.token-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font);
+}
+.token-row:hover { background: rgba(var(--ink-tint), 0.05); }
+.token-chip {
+  flex: 0 0 auto;
+  color: var(--orange);
+  font-size: 13px;
+  font-weight: 600;
+}
+.token-desc { font-size: 13px; color: var(--text-2); }
+input:disabled {
+  background: var(--cream);
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+
+/* ===== Modal (send invoice) ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 13, 9, 0.55);
+  backdrop-filter: blur(3px);
+}
+.modal-card {
+  width: 100%;
+  max-width: 540px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 30px 70px -24px rgba(0, 0, 0, 0.5);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(250, 93, 0, 0.1);
+  flex: 0 0 auto;
+}
+.modal-title-wrap { min-width: 0; }
+.modal-title { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
+.modal-sub { font-size: 13px; color: var(--text-3); margin-top: 1px; }
+.modal-x {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0 4px;
+}
+.modal-x:hover { color: var(--ink); }
+.modal-body { padding: 20px 24px; }
+.modal-muted { color: var(--text-3); font-weight: 500; }
+.modal-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 22px;
+  border-top: 1px solid var(--line);
+}
+
 /* ===== Toasts ===== */
 /* Bottom-center, dark surface, status badge + title/body — constant in
    both themes (it is a notification chrome, not page content). */

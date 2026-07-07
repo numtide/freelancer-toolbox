@@ -9,7 +9,12 @@ from pathlib import Path
 
 import click
 
-from harvest_invoicer.db import default_db_path, get_clients, get_issuer
+from harvest_invoicer.db import (
+    default_db_path,
+    get_clients,
+    get_email,
+    get_issuer,
+)
 from harvest_invoicer.fetch import (
     apply_client_vat,
     client_extra_lines,
@@ -332,12 +337,14 @@ def serve(
         onboarding = False
         issuer = load_issuer(str(_ISSUER_EXAMPLE))
         clients = load_clients(str(_CLIENTS_EXAMPLE))
+        email_config: dict[str, object] = {}
     else:
         stored_issuer = get_issuer(db_file)
         # First run (no issuer configured): skip fetching and open Settings.
         onboarding = stored_issuer is None
         issuer = stored_issuer or _blank_issuer()
         clients = get_clients(db_file)
+        email_config = get_email(db_file) or {}
 
     # Persistent defaults from issuer.json: the flags always win.
     default_bill_to = str(issuer.get("default_bill_to") or "").strip() or None
@@ -416,6 +423,7 @@ def serve(
         # Matches the default-checked "Auto-merge duplicate entries" box.
         import_merge=True,
         allowed_hosts=frozenset(allowed),
+        email_config=email_config,
     )
 
     # A concrete bind host is browsable directly; a wildcard bind is reached

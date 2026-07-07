@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def default_db_path() -> Path:
@@ -77,6 +77,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
             PRAGMA user_version = 2;
             """
         )
+    if version < 3:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS email (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                data TEXT NOT NULL
+            );
+            PRAGMA user_version = 3;
+            """
+        )
 
 
 def get_issuer(path: Path | str) -> dict[str, object] | None:
@@ -114,6 +124,25 @@ def save_clients(path: Path | str, clients: dict[str, dict[str, object]]) -> Non
                 (key, json.dumps(entry, ensure_ascii=False), pos)
                 for pos, (key, entry) in enumerate(clients.items())
             ],
+        )
+
+
+def get_email(path: Path | str) -> dict[str, object] | None:
+    """The email/SMTP config record, or ``None`` before configuration.
+
+    Never holds the SMTP password — that stays in the environment only.
+    """
+    with _connect(path) as conn:
+        row = conn.execute("SELECT data FROM email WHERE id = 1").fetchone()
+    return json.loads(row[0]) if row else None
+
+
+def save_email(path: Path | str, email: dict[str, object]) -> None:
+    with _connect(path) as conn:
+        conn.execute(
+            "INSERT INTO email (id, data) VALUES (1, ?) "
+            "ON CONFLICT (id) DO UPDATE SET data = excluded.data",
+            (json.dumps(email, ensure_ascii=False),),
         )
 
 

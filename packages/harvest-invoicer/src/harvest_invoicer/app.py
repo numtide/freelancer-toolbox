@@ -23,6 +23,7 @@ from harvest_invoicer.db import (
     get_draft,
     save_clients,
     save_draft,
+    save_email,
     save_issuer,
 )
 from harvest_invoicer.fetch import apply_client_vat, client_extra_lines
@@ -112,6 +113,7 @@ def create_app(
     import_raw: list[InvoiceLine] | None = None,
     import_merge: bool = True,
     allowed_hosts: frozenset[str] = frozenset(),
+    email_config: dict[str, object] | None = None,
 ) -> Flask:
     """Create and configure the Flask editor application.
 
@@ -187,6 +189,9 @@ def create_app(
         # Whether the Harvest source bar's "Manage" panel is expanded.
         # Server-tracked so it survives the bar's OOB refreshes.
         "source_open": False,
+        # Non-secret email/SMTP config (Settings > Email); the password is
+        # never stored here — it comes from the environment only.
+        "email": dict(email_config) if email_config else {},
         # (key, bytes) of the last WeasyPrint render, keyed on the rendered
         # HTML + effective style.css, so unchanged previews are instant.
         "pdf_cache": None,
@@ -239,6 +244,7 @@ def create_app(
         "preview_pdf",
         "render_pdf_route",
         "send_invoice",
+        "send_test",  # SMTP handshake — must not hold the state lock
     }
 
     @app.before_request
@@ -557,9 +563,11 @@ def create_app(
     # changes the draft's client_key.)
     draft_skip_endpoints = {
         "settings_issuer_save",
+        "settings_email_save",
         "settings_clients_delete",
         "render_pdf_route",
         "send_invoice",
+        "send_test",
         "discard_draft",
         "quit_server",
     }
@@ -1106,15 +1114,97 @@ def create_app(
         headers = _toast_header("err" if error else "ok", status) if status else {}
         return Response(html, content_type="text/html", headers=headers)
 
+    email_fields = (
+        "from_name",
+        "from_address",
+        "reply_to",
+        "host",
+        "port",
+        "encryption",
+        "username",
+        "subject_template",
+        "message_template",
+    )
+
     @app.get("/settings")
     def settings_page() -> str:
+        from harvest_invoicer.mail import (  # noqa: PLC0415
+            DEFAULT_MESSAGE_TEMPLATE,
+            DEFAULT_SUBJECT_TEMPLATE,
+        )
+
+        cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
+        email: dict[str, object] = {f: str(cfg.get(f) or "") for f in email_fields}
+        email["encryption"] = email["encryption"] or "starttls"
+        email["subject_template"] = (
+            email["subject_template"] or DEFAULT_SUBJECT_TEMPLATE
+        )
+        email["message_template"] = (
+            email["message_template"] or DEFAULT_MESSAGE_TEMPLATE
+        )
+        # Whether a password is available from the environment (never shown).
+        email["password_set"] = bool(
+            os.environ.get("HARVEST_INVOICER_SMTP_PASSWORD", "").strip()
+        )
         return render_template(
             "settings.html",
             issuer=issuer,
             clients=app.state["clients"],  # type: ignore[attr-defined]
             current_client_key=app.state["current_client_key"],  # type: ignore[attr-defined]
+            email=email,
             status=None,
             status_error=False,
+        )
+
+    @app.post("/settings/email")
+    def settings_email_save() -> Response:
+        """Persist the non-secret email/SMTP config (password stays in env)."""
+        values = {f: request.form.get(f, "").strip() for f in email_fields}
+        if values["encryption"] not in ("starttls", "ssl", "none"):
+            values["encryption"] = "starttls"
+
+        def _status(msg: str, *, error: bool = False) -> Response:
+            css = "status-err" if error else "status-ok"
+            return Response(
+                f'<span id="email-status" class="{css}">{escape(msg)}</span>',
+                content_type="text/html",
+                headers=_toast_header("err" if error else "ok", msg),
+            )
+
+        if values["port"]:
+            try:
+                int(values["port"])
+            except ValueError:
+                return _status("Port must be a number (e.g. 587).", error=True)
+        if values["from_address"] and "@" not in values["from_address"]:
+            return _status("From address must be a valid email.", error=True)
+
+        cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
+        cfg.clear()
+        cfg.update({k: v for k, v in values.items() if v})
+        if db_path is not None:
+            save_email(db_path, cfg)
+        return _status("Settings saved")
+
+    @app.post("/send/test")
+    def send_test() -> Response:
+        """Verify the SMTP connection without sending an invoice."""
+        from harvest_invoicer.mail import MailConfigError, verify_smtp  # noqa: PLC0415
+
+        # Save the current form first so the test uses unsaved edits.
+        values = {f: request.form.get(f, "").strip() for f in email_fields}
+        try:
+            host = verify_smtp(values)
+        except MailConfigError as exc:
+            return Response(status=204, headers=_toast_header("err", str(exc)))
+        except OSError as exc:
+            return Response(
+                status=204,
+                headers=_toast_header("err", "Connection failed", str(exc)),
+            )
+        return Response(
+            status=204,
+            headers=_toast_header("ok", "Connection verified", f"Reached {host}"),
         )
 
     @app.post("/settings/issuer")
@@ -1342,41 +1432,83 @@ def create_app(
 
     # --- Send by email ---
 
+    def _email_ctx() -> dict[str, object]:
+        """Seed values for the send modal, resolved against the live invoice."""
+        from harvest_invoicer.mail import (  # noqa: PLC0415
+            DEFAULT_MESSAGE_TEMPLATE,
+            DEFAULT_SUBJECT_TEMPLATE,
+            resolve_tokens,
+        )
+
+        cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
+        subject_tpl = str(cfg.get("subject_template") or DEFAULT_SUBJECT_TEMPLATE)
+        message_tpl = str(cfg.get("message_template") or DEFAULT_MESSAGE_TEMPLATE)
+        from_address = str(cfg.get("from_address") or issuer.get("email") or "").strip()
+        return {
+            "email_to": str(cur_client.get("email") or ""),
+            "email_subject": resolve_tokens(subject_tpl, inv, cur_client, issuer),
+            "email_message": resolve_tokens(message_tpl, inv, cur_client, issuer),
+            "email_from": from_address,
+            "invoice": inv,
+            "fmt_money": fmt_money,
+        }
+
+    @app.get("/send/modal")
+    def send_modal() -> str:
+        """Render the send-invoice modal, prefilled from templates + client."""
+        return render_template("partials/send_modal.html", **_email_ctx())
+
     @app.post("/send")
     def send_invoice() -> Response:
-        """Email the invoice PDF to the bill-to client.
+        """Email the invoice PDF using the modal's fields + stored SMTP config.
 
-        SMTP settings come from HARVEST_INVOICER_SMTP_* environment
-        variables (see mail.py) — like Harvest credentials they are never
-        persisted.  Configuration problems and SMTP failures surface
-        inline in the header status area.
+        The SMTP password is read from the environment only; every other
+        setting comes from Settings > Email.  Feedback rides a toast.
         """
         from harvest_invoicer.mail import (  # noqa: PLC0415
             MailConfigError,
             send_invoice_email,
         )
 
-        def _status(msg: str, *, error: bool = False) -> Response:
-            css = "render-err" if error else "render-ok"
-            return Response(
-                f'<p id="render-status" class="{css}">{escape(msg)}</p>',
-                content_type="text/html",
-                headers=_toast_header("err" if error else "ok", msg),
-            )
+        def _toast(kind: str, title: str, body: str = "") -> Response:
+            headers = _toast_header(kind, title, body)
+            if kind == "err":
+                # Keep the modal open (don't swap) so edits survive a retry.
+                headers["HX-Reswap"] = "none"
+                return Response("", content_type="text/html", headers=headers)
+            # Success: empty body clears #modal-root (closes the modal).
+            return Response("", content_type="text/html", headers=headers)
 
+        to = request.form.get("to", "")
+        subject = request.form.get("subject", "")
+        message = request.form.get("message", "")
+        copy_self = request.form.get("copy_self") == "on"
         # Snapshot under the lock so the email metadata matches the PDF
         # even if another tab edits concurrently.
         with state_lock:
             inv_copy: Invoice = copy.deepcopy(app.state["invoice"])  # type: ignore[attr-defined]
             cur_client = dict(app.state["client"])  # type: ignore[attr-defined]
+            cfg = dict(app.state["email"])  # type: ignore[attr-defined]
         try:
             pdf = _invoice_pdf_bytes()
-            recipient = send_invoice_email(pdf, inv_copy, issuer, cur_client)
+            recipient = send_invoice_email(
+                pdf,
+                inv_copy,
+                issuer,
+                cur_client,
+                cfg,
+                to=to,
+                subject=subject,
+                message=message,
+                copy_self=copy_self,
+            )
         except MailConfigError as exc:
-            return _status(str(exc), error=True)
+            return _toast("err", "Can't send invoice", str(exc))
         except OSError as exc:  # SMTPException subclasses OSError
-            return _status(f"Send failed: {exc}", error=True)
-        return _status(f"Invoice {inv_copy.number} emailed to {recipient}.")
+            return _toast("err", "Send failed", str(exc))
+        return _toast("ok", "Invoice sent", f"Sent to {recipient}")
 
     # --- Draft ---
 

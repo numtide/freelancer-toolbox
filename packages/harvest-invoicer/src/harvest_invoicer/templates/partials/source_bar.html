@@ -42,11 +42,15 @@
     <div class="source-manage{{ ' open' if source_open }}">
       <div class="source-pane">
         <div class="eyebrow">Sync range</div>
+        {# hx-preserve keeps the checkbox and the typed custom range alive
+           across OOB source-bar swaps (fired by any line mutation), so an
+           edit made while a custom range is entered never silently reverts
+           the sync range back to the billing period. #}
         <label class="chk-label">
-          <input type="checkbox" id="use-period" checked>
+          <input type="checkbox" id="use-period" hx-preserve="true" checked>
           Use the invoice billing period
         </label>
-        <div id="fetch-range" class="grid2" style="margin-top:12px;" hidden>
+        <div id="fetch-range" class="grid2" style="margin-top:12px;" hx-preserve="true" hidden>
           <div>
             <label class="field-label" style="font-size:12px;color:var(--text-2);">From</label>
             <input type="date" class="hv-num" id="fetch-start" name="fetch_start" value="{{ fetch_start }}">

@@ -617,6 +617,18 @@ class TestSourceBar:
         assert b">Synced<" not in body
         assert b"No hours imported yet" in body
 
+    def test_range_controls_are_preserved_across_swaps(self, tmp_path: Path) -> None:
+        """The billing-period checkbox and custom range carry hx-preserve so a
+        line edit's OOB source-bar swap cannot wipe a typed sync range."""
+        with self._make_app(tmp_path).test_client() as c:
+            body = c.get("/").data
+        # Both the checkbox and the range container must opt into preserve.
+        assert body.count(b'hx-preserve="true"') >= 2
+        use_line = next(ln for ln in body.split(b"\n") if b'id="use-period"' in ln)
+        assert b'hx-preserve="true"' in use_line
+        range_line = next(ln for ln in body.split(b"\n") if b'id="fetch-range"' in ln)
+        assert b'hx-preserve="true"' in range_line
+
     def test_manage_toggle_is_server_tracked(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path)
         with app.test_client() as c:

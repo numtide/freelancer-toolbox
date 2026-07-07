@@ -1,0 +1,18 @@
+{
+  "Acme Corp": {
+    "name": "Acme Corporation Ltd.",
+    "address_line1": "1 Acme Boulevard",
+    "address_line2": "EC1A 1BB London",
+    "country": "United Kingdom",
+    "tax_id": "GB000000000",
+    "tax_id_label": "VAT No."
+  },
+  "Beta Inc": {
+    "name": "Beta Incorporated",
+    "address_line1": "42 Innovation Drive",
+    "address_line2": "75001 Paris",
+    "country": "France",
+    "tax_id": "FR00000000000",
+    "tax_id_label": "TVA"
+  }
+}

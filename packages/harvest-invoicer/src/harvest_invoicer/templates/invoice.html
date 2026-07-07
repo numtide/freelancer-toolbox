@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>{{ t('invoice_word') }} {{ invoice.number }}</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Localized page footer; overrides the English default in style.css. */
+    @page {
+      @bottom-center {
+        content: "{{ t('page') }} " counter(page) " {{ t('page_of') }} " counter(pages);
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header class="invoice-header">
+    <div class="sender">
+      <h1>{{ issuer.name }}</h1>
+      <p>{{ issuer.address_line1 }}</p>
+      <p>{{ issuer.address_line2 }}</p>
+      <p>{{ issuer.country }}</p>
+      <p><span class="muted">{{ issuer.tax_id_label | default(t('tax_id')) }}</span> {{ issuer.tax_id }}</p>
+      <p><span class="muted">{{ t('tel') }}</span> {{ issuer.phone }}</p>
+      <p><span class="muted">{{ t('email') }}</span> {{ issuer.email }}</p>
+    </div>
+    <div class="meta">
+      <h2>{{ t('invoice') }}</h2>
+      <table>
+        <tr>
+          <td class="muted">{{ t('number') }}</td>
+          <td class="strong">{{ invoice.number }}</td>
+        </tr>
+        <tr>
+          <td class="muted">{{ t('issued') }}</td>
+          <td>{{ invoice.issue_date | fmtdate }}</td>
+        </tr>
+        <tr>
+          <td class="muted">{{ t('due') }}</td>
+          <td>{{ invoice.due_date | fmtdate }}</td>
+        </tr>
+        {% if invoice.period_start and invoice.period_end %}
+        <tr>
+          <td class="muted">{{ t('period') }}</td>
+          <td>{{ invoice.period_start | fmtdate }} – {{ invoice.period_end | fmtdate }}</td>
+        </tr>
+        {% endif %}
+      </table>
+    </div>
+  </header>
+
+  <hr class="rule">
+
+  <section class="client-block">
+    <p class="section-heading">{{ t('bill_to') }}</p>
+    <p class="client-name">{{ client.name }}</p>
+    <p>{{ client.address_line1 }}</p>
+    <p>{{ client.address_line2 }}</p>
+    <p>{{ client.country }}</p>
+    <p><span class="muted">{{ client.tax_id_label | default(t('tax_id')) }}</span> {{ client.tax_id }}</p>
+  </section>
+
+  <table class="items">
+    <colgroup>
+      <col class="c-concept">
+      <col class="c-price">
+      <col class="c-quantity">
+      <col class="c-base">
+      <col class="c-vat">
+      <col class="c-total">
+    </colgroup>
+    <thead>
+      <tr>
+        <th class="text-left">{{ t('description') }}</th>
+        <th class="text-right">{{ t('unit_price') }} ({{ invoice.currency }})</th>
+        <th class="text-right">{{ t('qty') }}</th>
+        <th class="text-right">{{ t('subtotal') }} ({{ invoice.currency }})</th>
+        <th class="text-right">{{ t('vat') }} ({{ invoice.currency }})</th>
+        <th class="text-right">{{ t('total') }} ({{ invoice.currency }})</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in invoice.lines %}
+      <tr>
+        <td>{{ line.concept }}</td>
+        <td class="text-right">{{ line.unit_price | money }}</td>
+        <td class="text-right">{{ line.quantity | qty }}</td>
+        <td class="text-right">{{ line.base | money }}</td>
+        <td class="text-right">{{ line | vat_cell }}</td>
+        <td class="text-right">{{ line.total | money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr>
+      <td class="spacer"></td>
+      <td class="label">{{ t('subtotal') }}</td>
+      <td class="value">{{ invoice.subtotal | money }} {{ invoice.currency }}</td>
+    </tr>
+    <tr>
+      <td class="spacer"></td>
+      <td class="label">{{ t('vat') }}</td>
+      <td class="value">{{ invoice.vat_total | money }} {{ invoice.currency }}</td>
+    </tr>
+    <tr class="grand-total">
+      <td class="spacer"></td>
+      <td class="label">{{ t('total') }}</td>
+      <td class="value">{{ invoice.grand_total | money }} {{ invoice.currency }}</td>
+    </tr>
+  </table>
+
+  <section class="payment-block">
+    <p class="section-heading">{{ t('payment') }}</p>
+    <table class="payment">
+      <tr>
+        <td class="label">{{ t('payment_method') }}</td>
+        <td>{{ t('bank_transfer') }}</td>
+      </tr>
+      <tr>
+        <td class="label">{{ t('iban') }}</td>
+        <td>{{ issuer.bank.iban }}</td>
+      </tr>
+      <tr>
+        <td class="label">{{ t('bic') }}</td>
+        <td>{{ issuer.bank.bic }}</td>
+      </tr>
+      <tr>
+        <td class="label">{{ t('account_holder') }}</td>
+        <td>{{ issuer.name }}</td>
+      </tr>
+      <tr>
+        <td class="label">{{ t('reference') }}</td>
+        <td>{{ t('invoice_word') }} {{ invoice.number }}</td>
+      </tr>
+    </table>
+  </section>
+
+  {% if invoice.legal_note %}
+  <p class="legal-note">{{ invoice.legal_note }}</p>
+  {% endif %}
+
+</body>
+
+</html>

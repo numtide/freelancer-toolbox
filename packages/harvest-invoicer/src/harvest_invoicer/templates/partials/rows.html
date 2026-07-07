@@ -1,0 +1,60 @@
+<div id="line-rows" hx-target="this" hx-swap="outerHTML">
+  {% if invoice.lines %}
+  <div class="li-grid-head">
+    <span></span><span></span>
+    <span>Description</span>
+    <span class="num">Qty</span>
+    <span class="num">Unit price</span>
+    <span class="num">Subtotal</span>
+    <span></span>
+  </div>
+  {% else %}
+  {# No line items: always offer a working Sync CTA so the invoice can be
+     (re)built, whether or not an import happened before. #}
+  <div class="empty-state empty-sync">
+    <span class="empty-icon">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FA5D00" stroke-width="1.8"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6"></path></svg>
+    </span>
+    <p class="empty-title">{{ "No line items" if synced else "No hours imported yet" }}</p>
+    <p class="empty-sub">Sync your tracked time from Harvest for the billing period to build
+      this invoice — each project rolls up into an editable line item.</p>
+    <button type="button" class="btn-orange sync-btn empty-cta"
+      hx-post="/lines/fetch"
+      hx-include="[name='fetch_start'],[name='fetch_end'],[name='merge_duplicates']"
+      hx-indicator="this" hx-disabled-elt="this"
+      hx-target="#line-rows" hx-swap="outerHTML">
+      <svg class="sync-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-6.2-8.5"></path><path d="M21 3v6h-6"></path></svg>
+      <span class="sync-label">{{ "Re-sync from Harvest" if synced else "Sync from Harvest" }}</span>
+    </button>
+    <button type="button" class="empty-add" hx-post="/lines/add"
+      hx-target="#line-rows" hx-swap="outerHTML">or add a line manually</button>
+  </div>
+  {% endif %}
+  {% for line in invoice.lines %}
+  <div class="li-row" data-idx="{{ loop.index0 }}">
+    <span class="drag-handle" draggable="true" title="Drag to reorder">&#10303;</span>
+    <input type="checkbox" class="row-check" name="selected" value="{{ loop.index0 }}"
+      form="merge-form" aria-label="Select row">
+    <div class="cell-desc">
+      <input type="text" name="concept" value="{{ line.concept }}" placeholder="Description"
+        hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest .li-row"
+        hx-target="#line-rows" hx-swap="outerHTML">
+      {% if line.origin == 'extra' %}
+      <span class="pill-extra"
+        title="Recurring line from the client settings (re-added on every import)">extra</span>
+      {% endif %}
+    </div>
+    <input type="number" class="hv-num" name="quantity" value="{{ '%.2f' | format(line.quantity) }}" step="0.01"
+      hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest .li-row"
+      hx-target="#line-rows" hx-swap="outerHTML" aria-label="Quantity">
+    <input type="number" class="hv-num" name="unit_price" value="{{ '%.2f' | format(line.unit_price) }}" step="0.01"
+      hx-post="/lines/update/{{ loop.index0 }}" hx-trigger="change" hx-include="closest .li-row"
+      hx-target="#line-rows" hx-swap="outerHTML" aria-label="Unit price">
+    <span class="hv-num li-sub">{{ fmt_money(line.base) }}</span>
+    <button type="button" class="row-x" title="Remove line"
+      hx-post="/lines/drop/{{ loop.index0 }}" hx-target="#line-rows" hx-swap="outerHTML">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+    </button>
+  </div>
+  {% endfor %}
+</div>

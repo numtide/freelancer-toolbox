@@ -94,6 +94,21 @@
           "../../pyproject.toml"
         ];
       };
+      "packages/harvest-invoicer" = {
+        modules = [ "src/harvest_invoicer" ];
+        extraPythonPackages = with pkgs.python3.pkgs; [
+          (pkgs.python3.pkgs.toPythonModule perSystem.self.harvest-exporter)
+          flask
+          click
+          jinja2
+          pydantic
+          pydantic-settings
+        ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
       "packages/paperless-cli" = {
         modules = [ "src/paperless_cli" ];
         options = [

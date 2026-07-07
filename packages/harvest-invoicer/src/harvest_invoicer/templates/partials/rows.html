@@ -1,4 +1,19 @@
 <div id="line-rows" hx-target="this" hx-swap="outerHTML">
+  {% if invoice.lines %}
+  <div class="li-grid-head">
+    <span></span><span></span>
+    <span>Description</span>
+    <span class="num">Qty</span>
+    <span class="num">Unit price</span>
+    <span class="num">Subtotal</span>
+    <span></span>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <p class="empty-title">No line items yet</p>
+    <p class="empty-sub">Fetch your tracked hours from Harvest above, or add a line by hand below.</p>
+  </div>
+  {% endif %}
   {% for line in invoice.lines %}
   <div class="li-row" data-idx="{{ loop.index0 }}">
     <span class="drag-handle" draggable="true" title="Drag to reorder">&#10303;</span>

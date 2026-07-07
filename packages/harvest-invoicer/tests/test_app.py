@@ -1855,6 +1855,47 @@ class TestToasts:
         assert _toast_kind(resp) is None
 
 
+class TestEmptyStates:
+    """Zero line items / zero clients show a friendly empty state."""
+
+    def test_empty_line_items_shows_empty_state(self, tmp_path: Path) -> None:
+        c = _make_app(tmp_path, lines=[]).test_client()
+        body = c.get("/").data
+        assert b"No line items yet" in body
+        # The column header is suppressed when there is nothing to label.
+        assert b'class="li-grid-head"' not in body
+        # ...but the ways to populate it stay available.
+        assert b"Add line item" in body
+        assert b"Fetch from Harvest" in body
+
+    def test_header_returns_and_empty_state_clears_after_add(
+        self, tmp_path: Path
+    ) -> None:
+        c = _make_app(tmp_path, lines=[]).test_client()
+        resp = c.post("/lines/add")
+        assert resp.status_code == 200
+        assert b'class="li-grid-head"' in resp.data
+        assert b"No line items yet" not in resp.data
+
+    def test_empty_state_returns_when_last_line_removed(self, tmp_path: Path) -> None:
+        c = _make_app(
+            tmp_path,
+            lines=[InvoiceLine(concept="Only", unit_price=1.0, quantity=1.0)],
+        ).test_client()
+        resp = c.post("/lines/drop/0")
+        assert b"No line items yet" in resp.data
+        assert b'class="li-grid-head"' not in resp.data
+
+    def test_settings_hints_when_no_clients(self, tmp_path: Path) -> None:
+        # The module-level _make_app seeds no clients mapping.
+        c = _make_app(tmp_path).test_client()
+        assert b"No clients yet" in c.get("/settings").data
+
+    def test_editor_picker_hints_when_no_clients(self, tmp_path: Path) -> None:
+        body = _make_app(tmp_path).test_client().get("/").data
+        assert b"No clients configured yet" in body
+
+
 class TestStateLock:
     """Concurrent requests must not corrupt app.state (threaded server)."""
 

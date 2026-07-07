@@ -713,6 +713,25 @@ button[disabled] { opacity: 0.6; cursor: default; }
   background: rgba(250, 93, 0, 0.03);
 }
 
+/* Empty state (line items, clients). Type carries it, per the
+   design-system guidance: a weighted headline + one muted line and
+   generous whitespace — no illustration. */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px 32px;
+}
+.empty-title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.empty-sub {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-3);
+}
+
 /* ===== Totals bar (always dark) ===== */
 /* Semantic ink-on-cream band: it stays dark in BOTH themes, so it uses
    the fixed brand colors, not the theme-flipping --ink/--cream vars. */

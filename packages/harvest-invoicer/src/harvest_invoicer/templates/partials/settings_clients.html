@@ -94,6 +94,13 @@
   </div>
   {% endfor %}
 
+  {% if not clients %}
+  <div class="empty-state">
+    <p class="empty-title">No clients yet</p>
+    <p class="empty-sub">Add your first client below — it becomes selectable as the invoice's bill-to.</p>
+  </div>
+  {% endif %}
+
   <div class="acc-item" id="new-client">
     <div class="acc-head" data-acc>
       <span class="avatar avatar-lg">＋</span>

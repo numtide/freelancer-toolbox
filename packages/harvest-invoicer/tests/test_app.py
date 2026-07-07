@@ -1031,7 +1031,7 @@ class TestSettings:
                 "/settings/issuer",
                 data=self._issuer_form(name="New Name S.L."),
             )
-            assert b"Issuer saved" in resp.data
+            assert b"Settings saved" in resp.data
             # The preview reflects the new issuer immediately
             preview = c.get("/preview")
         assert b"New Name S.L." in preview.data
@@ -1658,7 +1658,7 @@ class TestIssuerDefaultsSettings:
                 "/settings/issuer",
                 data=self._form(harvest_user="Aldo Borrero", default_bill_to="Numtide"),
             )
-            assert b"Issuer saved" in resp.data
+            assert b"Settings saved" in resp.data
         saved = state_db.get_issuer(issuer_path)
         assert saved["harvest_user"] == "Aldo Borrero"
         assert saved["default_bill_to"] == "Numtide"

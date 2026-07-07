@@ -1063,16 +1063,16 @@ def create_app(
     def _persist_issuer() -> str:
         """Persist the issuer record; note when running session-only."""
         if db_path is None:
-            return " (this session only; no state database)"
+            return " (this session only)"
         save_issuer(db_path, issuer)
-        return f" to {db_path}"
+        return ""
 
     def _persist_clients() -> str:
         """Persist the full client mapping in one transaction."""
         if db_path is None:
-            return " (this session only; no state database)"
+            return " (this session only)"
         save_clients(db_path, app.state["clients"])  # type: ignore[attr-defined]
-        return f" to {db_path}"
+        return ""
 
     def _render_clients_block(
         status: str | None = None,
@@ -1180,7 +1180,7 @@ def create_app(
         bank["bic"] = bic
 
         suffix = _persist_issuer()
-        return _status("Issuer saved" + suffix)
+        return _status("Settings saved" + suffix)
 
     def _parse_extra_lines(
         text: str,

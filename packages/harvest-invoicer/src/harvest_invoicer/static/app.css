@@ -1110,6 +1110,52 @@ button:focus-visible, a:focus-visible {
 .status-ok { color: var(--ok); font-weight: 600; font-size: 14px; }
 .status-err { color: var(--danger); font-weight: 600; font-size: 14px; }
 
+/* ===== Toasts ===== */
+#toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 40px));
+  pointer-events: none;
+}
+/* Flat hairline card + a status dot (no left-accent callout, per the
+   design system); floating elevation is one of the few allowed shadows. */
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: var(--shadow-menu);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.toast.in { opacity: 1; transform: none; }
+.toast::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.toast-err::before { background: var(--danger); }
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}
+
 /* ===== Responsive ===== */
 /* The editor and settings both use fixed multi-column grids that crush
    below laptop width. Collapse them progressively; the dense line-items

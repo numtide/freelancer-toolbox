@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Self
@@ -16,6 +17,16 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
     from flask.testing import FlaskClient
+    from werkzeug.test import TestResponse
+
+
+def _toast_kind(resp: TestResponse) -> str | None:
+    """The kind ('ok'/'err') of the toast an HX-Trigger header carries, if any."""
+    header = resp.headers.get("HX-Trigger")
+    if not header:
+        return None
+    payload = json.loads(header).get("showtoast")
+    return payload.get("kind") if payload else None
 
 
 def _fake_issuer() -> dict[str, object]:
@@ -909,6 +920,20 @@ class TestSettings:
         saved = state_db.get_clients(clients_path)
         assert saved["Acme Corp"]["language"] == "es"
 
+    def test_settings_saves_emit_toast_headers(self, tmp_path: Path) -> None:
+        app, _, _ = self._make_app(tmp_path)
+        with app.test_client() as c:
+            ok = c.post("/settings/issuer", data=self._issuer_form())
+            assert _toast_kind(ok) == "ok"
+            bad = c.post("/settings/issuer", data=self._issuer_form(name=""))
+            assert _toast_kind(bad) == "err"
+            saved = c.post("/settings/clients/save", data=self._client_form())
+            assert _toast_kind(saved) == "ok"
+            deleted = c.post(
+                "/settings/clients/delete", data={"original_key": "New Client"}
+            )
+            assert _toast_kind(deleted) == "ok"
+
     def test_client_invalid_vat_rejected(self, tmp_path: Path) -> None:
         app, _, _ = self._make_app(tmp_path)
         with app.test_client() as c:
@@ -1786,6 +1811,48 @@ class TestSendInvoice:
     def test_send_button_wired_in_editor(self, client: FlaskClient) -> None:
         resp = client.get("/")
         assert b'hx-post="/send"' in resp.data
+
+
+class TestToasts:
+    """Committed actions return an HX-Trigger showtoast header."""
+
+    def test_toast_js_served_and_loaded(self, client: FlaskClient) -> None:
+        served = client.get("/static/toast.js")
+        assert served.status_code == 200
+        assert b"showtoast" in served.data
+        assert b'src="/static/toast.js"' in client.get("/").data
+        assert b'src="/static/toast.js"' in client.get("/settings").data
+
+    def test_generate_pdf_emits_ok_toast(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "harvest_invoicer.app.pdf_from_html", lambda _h, _u=None: b"%PDF-fake"
+        )
+        c = _make_app(tmp_path).test_client()
+        resp = c.post("/render")
+        assert resp.status_code == 200
+        assert _toast_kind(resp) == "ok"
+
+    def test_send_failure_emits_err_toast(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "harvest_invoicer.app.pdf_from_html", lambda _h, _u=None: b"%PDF-fake"
+        )
+        monkeypatch.delenv("HARVEST_INVOICER_SMTP_HOST", raising=False)
+        client_entry = _fake_client() | {"email": "billing@acme.test"}
+        c = _make_app(tmp_path, client=client_entry).test_client()
+        resp = c.post("/send")
+        assert _toast_kind(resp) == "err"
+
+    def test_line_edits_do_not_toast(self, client: FlaskClient) -> None:
+        # Frequent silent mutations must not spam toasts.
+        resp = client.post(
+            "/lines/update/0",
+            data={"concept": "X", "quantity": "1", "unit_price": "1"},
+        )
+        assert _toast_kind(resp) is None
 
 
 class TestStateLock:

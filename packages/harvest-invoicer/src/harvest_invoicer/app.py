@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import hashlib
+import json
 import os
 import threading
 from dataclasses import asdict
@@ -41,6 +42,15 @@ _LOCAL_HOSTNAMES = ("127.0.0.1", "localhost")
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _toast_header(kind: str, message: str) -> dict[str, str]:
+    """HX-Trigger header that pops a transient toast on the client.
+
+    ``kind`` is "ok" or "err"; static/toast.js listens for the
+    ``showtoast`` event htmx dispatches from this header.
+    """
+    return {"HX-Trigger": json.dumps({"showtoast": {"message": message, "kind": kind}})}
 
 
 def _line_from_dict(data: dict[str, Any]) -> InvoiceLine:
@@ -953,8 +963,8 @@ def create_app(
         *,
         error: bool = False,
         open_key: str | None = None,
-    ) -> str:
-        return render_template(
+    ) -> Response:
+        html = render_template(
             "partials/settings_clients.html",
             clients=app.state["clients"],  # type: ignore[attr-defined]
             current_client_key=app.state["current_client_key"],  # type: ignore[attr-defined]
@@ -962,6 +972,8 @@ def create_app(
             status_error=error,
             open_key=open_key,
         )
+        headers = _toast_header("err" if error else "ok", status) if status else {}
+        return Response(html, content_type="text/html", headers=headers)
 
     @app.get("/settings")
     def settings_page() -> str:
@@ -975,12 +987,16 @@ def create_app(
         )
 
     @app.post("/settings/issuer")
-    def settings_issuer_save() -> str:
+    def settings_issuer_save() -> Response:
         """Validate and save the issuer config (file + running session)."""
 
-        def _status(msg: str, *, error: bool = False) -> str:
+        def _status(msg: str, *, error: bool = False) -> Response:
             css = "status-err" if error else "status-ok"
-            return f'<span id="issuer-status" class="{css}">{escape(msg)}</span>'
+            return Response(
+                f'<span id="issuer-status" class="{css}">{escape(msg)}</span>',
+                content_type="text/html",
+                headers=_toast_header("err" if error else "ok", msg),
+            )
 
         text_fields = (
             "name",
@@ -1076,7 +1092,7 @@ def create_app(
         return items, None
 
     @app.post("/settings/clients/save")
-    def settings_clients_save() -> str:
+    def settings_clients_save() -> Response:
         """Add or update a clients.json entry (file + running session)."""
         clients_map: dict[str, dict[str, object]] = app.state["clients"]  # type: ignore[attr-defined]
         original = request.form.get("original_key", "").strip()
@@ -1165,7 +1181,7 @@ def create_app(
         )
 
     @app.post("/settings/clients/delete")
-    def settings_clients_delete() -> str:
+    def settings_clients_delete() -> Response:
         """Remove a clients.json entry (guarding the invoice's client)."""
         clients_map: dict[str, dict[str, object]] = app.state["clients"]  # type: ignore[attr-defined]
         original = request.form.get("original_key", "").strip()
@@ -1183,10 +1199,15 @@ def create_app(
     # --- PDF render ---
 
     @app.post("/render")
-    def render_pdf_route() -> str:
+    def render_pdf_route() -> Response:
         out: Path = app.state["output_path"]  # type: ignore[attr-defined]
         out.write_bytes(_invoice_pdf_bytes())
-        return render_template("partials/render_done.html", output_path=str(out))
+        html = render_template("partials/render_done.html", output_path=str(out))
+        return Response(
+            html,
+            content_type="text/html",
+            headers=_toast_header("ok", f"Invoice PDF saved to {out.name}."),
+        )
 
     # --- Send by email ---
 
@@ -1209,6 +1230,7 @@ def create_app(
             return Response(
                 f'<p id="render-status" class="{css}">{escape(msg)}</p>',
                 content_type="text/html",
+                headers=_toast_header("err" if error else "ok", msg),
             )
 
         # Snapshot under the lock so the email metadata matches the PDF

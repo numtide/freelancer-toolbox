@@ -405,10 +405,17 @@ button { color: var(--ink); }
 .roster-fill { height: 6px; border-radius: var(--r-pill); background: var(--orange); }
 .roster-hours { font-size: 13px; color: var(--text-2); flex: 0 0 auto; }
 .roster-empty { padding: 18px; margin: 0; font-size: 13px; color: var(--text-3); }
-
-/* Draft-restored note (below the source bar) */
-.draft-note-wrap { max-width: 1560px; margin: 0 auto; padding: 12px 28px 0; }
-.draft-note { font-size: 13px; font-weight: 600; color: var(--ok); }
+/* Passive caveat (shown when imported rows were hand-edited) instead of a
+   blocking confirm dialog on the roster toggles. */
+.roster-hint {
+  margin: 0;
+  padding: 9px 18px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-3);
+  background: rgba(250, 93, 0, 0.05);
+  border-bottom: 1px solid var(--line);
+}
 
 /* ===== Editor layout ===== */
 .editor-grid {
@@ -1321,47 +1328,54 @@ button:focus-visible, a:focus-visible {
 .status-err { color: var(--danger); font-weight: 600; font-size: 14px; }
 
 /* ===== Toasts ===== */
+/* Bottom-center, dark surface, status badge + title/body — constant in
+   both themes (it is a notification chrome, not page content). */
 #toasts {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
   z-index: 80;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 10px;
-  max-width: min(360px, calc(100vw - 40px));
+  max-width: min(440px, calc(100vw - 40px));
   pointer-events: none;
 }
-/* Flat hairline card + a status dot (no left-accent callout, per the
-   design system); floating elevation is one of the few allowed shadows. */
 .toast {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  padding: 12px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: var(--shadow-menu);
+  gap: 12px;
+  background: #1D1E1C;
+  color: #FFF8F1;
+  border-radius: 13px;
+  padding: 13px 18px;
+  box-shadow: 0 18px 44px -12px rgba(0, 0, 0, 0.45);
   cursor: pointer;
   opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transform: translateY(12px);
+  transition: opacity 0.28s ease, transform 0.28s ease;
 }
 .toast.in { opacity: 1; transform: none; }
-.toast::before {
-  content: "";
+.toast-badge {
   flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--ok);
 }
-.toast-err::before { background: var(--danger); }
+.toast-err .toast-badge { background: var(--danger); }
+.toast-title { font-size: 14px; font-weight: 700; }
+.toast-body {
+  font-size: 13px;
+  color: rgba(255, 248, 241, 0.65);
+  margin-top: 1px;
+}
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: none; }
 }

@@ -32,8 +32,7 @@
           hx-post="/lines/fetch"
           hx-include="[name='fetch_start'],[name='fetch_end'],[name='merge_duplicates']"
           hx-indicator="#sync-btn" hx-disabled-elt="#sync-btn"
-          hx-target="#line-rows" hx-swap="outerHTML"
-          {% if lines_dirty %}hx-confirm="Re-syncing keeps your edited rows, but toggling people afterwards re-imports them. Continue?"{% endif %}>
+          hx-target="#line-rows" hx-swap="outerHTML">
           <svg class="sync-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-6.2-8.5"></path><path d="M21 3v6h-6"></path></svg>
           <span class="sync-label">{{ sync_btn_label }}</span>
         </button>
@@ -72,22 +71,22 @@
           <div class="ctl-actions">
             <button type="button" class="ctl-all"
               hx-post="/lines/people" hx-vals='{"all": "1"}'
-              {% if lines_dirty %}hx-confirm="Re-slicing re-imports the affected lines — your edits to imported rows will be lost. Continue?"{% endif %}
               hx-target="#line-rows" hx-swap="outerHTML">Everyone</button>
             <span class="ctl-dot">·</span>
             <button type="button" class="ctl-clear"
               hx-post="/lines/people" hx-vals='{"none": "1"}'
-              {% if lines_dirty %}hx-confirm="Re-slicing re-imports the affected lines — your edits to imported rows will be lost. Continue?"{% endif %}
               hx-target="#line-rows" hx-swap="outerHTML">Clear</button>
           </div>
           {% endif %}
         </div>
+        {% if roster and lines_dirty %}
+        <p class="roster-hint">Changing who's included re-imports those rows — your edits to imported lines will be replaced.</p>
+        {% endif %}
         <div id="source-roster" class="roster-list">
           {% if roster %}
           {% for p in roster %}
           <button type="button" class="roster-row{{ ' on' if p.selected }}"
             hx-post="/lines/people" hx-vals='{{ {"toggle": p.name} | tojson }}'
-            {% if lines_dirty %}hx-confirm="Re-slicing re-imports the affected lines — your edits to imported rows will be lost. Continue?"{% endif %}
             hx-target="#line-rows" hx-swap="outerHTML">
             <span class="roster-check">{%- if p.selected %}&#10003;{% endif %}</span>
             <span class="avatar">{{ initials(p.name) }}</span>

@@ -48,13 +48,15 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
-def _toast_header(kind: str, message: str) -> dict[str, str]:
+def _toast_header(kind: str, title: str, body: str = "") -> dict[str, str]:
     """HX-Trigger header that pops a transient toast on the client.
 
-    ``kind`` is "ok" or "err"; static/toast.js listens for the
+    ``kind`` is "ok" or "err". The toast renders a bold *title* and an
+    optional muted *body* line; static/toast.js listens for the
     ``showtoast`` event htmx dispatches from this header.
     """
-    return {"HX-Trigger": json.dumps({"showtoast": {"message": message, "kind": kind}})}
+    payload = {"title": title, "body": body, "kind": kind}
+    return {"HX-Trigger": json.dumps({"showtoast": payload})}
 
 
 def _line_from_dict(data: dict[str, Any]) -> InvoiceLine:
@@ -573,7 +575,6 @@ def create_app(
             output_path=str(output_path),
             has_undo=bool(app.state["undo_stack"]),  # type: ignore[attr-defined]
             has_redo=bool(app.state["redo_stack"]),  # type: ignore[attr-defined]
-            draft_restored=app.state["draft_restored"],  # type: ignore[attr-defined]
             **_source_ctx(),
         )
 
@@ -808,9 +809,9 @@ def create_app(
         """
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
 
-        def _toast_response(kind: str, message: str) -> Response:
+        def _toast_response(kind: str, title: str, body: str = "") -> Response:
             resp = _lines_response(inv)
-            resp.headers.update(_toast_header(kind, message))
+            resp.headers.update(_toast_header(kind, title, body))
             return resp
 
         try:
@@ -826,7 +827,7 @@ def create_app(
         try:
             raw_lines = fetch_callback(ps, pe)
         except Exception as exc:  # noqa: BLE001 — surface sync errors as a toast
-            return _toast_response("err", f"Sync failed: {exc}")
+            return _toast_response("err", "Sync failed", str(exc))
 
         merge = request.form.get("merge_duplicates") == "on"
         first_sync = not app.state["import_raw"]  # type: ignore[attr-defined]
@@ -843,8 +844,9 @@ def create_app(
             sc = _source_ctx()
             return _toast_response(
                 "ok",
-                f"Synced from Harvest — {sc['selected_hours']:g}h · "
-                f"{sc['selected_count']} people · {len(inv.lines)} line items added",
+                "Synced from Harvest",
+                f"{sc['selected_hours']:g}h · {sc['selected_count']} people · "
+                f"{len(inv.lines)} line items added",
             )
 
         # Edit-safe re-sync: refresh the roster/import generation and range
@@ -866,13 +868,12 @@ def create_app(
         added = new_names - prev_names
         if added:
             noun = "member" if len(added) == 1 else "members"
-            message = (
-                f"Re-synced — {len(added)} new team {noun} available. "
-                "Existing line items kept."
-            )
+            title = "Re-synced"
+            body = f"{len(added)} new team {noun} available · existing line items kept"
         else:
-            message = "Already up to date — no new entries since last sync."
-        return _toast_response("ok", message)
+            title = "Already up to date"
+            body = "No new entries since last sync"
+        return _toast_response("ok", title, body)
 
     @app.post("/lines/people")
     def toggle_people() -> Response:

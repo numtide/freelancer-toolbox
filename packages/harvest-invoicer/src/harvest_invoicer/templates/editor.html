@@ -61,17 +61,9 @@
 
   {% include "partials/source_bar.html" %}
 
-  {% if draft_restored %}
-  <div class="draft-note-wrap">
-    <span class="draft-note">
-      Draft restored from your last session.
-      <button type="button" class="link-btn"
-        title="Throw away the draft and start over from the fresh session state"
-        hx-post="/draft/discard" hx-target="#line-rows" hx-swap="outerHTML"
-        hx-confirm="Discard the restored draft? Your saved edits will be lost.">Discard</button>
-    </span>
-  </div>
-  {% endif %}
+  {# The draft autosave restores the previous session silently on load
+     (no banner, per the design). The safety net stays; only the visible
+     element is gone. #}
 
   <main class="editor-grid" id="layout">
 
@@ -397,7 +389,8 @@
             evt.preventDefault();
             if (window.showToast) {
               window.showToast(
-                "Set the invoice billing period first (or open Manage to enter a range).",
+                "Set the invoice billing period first",
+                "Or open Manage to enter a range.",
                 "err"
               );
             }

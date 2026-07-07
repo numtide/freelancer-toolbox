@@ -29,13 +29,18 @@ def _toast_kind(resp: TestResponse) -> str | None:
     return payload.get("kind") if payload else None
 
 
-def _toast_msg(resp: TestResponse) -> str:
-    """The message text of the toast an HX-Trigger header carries ('' if none)."""
+def _toast_payload(resp: TestResponse) -> dict:
+    """The full showtoast payload ({} if none)."""
     header = resp.headers.get("HX-Trigger")
     if not header:
-        return ""
-    payload = json.loads(header).get("showtoast") or {}
-    return payload.get("message", "")
+        return {}
+    return json.loads(header).get("showtoast") or {}
+
+
+def _toast_msg(resp: TestResponse) -> str:
+    """The toast's title+body text an HX-Trigger header carries ('' if none)."""
+    payload = _toast_payload(resp)
+    return f"{payload.get('title', '')} {payload.get('body', '')}".strip()
 
 
 def _fake_issuer() -> dict[str, object]:
@@ -590,6 +595,18 @@ class TestSourceBar:
         assert b"Re-sync" in resp.data
         assert b"source-manage open" not in resp.data  # collapsed after sync
         assert app.state["source_open"] is False  # type: ignore[attr-defined]
+
+    def test_sync_toast_has_title_and_body(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path)
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+        payload = _toast_payload(resp)
+        assert payload["kind"] == "ok"
+        assert payload["title"] == "Synced from Harvest"
+        assert "line items added" in payload["body"]
 
 
 class TestBillToSwitch:
@@ -1476,23 +1493,27 @@ class TestImportRoster:
         assert "Hand-added fee" in concepts  # manual row survived
         assert "Ops" not in concepts  # Bob's imported line excluded
 
-    def test_dirty_edit_arms_chip_confirm(self, tmp_path: Path) -> None:
-        """H1: editing an imported line arms hx-confirm on roster controls."""
+    def test_dirty_edit_shows_passive_roster_hint(self, tmp_path: Path) -> None:
+        """H1: editing an imported line surfaces a passive caveat (not a
+        blocking confirm) near the roster."""
         app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
         with app.test_client() as c:
             resp = c.post(
                 "/lines/fetch",
                 data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
-            assert b"Re-slicing re-imports" not in resp.data  # clean after fetch
+            assert b'class="roster-hint"' not in resp.data  # clean after fetch
+            # No blocking confirm dialog anywhere on the sync/roster path.
+            assert b"hx-confirm" not in resp.data
             resp = c.post(
                 "/lines/update/0",
                 data={"concept": "Edited", "quantity": "10", "unit_price": "100"},
             )
-            assert b"Re-slicing re-imports" in resp.data  # confirm armed
+            assert b'class="roster-hint"' in resp.data  # passive hint shown
+            assert b"hx-confirm" not in resp.data
             # A re-derive clears the dirty flag again
             resp = c.post("/lines/people", data={"toggle": "Bob"})
-            assert b"Re-slicing re-imports" not in resp.data
+            assert b'class="roster-hint"' not in resp.data
 
     def test_undo_restores_import_generation(self, tmp_path: Path) -> None:
         """H2: undo after a second fetch restores the earlier import too."""
@@ -1701,7 +1722,9 @@ class TestDraftPersistence:
         assert draft["key"] == "2026-06"
         assert draft["invoice"]["lines"][0]["concept"] == "Edited Concept"
 
-    def test_next_session_restores_matching_draft(self, tmp_path: Path) -> None:
+    def test_next_session_restores_matching_draft_silently(
+        self, tmp_path: Path
+    ) -> None:
         db = tmp_path / "state.db"
         c1 = _make_app(tmp_path, db_path=db).test_client()
         c1.post(
@@ -1710,9 +1733,9 @@ class TestDraftPersistence:
         )
         c2 = _make_app(tmp_path, db_path=db).test_client()
         resp = c2.get("/")
-        assert b"Draft restored" in resp.data
+        # Silent restore: the edit is back, but there is no banner.
         assert b"Edited Concept" in resp.data
-        assert b"/draft/discard" in resp.data
+        assert b"Draft restored" not in resp.data
 
     def test_renamed_invoice_still_resumes(self, tmp_path: Path) -> None:
         """The draft key is the seed number, so editing the visible invoice
@@ -1722,7 +1745,6 @@ class TestDraftPersistence:
         c1.post("/meta/update", data={"number": "FINAL-042"})
         c2 = _make_app(tmp_path, db_path=db).test_client()
         resp = c2.get("/")
-        assert b"Draft restored" in resp.data
         assert b"FINAL-042" in resp.data
 
     def test_other_months_draft_is_ignored(self, tmp_path: Path) -> None:

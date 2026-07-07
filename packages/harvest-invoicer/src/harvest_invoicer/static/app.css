@@ -1341,6 +1341,7 @@ button:focus-visible, a:focus-visible {
   cursor: pointer;
 }
 .radio-opt input { accent-color: var(--orange); width: 16px; height: 16px; }
+.env-hint { color: var(--text-2); }
 .email-foot {
   display: flex;
   align-items: center;

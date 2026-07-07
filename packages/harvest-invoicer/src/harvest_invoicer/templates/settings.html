@@ -180,6 +180,11 @@
             </div>
           </div>
           <div class="scard-body">
+            {% set env_names = {
+              'host': 'HARVEST_INVOICER_SMTP_HOST', 'port': 'HARVEST_INVOICER_SMTP_PORT',
+              'username': 'HARVEST_INVOICER_SMTP_USERNAME', 'from_address': 'HARVEST_INVOICER_SMTP_FROM',
+              'encryption': 'HARVEST_INVOICER_SMTP_ENCRYPTION', 'reply_to': 'HARVEST_INVOICER_SMTP_REPLY_TO'} %}
+            {% macro env_hint(f) %}{% if email[f ~ '_env'] %}<div class="help env-hint">Set via <span class="hv-num">{{ env_names[f] }}</span> (environment).</div>{% endif %}{% endmacro %}
             <div class="subgroup">Sender</div>
             <div class="sgrid" style="margin-bottom:24px;">
               <div>
@@ -188,11 +193,13 @@
               </div>
               <div>
                 <label class="slabel">From address</label>
-                <input type="text" class="hv-num" name="from_address" value="{{ email.from_address }}" placeholder="{{ issuer.get('email', '') }}">
+                <input type="text" class="hv-num" name="from_address" value="{{ email.from_address }}" placeholder="{{ issuer.get('email', '') }}"{{ ' disabled' if email.from_address_env }}>
+                {{ env_hint('from_address') }}
               </div>
               <div class="wide">
                 <label class="slabel">Reply-to <span class="opt">(optional)</span></label>
-                <input type="text" class="hv-num" name="reply_to" value="{{ email.reply_to }}">
+                <input type="text" class="hv-num" name="reply_to" value="{{ email.reply_to }}"{{ ' disabled' if email.reply_to_env }}>
+                {{ env_hint('reply_to') }}
               </div>
             </div>
 
@@ -200,14 +207,20 @@
             <div class="sgrid" style="grid-template-columns:2fr 0.7fr 1fr;margin-bottom:16px;">
               <div>
                 <label class="slabel">Host</label>
-                <input type="text" class="hv-num" name="host" value="{{ email.host }}" placeholder="smtp.example.com">
+                <input type="text" class="hv-num" name="host" value="{{ email.host }}" placeholder="smtp.example.com"{{ ' disabled' if email.host_env }}>
+                {{ env_hint('host') }}
               </div>
               <div>
                 <label class="slabel">Port</label>
-                <input type="text" class="hv-num" name="port" value="{{ email.port }}" placeholder="587">
+                <input type="text" class="hv-num" name="port" value="{{ email.port }}" placeholder="587"{{ ' disabled' if email.port_env }}>
+                {{ env_hint('port') }}
               </div>
               <div>
                 <label class="slabel">Encryption</label>
+                {% if email.encryption_env %}
+                <input type="text" class="hv-num" value="{{ {'starttls':'STARTTLS','ssl':'SSL/TLS','none':'None'}[email.encryption] }}" disabled>
+                {{ env_hint('encryption') }}
+                {% else %}
                 <div class="dd" id="enc-dd">
                   <button type="button" class="input-like dd-btn" aria-haspopup="listbox" aria-expanded="false">
                     <span id="enc-label" data-labels>{{ {'starttls':'STARTTLS','ssl':'SSL/TLS','none':'None'}[email.encryption] }}</span>
@@ -224,12 +237,14 @@
                   <input type="hidden" name="encryption" id="enc-input" value="{{ email.encryption }}">
                 </div>
                 <div class="help">STARTTLS (587) or SSL/TLS (465).</div>
+                {% endif %}
               </div>
             </div>
             <div class="sgrid">
               <div>
                 <label class="slabel">Username</label>
-                <input type="text" class="hv-num" name="username" value="{{ email.username }}">
+                <input type="text" class="hv-num" name="username" value="{{ email.username }}"{{ ' disabled' if email.username_env }}>
+                {{ env_hint('username') }}
               </div>
               <div>
                 <label class="slabel">Password</label>

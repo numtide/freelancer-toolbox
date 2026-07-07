@@ -2193,6 +2193,38 @@ class TestEmailSettings:
         resp = c.post("/send/test", data={})
         assert _toast_kind(resp) == "err"
 
+    def test_env_values_shown_readonly_password_never_leaked(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HARVEST_INVOICER_SMTP_HOST", "env-smtp.example.com")
+        monkeypatch.setenv("HARVEST_INVOICER_SMTP_PASSWORD", "sup3r-secret")
+        app = _make_app(tmp_path, email_config={"host": "db-host", "username": "u"})
+        body = app.test_client().get("/settings").data
+        # The env value is shown (not the stored one) and its field is read-only.
+        assert b"env-smtp.example.com" in body
+        assert b"db-host" not in body
+        assert b'placeholder="smtp.example.com" disabled' in body
+        assert b"HARVEST_INVOICER_SMTP_HOST" in body  # env hint
+        # A non-env field stays editable.
+        assert b'name="username" value="u"' in body
+        # The password value is NEVER rendered to the client.
+        assert b"sup3r-secret" not in body
+        assert b"\xe2\x80\xa2\xe2\x80\xa2" in body  # masked bullets shown instead
+
+    def test_env_controlled_field_survives_save(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A read-only (env) field isn't submitted; saving must not wipe its
+        # stored value.
+        monkeypatch.setenv("HARVEST_INVOICER_SMTP_HOST", "env-host")
+        db = tmp_path / "state.db"
+        app = _make_app(tmp_path, db_path=db, email_config={"host": "stored-host"})
+        with app.test_client() as c:
+            c.post("/settings/email", data={"username": "newuser"})
+        saved = state_db.get_email(db)
+        assert saved["host"] == "stored-host"  # preserved, not cleared
+        assert saved["username"] == "newuser"
+
 
 class TestToasts:
     """Committed actions return an HX-Trigger showtoast header."""

@@ -1150,10 +1150,18 @@ def create_app(
         from harvest_invoicer.mail import (  # noqa: PLC0415
             DEFAULT_MESSAGE_TEMPLATE,
             DEFAULT_SUBJECT_TEMPLATE,
+            env_value,
         )
 
         cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
-        email: dict[str, object] = {f: str(cfg.get(f) or "") for f in email_fields}
+        # Show the *effective* value for each field (an environment override
+        # wins over the stored one) and flag which fields the environment
+        # controls, so the UI can render those read-only.
+        email: dict[str, object] = {}
+        for f in email_fields:
+            env = env_value(f)
+            email[f] = env or str(cfg.get(f) or "")
+            email[f + "_env"] = bool(env)
         email["encryption"] = email["encryption"] or "starttls"
         email["subject_template"] = (
             email["subject_template"] or DEFAULT_SUBJECT_TEMPLATE
@@ -1162,7 +1170,8 @@ def create_app(
             email["message_template"] or DEFAULT_MESSAGE_TEMPLATE
         )
         email["default_action"] = email["default_action"] or "generate"
-        # Whether a password is available from the environment (never shown).
+        # A password provided via the environment: shown as "set" but never
+        # echoed back to the browser (keeping the secret off the client).
         email["password_set"] = bool(
             os.environ.get("HARVEST_INVOICER_SMTP_PASSWORD", "").strip()
         )
@@ -1180,8 +1189,20 @@ def create_app(
     @app.post("/settings/email")
     def settings_email_save() -> Response:
         """Persist the non-secret email/SMTP config (password stays in env)."""
+        from harvest_invoicer.mail import env_value  # noqa: PLC0415
+
+        cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
         values = {f: request.form.get(f, "").strip() for f in email_fields}
-        if values["encryption"] not in ("starttls", "ssl", "none"):
+        # Env-controlled fields are rendered read-only and thus not submitted;
+        # keep whatever was stored so it survives a save (env still overrides).
+        for f in email_fields:
+            if env_value(f) and not values[f]:
+                values[f] = str(cfg.get(f) or "")
+        if values["encryption"] and values["encryption"] not in (
+            "starttls",
+            "ssl",
+            "none",
+        ):
             values["encryption"] = "starttls"
 
         def _status(msg: str, *, error: bool = False) -> Response:
@@ -1200,7 +1221,6 @@ def create_app(
         if values["from_address"] and "@" not in values["from_address"]:
             return _status("From address must be a valid email.", error=True)
 
-        cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
         cfg.clear()
         cfg.update({k: v for k, v in values.items() if v})
         if db_path is not None:

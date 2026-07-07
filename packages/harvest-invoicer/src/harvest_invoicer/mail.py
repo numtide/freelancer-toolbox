@@ -34,8 +34,27 @@ DEFAULT_MESSAGE_TEMPLATE = (
 )
 
 
+# Non-secret settings each field may be overridden from the environment.
+# (The password lives only in HARVEST_INVOICER_SMTP_PASSWORD and is never
+# echoed to the UI.)
+SMTP_ENV = {
+    "host": "HARVEST_INVOICER_SMTP_HOST",
+    "port": "HARVEST_INVOICER_SMTP_PORT",
+    "username": "HARVEST_INVOICER_SMTP_USERNAME",
+    "from_address": "HARVEST_INVOICER_SMTP_FROM",
+    "encryption": "HARVEST_INVOICER_SMTP_ENCRYPTION",
+    "reply_to": "HARVEST_INVOICER_SMTP_REPLY_TO",
+}
+
+
 class MailConfigError(Exception):
     """SMTP is not configured (or not configured enough) to send/test."""
+
+
+def env_value(key: str) -> str:
+    """The environment override for *key*, or '' if unset/not env-backed."""
+    env = SMTP_ENV.get(key)
+    return os.environ.get(env, "").strip() if env else ""
 
 
 def resolve_tokens(
@@ -65,11 +84,9 @@ def resolve_tokens(
     return out
 
 
-def _cfg(config: dict[str, Any], key: str, env: str, default: str = "") -> str:
-    """Environment override wins, then the stored config, then *default*."""
-    return (
-        os.environ.get(env, "").strip() or str(config.get(key) or "").strip() or default
-    )
+def _cfg(config: dict[str, Any], key: str, default: str = "") -> str:
+    """Effective value for *key*: env override wins, then stored, then default."""
+    return env_value(key) or str(config.get(key) or "").strip() or default
 
 
 def _resolve_smtp(config: dict[str, Any]) -> dict[str, Any]:
@@ -77,18 +94,16 @@ def _resolve_smtp(config: dict[str, Any]) -> dict[str, Any]:
 
     Raises :class:`MailConfigError` when required pieces are missing.
     """
-    host = _cfg(config, "host", "HARVEST_INVOICER_SMTP_HOST")
+    host = _cfg(config, "host")
     if not host:
         msg = "SMTP host is not configured — set it in Settings > Email."
         raise MailConfigError(msg)
 
-    encryption = _cfg(
-        config, "encryption", "HARVEST_INVOICER_SMTP_ENCRYPTION", "starttls"
-    ).lower()
+    encryption = _cfg(config, "encryption", "starttls").lower()
     if encryption not in _ENCRYPTIONS:
         encryption = "starttls"
 
-    port_raw = _cfg(config, "port", "HARVEST_INVOICER_SMTP_PORT")
+    port_raw = _cfg(config, "port")
     try:
         port = int(port_raw) if port_raw else _DEFAULT_PORTS[encryption]
     except ValueError as exc:
@@ -99,7 +114,7 @@ def _resolve_smtp(config: dict[str, Any]) -> dict[str, Any]:
         "host": host,
         "port": port,
         "encryption": encryption,
-        "username": _cfg(config, "username", "HARVEST_INVOICER_SMTP_USERNAME"),
+        "username": _cfg(config, "username"),
         "password": os.environ.get("HARVEST_INVOICER_SMTP_PASSWORD", ""),
     }
 
@@ -123,10 +138,7 @@ def _connect(smtp: dict[str, Any]) -> smtplib.SMTP:
 
 def _sender(config: dict[str, Any], issuer: dict[str, object]) -> tuple[str, str]:
     """Return (from_name, from_address), falling back to the issuer."""
-    address = (
-        _cfg(config, "from_address", "HARVEST_INVOICER_SMTP_FROM")
-        or str(issuer.get("email") or "").strip()
-    )
+    address = _cfg(config, "from_address") or str(issuer.get("email") or "").strip()
     name = str(config.get("from_name") or issuer.get("name") or "").strip()
     if not address:
         msg = "No sender address — set a From address in Settings > Email."
@@ -162,7 +174,7 @@ def send_invoice_email(
     email = EmailMessage()
     email["From"] = f"{from_name} <{from_address}>" if from_name else from_address
     email["To"] = recipient
-    reply_to = _cfg(config, "reply_to", "HARVEST_INVOICER_SMTP_REPLY_TO")
+    reply_to = _cfg(config, "reply_to")
     if reply_to:
         email["Reply-To"] = reply_to
     recipients = [recipient]

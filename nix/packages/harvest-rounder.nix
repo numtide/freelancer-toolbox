@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, perSystem }:
 pkgs.python3.pkgs.buildPythonApplication {
   pname = "harvest-rounder";
   version = "0.1.0";
@@ -9,7 +9,11 @@ pkgs.python3.pkgs.buildPythonApplication {
 
   doCheck = false;
 
-  # Rich is a dependency of the shared pyproject.toml even though
-  # harvest-rounder doesn't use it directly
-  dependencies = [ pkgs.python3.pkgs.rich ];
+  dependencies = [
+    # Rich is a dependency of the shared pyproject.toml even though
+    # harvest-rounder doesn't use it directly
+    pkgs.python3.pkgs.rich
+    perSystem.self.rest
+    perSystem.self.transferwise
+  ];
 }

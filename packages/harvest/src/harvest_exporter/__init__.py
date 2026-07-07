@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any
 
-from .transferwise import exchange_rate
+from transferwise import exchange_rate
 
 
 def convert_currency(

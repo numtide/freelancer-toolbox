@@ -1,0 +1,16 @@
+# Internal workspace library (not intended for PyPI publication;
+# the generic dist name is safe within this uv workspace).
+[project]
+name = "rest"
+version = "0.1.0"
+description = "Minimal HTTP helper used by Numtide freelancer-toolbox clients"
+requires-python = ">=3.13"
+license = "MIT"
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rest"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

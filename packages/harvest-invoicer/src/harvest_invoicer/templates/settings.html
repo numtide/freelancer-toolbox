@@ -182,7 +182,7 @@
           <div class="scard-body">
             {% set env_names = {
               'host': 'HARVEST_INVOICER_SMTP_HOST', 'port': 'HARVEST_INVOICER_SMTP_PORT',
-              'username': 'HARVEST_INVOICER_SMTP_USERNAME', 'from_address': 'HARVEST_INVOICER_SMTP_FROM',
+              'username': 'HARVEST_INVOICER_SMTP_USERNAME', 'from_address': 'HARVEST_INVOICER_SMTP_FROM_ADDRESS',
               'encryption': 'HARVEST_INVOICER_SMTP_ENCRYPTION', 'reply_to': 'HARVEST_INVOICER_SMTP_REPLY_TO'} %}
             {% macro env_hint(f) %}{% if email[f ~ '_env'] %}<div class="help env-hint">Set via <span class="hv-num">{{ env_names[f] }}</span> (environment).</div>{% endif %}{% endmacro %}
             <div class="subgroup">Sender</div>

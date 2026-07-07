@@ -17,7 +17,9 @@ from urllib.parse import urlparse
 
 from flask import Flask, Response, g, render_template, request
 from markupsafe import escape
+from pydantic import ValidationError
 
+from harvest_invoicer.config import SmtpSettings
 from harvest_invoicer.db import (
     clear_draft,
     get_draft,
@@ -1129,53 +1131,53 @@ def create_app(
         "default_action",
     )
 
+    def _smtp_settings() -> SmtpSettings:
+        """The effective SMTP settings (stored + env), tolerant of bad data."""
+        try:
+            return SmtpSettings(**app.state["email"])  # type: ignore[attr-defined]
+        except ValidationError:
+            return SmtpSettings()
+
     def _smtp_enabled() -> bool:
         """Whether sending is configured (host set in the DB or the env)."""
-        cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
-        return bool(str(cfg.get("host") or "").strip()) or bool(
-            os.environ.get("HARVEST_INVOICER_SMTP_HOST", "").strip()
-        )
+        return bool(_smtp_settings().host)
 
     def _default_action() -> str:
         """Which action the split-button's primary runs: 'generate' or 'send'.
 
         Only 'send' when sending is actually enabled.
         """
-        cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
-        action = str(cfg.get("default_action") or "generate")
-        return "send" if action == "send" and _smtp_enabled() else "generate"
+        settings = _smtp_settings()
+        return (
+            "send"
+            if settings.default_action == "send" and settings.host
+            else "generate"
+        )
 
     @app.get("/settings")
     def settings_page() -> str:
-        from harvest_invoicer.mail import (  # noqa: PLC0415
-            DEFAULT_MESSAGE_TEMPLATE,
-            DEFAULT_SUBJECT_TEMPLATE,
-            env_value,
-        )
+        from harvest_invoicer.config import smtp_env_raw  # noqa: PLC0415
 
-        cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
-        # Show the *effective* value for each field (an environment override
-        # wins over the stored one) and flag which fields the environment
-        # controls, so the UI can render those read-only.
-        email: dict[str, object] = {}
+        # The effective (env-over-stored) SMTP settings drive the UI: fields
+        # the environment controls are shown read-only, and the password is
+        # reported as set/unset but never echoed.
+        s = _smtp_settings()
+        email: dict[str, object] = {
+            "from_name": s.from_name,
+            "from_address": s.from_address,
+            "reply_to": s.reply_to,
+            "host": s.host,
+            "port": str(s.port) if s.port else "",
+            "encryption": s.encryption,
+            "username": s.username,
+            "subject_template": s.subject_template,
+            "message_template": s.message_template,
+            "default_action": s.default_action,
+        }
         for f in email_fields:
-            env = env_value(f)
-            email[f] = env or str(cfg.get(f) or "")
-            email[f + "_env"] = bool(env)
-        email["encryption"] = email["encryption"] or "starttls"
-        email["subject_template"] = (
-            email["subject_template"] or DEFAULT_SUBJECT_TEMPLATE
-        )
-        email["message_template"] = (
-            email["message_template"] or DEFAULT_MESSAGE_TEMPLATE
-        )
-        email["default_action"] = email["default_action"] or "generate"
-        # A password provided via the environment: shown as "set" but never
-        # echoed back to the browser (keeping the secret off the client).
-        email["password_set"] = bool(
-            os.environ.get("HARVEST_INVOICER_SMTP_PASSWORD", "").strip()
-        )
-        email["smtp_enabled"] = _smtp_enabled()
+            email[f + "_env"] = bool(smtp_env_raw(f))
+        email["password_set"] = bool(s.password.get_secret_value())
+        email["smtp_enabled"] = bool(s.host)
         return render_template(
             "settings.html",
             issuer=issuer,
@@ -1189,21 +1191,13 @@ def create_app(
     @app.post("/settings/email")
     def settings_email_save() -> Response:
         """Persist the non-secret email/SMTP config (password stays in env)."""
-        from harvest_invoicer.mail import env_value  # noqa: PLC0415
+        from harvest_invoicer.config import (  # noqa: PLC0415
+            friendly_error,
+            smtp_env_raw,
+        )
 
         cfg: dict[str, object] = app.state["email"]  # type: ignore[attr-defined]
         values = {f: request.form.get(f, "").strip() for f in email_fields}
-        # Env-controlled fields are rendered read-only and thus not submitted;
-        # keep whatever was stored so it survives a save (env still overrides).
-        for f in email_fields:
-            if env_value(f) and not values[f]:
-                values[f] = str(cfg.get(f) or "")
-        if values["encryption"] and values["encryption"] not in (
-            "starttls",
-            "ssl",
-            "none",
-        ):
-            values["encryption"] = "starttls"
 
         def _status(msg: str, *, error: bool = False) -> Response:
             css = "status-err" if error else "status-ok"
@@ -1213,16 +1207,27 @@ def create_app(
                 headers=_toast_header("err" if error else "ok", msg),
             )
 
-        if values["port"]:
-            try:
-                int(values["port"])
-            except ValueError:
-                return _status("Port must be a number (e.g. 587).", error=True)
+        # Validate the submitted values through the model (port, encryption,
+        # etc.); env layering does not affect whether the form itself is valid.
+        try:
+            SmtpSettings.model_validate(values)
+        except ValidationError as exc:
+            return _status(friendly_error(exc), error=True)
         if values["from_address"] and "@" not in values["from_address"]:
             return _status("From address must be a valid email.", error=True)
 
+        # Persist non-empty, non-env-controlled fields; env-controlled fields
+        # are read-only in the UI, so leave their stored value untouched.
+        stored = dict(cfg)
+        for f in email_fields:
+            if smtp_env_raw(f):
+                continue
+            if values[f]:
+                stored[f] = values[f]
+            else:
+                stored.pop(f, None)
         cfg.clear()
-        cfg.update({k: v for k, v in values.items() if v})
+        cfg.update({k: v for k, v in stored.items() if v})
         if db_path is not None:
             save_email(db_path, cfg)
         return _status("Settings saved")
@@ -1312,6 +1317,17 @@ def create_app(
                 error=True,
             )
 
+        from harvest_invoicer.config import (  # noqa: PLC0415
+            IssuerConfig,
+            friendly_error,
+        )
+
+        # The model is the schema/validation authority (email shape, types).
+        try:
+            IssuerConfig.model_validate({**values, "bank": {"iban": iban, "bic": bic}})
+        except ValidationError as exc:
+            return _status(friendly_error(exc), error=True)
+
         # Mutate the shared issuer dict in place so the preview updates too.
         for f in text_fields:
             if values[f]:
@@ -1380,6 +1396,11 @@ def create_app(
             "email",
             "language",
         )
+        from harvest_invoicer.config import (  # noqa: PLC0415
+            ClientConfig,
+            friendly_error,
+        )
+
         values = {f: request.form.get(f, "").strip() for f in fields}
         required = ("name", "address_line1", "address_line2", "country", "tax_id")
         missing = [f for f in required if not values[f]]
@@ -1387,29 +1408,29 @@ def create_app(
             return _render_clients_block(
                 "Missing required fields: " + ", ".join(missing), error=True
             )
-        vat_raw = request.form.get("vat_rate", "").strip()
-        vat_val: float | None = None
-        field_error: str | None = None
-        if values["email"] and "@" not in values["email"]:
-            field_error = "Email must be a valid address (missing '@')."
-        elif values["language"] and values["language"] not in SUPPORTED_LANGUAGES:
-            field_error = (
+        if values["language"] and values["language"] not in SUPPORTED_LANGUAGES:
+            return _render_clients_block(
                 f"Unsupported language '{values['language']}'. "
-                f"Supported: {', '.join(SUPPORTED_LANGUAGES)}."
+                f"Supported: {', '.join(SUPPORTED_LANGUAGES)}.",
+                error=True,
             )
-        elif vat_raw:
-            try:
-                vat_val = float(vat_raw)
-            except ValueError:
-                vat_val = -1.0
-            if not 0.0 <= vat_val <= 1.0:
-                field_error = "VAT rate must be a number between 0 and 1 (e.g. 0.21)."
-        if field_error:
-            return _render_clients_block(field_error, error=True)
 
         extra_items, extra_err = _parse_extra_lines(request.form.get("extra_lines", ""))
         if extra_err:
             return _render_clients_block(extra_err, error=True)
+
+        # Validate the record through the model (email shape, VAT range,
+        # extra-line types); a ValidationError yields a readable message.
+        try:
+            model = ClientConfig.model_validate(
+                {
+                    **values,
+                    "vat_rate": request.form.get("vat_rate", "").strip(),
+                    "extra_lines": extra_items,
+                }
+            )
+        except ValidationError as exc:
+            return _render_clients_block(friendly_error(exc), error=True)
 
         # Reuse the existing entry object so the current invoice's client
         # (same object) picks up the edits immediately.
@@ -1419,19 +1440,10 @@ def create_app(
             entry = clients_map.pop(new_key)
         else:
             entry = {}
-        for f in fields:
-            if values[f]:
-                entry[f] = values[f]
-            else:
-                entry.pop(f, None)
-        if vat_val is not None:
-            entry["vat_rate"] = vat_val
-        else:
-            entry.pop("vat_rate", None)
-        if extra_items:
-            entry["extra_lines"] = extra_items
-        else:
-            entry.pop("extra_lines", None)
+        entry.clear()
+        entry.update(
+            {k: v for k, v in model.model_dump().items() if v not in ("", None, [])}
+        )
         clients_map[new_key] = entry
 
         if original and original == app.state["current_client_key"]:  # type: ignore[attr-defined]

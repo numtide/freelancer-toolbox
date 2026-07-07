@@ -16,6 +16,8 @@ dependencies = [
   "jinja2",
   "weasyprint",
   "click",
+  "pydantic>=2",
+  "pydantic-settings>=2",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",

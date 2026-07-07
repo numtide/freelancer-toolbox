@@ -13,6 +13,8 @@ pkgs.python3.pkgs.buildPythonApplication {
     jinja2
     weasyprint
     click
+    pydantic
+    pydantic-settings
   ];
 
   # Unset any ambient PYTHONPATH so Python 3.12 site-packages from a co-active

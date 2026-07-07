@@ -101,6 +101,8 @@
           flask
           click
           jinja2
+          pydantic
+          pydantic-settings
         ];
         options = [
           "--config-file"

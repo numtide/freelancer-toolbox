@@ -1,50 +1,45 @@
 """Email delivery for generated invoices.
 
-Non-secret SMTP settings (host, port, encryption, username, sender,
-reply-to, message templates) live in the state database, edited on the
-Settings > Email screen.  The **password is never persisted** — it comes
-only from the environment:
-
-- ``HARVEST_INVOICER_SMTP_PASSWORD``
-
-Any field may also be overridden from the environment (handy for CI or
-secret managers): ``HARVEST_INVOICER_SMTP_HOST`` / ``_PORT`` /
-``_USERNAME`` / ``_FROM`` / ``_ENCRYPTION``.
+Configuration is a :class:`~harvest_invoicer.config.SmtpSettings` model,
+built from the stored (DB) values with ``HARVEST_INVOICER_SMTP_*``
+environment overrides layered on top.  The password comes from the
+environment only and is never persisted or echoed.
 """
 
 from __future__ import annotations
 
-import os
 import smtplib
 from email.message import EmailMessage
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
+
+from harvest_invoicer.config import (
+    DEFAULT_MESSAGE_TEMPLATE,
+    DEFAULT_SUBJECT_TEMPLATE,
+    SMTP_ENV,
+    SmtpSettings,
+    friendly_error,
+    smtp_env_raw,
+)
 from harvest_invoicer.model import fmt_money
 
 if TYPE_CHECKING:
     from harvest_invoicer.model import Invoice
 
+__all__ = [
+    "DEFAULT_MESSAGE_TEMPLATE",
+    "DEFAULT_SUBJECT_TEMPLATE",
+    "SMTP_ENV",
+    "MailConfigError",
+    "env_value",
+    "resolve_tokens",
+    "send_invoice_email",
+    "verify_smtp",
+]
+
 _SMTP_TIMEOUT = 30
-_ENCRYPTIONS = ("starttls", "ssl", "none")
 _DEFAULT_PORTS = {"starttls": 587, "ssl": 465, "none": 25}
-
-DEFAULT_SUBJECT_TEMPLATE = "{company} — Invoice {number}"
-DEFAULT_MESSAGE_TEMPLATE = (
-    "Hi,\n\nPlease find attached invoice {number} for {total}, due {due}.\n\nThank you."
-)
-
-
-# Non-secret settings each field may be overridden from the environment.
-# (The password lives only in HARVEST_INVOICER_SMTP_PASSWORD and is never
-# echoed to the UI.)
-SMTP_ENV = {
-    "host": "HARVEST_INVOICER_SMTP_HOST",
-    "port": "HARVEST_INVOICER_SMTP_PORT",
-    "username": "HARVEST_INVOICER_SMTP_USERNAME",
-    "from_address": "HARVEST_INVOICER_SMTP_FROM",
-    "encryption": "HARVEST_INVOICER_SMTP_ENCRYPTION",
-    "reply_to": "HARVEST_INVOICER_SMTP_REPLY_TO",
-}
 
 
 class MailConfigError(Exception):
@@ -53,8 +48,7 @@ class MailConfigError(Exception):
 
 def env_value(key: str) -> str:
     """The environment override for *key*, or '' if unset/not env-backed."""
-    env = SMTP_ENV.get(key)
-    return os.environ.get(env, "").strip() if env else ""
+    return smtp_env_raw(key)
 
 
 def resolve_tokens(
@@ -84,66 +78,33 @@ def resolve_tokens(
     return out
 
 
-def _cfg(config: dict[str, Any], key: str, default: str = "") -> str:
-    """Effective value for *key*: env override wins, then stored, then default."""
-    return env_value(key) or str(config.get(key) or "").strip() or default
+def _settings(config: dict[str, Any]) -> SmtpSettings:
+    """Build the effective SMTP settings (env over stored)."""
+    try:
+        return SmtpSettings(**config)
+    except ValidationError as exc:  # e.g. a non-numeric port
+        raise MailConfigError(friendly_error(exc)) from exc
 
 
-def _resolve_smtp(config: dict[str, Any]) -> dict[str, Any]:
-    """Merge stored config + environment into concrete SMTP parameters.
-
-    Raises :class:`MailConfigError` when required pieces are missing.
-    """
-    host = _cfg(config, "host")
-    if not host:
+def _connect(settings: SmtpSettings) -> smtplib.SMTP:
+    """Open + secure + authenticate an SMTP connection per *settings*."""
+    if not settings.host:
         msg = "SMTP host is not configured — set it in Settings > Email."
         raise MailConfigError(msg)
-
-    encryption = _cfg(config, "encryption", "starttls").lower()
-    if encryption not in _ENCRYPTIONS:
-        encryption = "starttls"
-
-    port_raw = _cfg(config, "port")
-    try:
-        port = int(port_raw) if port_raw else _DEFAULT_PORTS[encryption]
-    except ValueError as exc:
-        msg = "SMTP port must be a number (e.g. 587)."
-        raise MailConfigError(msg) from exc
-
-    return {
-        "host": host,
-        "port": port,
-        "encryption": encryption,
-        "username": _cfg(config, "username"),
-        "password": os.environ.get("HARVEST_INVOICER_SMTP_PASSWORD", ""),
-    }
-
-
-def _connect(smtp: dict[str, Any]) -> smtplib.SMTP:
-    """Open + secure + authenticate an SMTP connection per *smtp* config."""
-    if smtp["encryption"] == "ssl":
+    port = settings.port or _DEFAULT_PORTS[settings.encryption]
+    if settings.encryption == "ssl":
         conn: smtplib.SMTP = smtplib.SMTP_SSL(
-            smtp["host"], smtp["port"], timeout=_SMTP_TIMEOUT
+            settings.host, port, timeout=_SMTP_TIMEOUT
         )
     else:
-        conn = smtplib.SMTP(smtp["host"], smtp["port"], timeout=_SMTP_TIMEOUT)
+        conn = smtplib.SMTP(settings.host, port, timeout=_SMTP_TIMEOUT)
         conn.ehlo()
-        if smtp["encryption"] == "starttls" or conn.has_extn("starttls"):
+        if settings.encryption == "starttls" or conn.has_extn("starttls"):
             conn.starttls()
             conn.ehlo()
-    if smtp["username"]:
-        conn.login(smtp["username"], smtp["password"])
+    if settings.username:
+        conn.login(settings.username, settings.password.get_secret_value())
     return conn
-
-
-def _sender(config: dict[str, Any], issuer: dict[str, object]) -> tuple[str, str]:
-    """Return (from_name, from_address), falling back to the issuer."""
-    address = _cfg(config, "from_address") or str(issuer.get("email") or "").strip()
-    name = str(config.get("from_name") or issuer.get("name") or "").strip()
-    if not address:
-        msg = "No sender address — set a From address in Settings > Email."
-        raise MailConfigError(msg)
-    return name, address
 
 
 def send_invoice_email(
@@ -168,15 +129,18 @@ def send_invoice_email(
         msg = "No recipient — enter an address to send to."
         raise MailConfigError(msg)
 
-    smtp = _resolve_smtp(config)
-    from_name, from_address = _sender(config, issuer)
+    settings = _settings(config)
+    from_address = settings.from_address or str(issuer.get("email") or "").strip()
+    if not from_address:
+        msg = "No sender address — set a From address in Settings > Email."
+        raise MailConfigError(msg)
+    from_name = settings.from_name or str(issuer.get("name") or "").strip()
 
     email = EmailMessage()
     email["From"] = f"{from_name} <{from_address}>" if from_name else from_address
     email["To"] = recipient
-    reply_to = _cfg(config, "reply_to")
-    if reply_to:
-        email["Reply-To"] = reply_to
+    if settings.reply_to:
+        email["Reply-To"] = settings.reply_to
     recipients = [recipient]
     if copy_self and from_address and from_address != recipient:
         email["Cc"] = from_address
@@ -190,7 +154,7 @@ def send_invoice_email(
         filename=f"invoice-{invoice.number}.pdf",
     )
 
-    with _connect(smtp) as conn:
+    with _connect(settings) as conn:
         conn.send_message(email, to_addrs=recipients)
 
     return recipient + (" (copy to you)" if copy_self else "")
@@ -202,7 +166,7 @@ def verify_smtp(config: dict[str, Any]) -> str:
     Raises :class:`MailConfigError` / ``OSError`` on failure — used by the
     "Send test email" button's connection check.
     """
-    smtp = _resolve_smtp(config)
-    with _connect(smtp) as conn:
+    settings = _settings(config)
+    with _connect(settings) as conn:
         conn.noop()
-    return str(smtp["host"])
+    return settings.host

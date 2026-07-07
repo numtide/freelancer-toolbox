@@ -2003,7 +2003,14 @@ class TestSendInvoice:
         monkeypatch.setattr(
             "harvest_invoicer.app.pdf_from_html", lambda _h, _u=None: b"%PDF-fake"
         )
-        for var in ("HOST", "PORT", "USERNAME", "PASSWORD", "FROM", "ENCRYPTION"):
+        for var in (
+            "HOST",
+            "PORT",
+            "USERNAME",
+            "PASSWORD",
+            "FROM_ADDRESS",
+            "ENCRYPTION",
+        ):
             monkeypatch.delenv(f"HARVEST_INVOICER_SMTP_{var}", raising=False)
         _FakeSMTP.sent = []
 

@@ -5,7 +5,8 @@
   {% if clients %}
   {% set cur = clients.get(current_client_key, client) %}
   {% set cur_name = cur.get('name', current_client_key or 'Select a client') %}
-  <button type="button" class="input-like dd-btn client-btn">
+  <button type="button" class="input-like dd-btn client-btn"
+    aria-haspopup="listbox" aria-expanded="false" aria-label="Bill to client">
     <span class="cp-left">
       <span class="avatar">{{ initials(cur_name) }}</span>
       <span class="cp-name">{{ cur_name }}</span>
@@ -13,12 +14,15 @@
     <span class="dd-caret">&#9662;</span>
   </button>
   <div class="dd-panel" hidden>
-    <input type="text" class="dd-search" placeholder="Search clients…" aria-label="Search clients">
-    <div class="dd-list">
+    <input type="text" class="dd-search" placeholder="Search clients…" aria-label="Search clients"
+      role="combobox" aria-controls="client-listbox" aria-autocomplete="list" aria-expanded="true">
+    <div class="dd-list" id="client-listbox" role="listbox" aria-label="Clients">
       {% for key, entry in clients.items() %}
       {% set name = entry.get('name', key) %}
       {% set city = (entry.get('address_line2', '').split(',')[-1]).strip().split(' ')[-1] %}
-      <div class="dd-row client-row" data-name="{{ (name ~ ' ' ~ key) | lower }}"
+      <div class="dd-row client-row" role="option" tabindex="-1"
+        aria-selected="{{ 'true' if key == current_client_key else 'false' }}"
+        data-name="{{ (name ~ ' ' ~ key) | lower }}"
         hx-post="/invoice/client" hx-vals='{{ {"client_key": key} | tojson }}'
         hx-target="#line-rows" hx-swap="outerHTML">
         <span class="avatar">{{ initials(name) }}</span>

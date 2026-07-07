@@ -236,9 +236,29 @@
         if (key && key.value.trim() !== "") htmx.trigger(f, "submit");
       });
     });
-    document.getElementById("discard-btn").addEventListener("click", function () {
-      window.location.reload();
-    });
+    // Unsaved-changes guard: warn before leaving with pending edits.
+    (function () {
+      var dirty = false;
+      var content = document.querySelector(".settings-content");
+      function markDirty() { dirty = true; }
+      content.addEventListener("input", markDirty);
+      content.addEventListener("change", markDirty);
+      // A successful save (issuer or any client) clears the flag.
+      document.body.addEventListener("htmx:afterRequest", function (evt) {
+        var cfg = evt.detail.requestConfig;
+        if (evt.detail.successful && cfg && cfg.path &&
+            cfg.path.indexOf("/settings/") === 0) {
+          dirty = false;
+        }
+      });
+      window.addEventListener("beforeunload", function (e) {
+        if (dirty) { e.preventDefault(); e.returnValue = ""; }
+      });
+      document.getElementById("discard-btn").addEventListener("click", function () {
+        dirty = false;  // discarding is intentional — don't prompt
+        window.location.reload();
+      });
+    })();
   </script>
 </body>
 </html>

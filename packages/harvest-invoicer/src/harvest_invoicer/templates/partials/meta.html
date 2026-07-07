@@ -20,12 +20,14 @@
     <div>
       <label class="field-label">Payment terms</label>
       <div class="dd" id="terms-dd">
-        <button type="button" class="input-like dd-btn">
+        <button type="button" class="input-like dd-btn"
+          aria-haspopup="listbox" aria-expanded="false" aria-label="Payment terms">
           <span id="terms-label">{{ terms_label }}</span><span class="dd-caret">&#9662;</span>
         </button>
-        <div class="dd-panel" hidden>
+        <div class="dd-panel" role="listbox" aria-label="Payment terms" hidden>
           {% for days, label in known_terms.items() %}
-          <div class="dd-row terms-row" data-days="{{ days }}">{{ label }}
+          <div class="dd-row terms-row" role="option" tabindex="-1" data-days="{{ days }}"
+            aria-selected="{{ 'true' if days == terms_days else 'false' }}">{{ label }}
             {%- if days == terms_days %}<span class="dd-check">&#10003;</span>{% endif %}</div>
           {% endfor %}
         </div>

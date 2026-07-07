@@ -234,6 +234,41 @@ class TestResponsive:
             assert f"@media ({bp})" in css
 
 
+class TestDropdownA11y:
+    """The custom dropdowns expose listbox semantics and keyboard support."""
+
+    def test_terms_dropdown_has_listbox_roles(self, client: FlaskClient) -> None:
+        body = client.get("/").data
+        assert b'aria-haspopup="listbox"' in body
+        assert b'role="listbox"' in body
+        assert b'role="option"' in body
+        assert b'aria-expanded="false"' in body
+
+    def test_client_picker_has_listbox_roles(self, tmp_path: Path) -> None:
+        clients = {"acme": {"name": "Acme", "address_line2": "1 St, London"}}
+        c = _make_app(tmp_path, clients=clients, client=clients["acme"]).test_client()
+        body = c.get("/").data
+        assert b'aria-label="Bill to client"' in body
+        assert b'id="client-listbox"' in body
+        assert b'aria-selected="true"' in body  # the current client's option
+
+    def test_keyboard_handler_wired(self, client: FlaskClient) -> None:
+        body = client.get("/").data.decode()
+        # Escape-to-close and arrow navigation are present in the editor JS.
+        assert 'e.key === "Escape"' in body
+        assert 'e.key === "ArrowDown"' in body
+
+
+class TestSettingsUnsavedGuard:
+    """Leaving Settings with pending edits must warn before losing them."""
+
+    def test_beforeunload_guard_present(self, client: FlaskClient) -> None:
+        body = client.get("/settings").data.decode()
+        assert "beforeunload" in body
+        # Discard clears the flag so it never double-prompts.
+        assert "discarding is intentional" in body
+
+
 def _weasyprint_available() -> bool:
     """WeasyPrint imports its native libs (pango, gobject) at import time."""
     try:

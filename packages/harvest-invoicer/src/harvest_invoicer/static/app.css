@@ -400,6 +400,11 @@ input[type=checkbox] { accent-color: var(--orange); width: 17px; height: 17px; }
   font-size: 14px;
 }
 .dd-row:hover { background: rgba(var(--ink-tint), 0.05); }
+.dd-row:focus {
+  background: rgba(var(--ink-tint), 0.06);
+  outline: 2px solid var(--orange);
+  outline-offset: -2px;
+}
 .dd-col { display: flex; flex-direction: column; line-height: 1.25; }
 .dd-name { font-size: 14px; font-weight: 600; }
 .dd-meta { font-size: 12px; color: var(--text-3); }

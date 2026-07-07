@@ -248,47 +248,119 @@
       });
     })();
 
-    // ---- Dropdowns (client picker, payment terms), delegated ----
+    // ---- Dropdowns (client picker, payment terms): mouse + keyboard ----
+    // Combobox/listbox semantics: the button toggles a listbox; options are
+    // arrow-navigable, Enter/Space selects, Escape closes and returns focus.
     (function () {
-      function closeAll(except) {
-        document.querySelectorAll(".dd-panel").forEach(function (p) {
-          if (p !== except) {
-            p.hidden = true;
-            var b = p.parentElement.querySelector(".dd-btn");
-            if (b) b.classList.remove("open");
-          }
-        });
-        document.querySelectorAll("details.menu[open]").forEach(function (d) {
-          d.removeAttribute("open");
-        });
+      function optionsIn(panel) {
+        return Array.prototype.filter.call(
+          panel.querySelectorAll(".dd-row"),
+          function (r) { return !r.hidden; }
+        );
       }
-      document.addEventListener("click", function (e) {
-        var btn = e.target.closest(".dd-btn");
-        if (btn) {
-          var panel = btn.parentElement.querySelector(".dd-panel");
-          var willOpen = panel.hidden;
-          closeAll(null);
-          panel.hidden = !willOpen;
-          btn.classList.toggle("open", willOpen);
-          if (willOpen) {
-            var s = panel.querySelector(".dd-search");
-            if (s) { s.value = ""; s.focus(); filterClients(panel, ""); }
-          }
-          return;
+      function selectedIndex(opts) {
+        for (var i = 0; i < opts.length; i++) {
+          if (opts[i].getAttribute("aria-selected") === "true") return i;
         }
-        if (e.target.closest(".client-row") || e.target.closest(".terms-row")) {
-          closeAll(null);
-        }
-        if (!e.target.closest(".dd") && !e.target.closest(".menu")) closeAll(null);
-      });
+        return 0;
+      }
+      function focusOption(opts, i) {
+        if (!opts.length) return;
+        opts[Math.max(0, Math.min(opts.length - 1, i))].focus();
+      }
       function filterClients(panel, q) {
         panel.querySelectorAll(".client-row").forEach(function (r) {
           r.hidden = q !== "" && r.dataset.name.indexOf(q) === -1;
         });
       }
+      function open(dd) {
+        var btn = dd.querySelector(".dd-btn");
+        var panel = dd.querySelector(".dd-panel");
+        closeAll(panel);
+        panel.hidden = false;
+        btn.classList.add("open");
+        btn.setAttribute("aria-expanded", "true");
+        var s = panel.querySelector(".dd-search");
+        if (s) { s.value = ""; filterClients(panel, ""); s.focus(); }
+        else { var o = optionsIn(panel); focusOption(o, selectedIndex(o)); }
+      }
+      function close(dd, returnFocus) {
+        var btn = dd.querySelector(".dd-btn");
+        var panel = dd.querySelector(".dd-panel");
+        panel.hidden = true;
+        btn.classList.remove("open");
+        btn.setAttribute("aria-expanded", "false");
+        if (returnFocus) btn.focus();
+      }
+      function closeAll(except) {
+        document.querySelectorAll(".dd").forEach(function (dd) {
+          var panel = dd.querySelector(".dd-panel");
+          if (panel && panel !== except && !panel.hidden) close(dd, false);
+        });
+        document.querySelectorAll("details.menu[open]").forEach(function (d) {
+          d.removeAttribute("open");
+        });
+      }
+
+      document.addEventListener("click", function (e) {
+        var btn = e.target.closest(".dd-btn");
+        if (btn) {
+          var dd = btn.closest(".dd");
+          if (dd.querySelector(".dd-panel").hidden) open(dd);
+          else close(dd, false);
+          return;
+        }
+        if (e.target.closest(".client-row") || e.target.closest(".terms-row")) {
+          var dd2 = e.target.closest(".dd");
+          if (dd2) close(dd2, false);
+          return;
+        }
+        if (!e.target.closest(".dd") && !e.target.closest(".menu")) closeAll(null);
+      });
+
       document.addEventListener("input", function (e) {
         if (!e.target.classList.contains("dd-search")) return;
         filterClients(e.target.closest(".dd-panel"), e.target.value.toLowerCase());
+      });
+
+      document.addEventListener("keydown", function (e) {
+        var dd = e.target.closest(".dd");
+        if (!dd) return;
+        var panel = dd.querySelector(".dd-panel");
+        var onBtn = e.target.classList.contains("dd-btn");
+        var onSearch = e.target.classList.contains("dd-search");
+        var onOption = e.target.classList.contains("dd-row");
+
+        if (onBtn && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          if (panel.hidden) open(dd);
+          return;
+        }
+        if (panel.hidden) return;
+        var opts = optionsIn(panel);
+        if (e.key === "Escape") { e.preventDefault(); close(dd, true); return; }
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          if (onOption) focusOption(opts, opts.indexOf(e.target) + 1);
+          else focusOption(opts, 0);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          if (onOption) {
+            var i = opts.indexOf(e.target);
+            var search = panel.querySelector(".dd-search");
+            if (i <= 0 && search) { search.focus(); return; }
+            focusOption(opts, i - 1);
+          }
+          return;
+        }
+        if (onOption && (e.key === "Home")) { e.preventDefault(); focusOption(opts, 0); return; }
+        if (onOption && (e.key === "End")) { e.preventDefault(); focusOption(opts, opts.length - 1); return; }
+        if (onOption && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          e.target.click();
+        }
       });
     })();
 

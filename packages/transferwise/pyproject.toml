@@ -1,0 +1,19 @@
+[project]
+name = "transferwise"
+version = "0.1.0"
+description = "Wise (TransferWise) exchange-rate client used by Numtide freelancer-toolbox exporters"
+requires-python = ">=3.13"
+license = "MIT"
+dependencies = [
+    "rest",
+]
+
+[tool.uv.sources]
+rest = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/transferwise"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

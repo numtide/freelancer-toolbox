@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "rich",
+    "rest",
+    "transferwise",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -25,7 +27,6 @@ Homepage = "https://github.com/numtide/harvest-invoice-calculator"
 
 [project.scripts]
 harvest-exporter = "harvest_exporter.cli:main"
-kimai-exporter = "kimai_exporter.cli:main"
 harvest-rounder = "harvest_rounder.cli:main"
 
 [build-system]
@@ -33,5 +34,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/harvest", "src/harvest_exporter", "src/harvest_rounder", "src/kimai", "src/kimai_exporter", "src/rest"]
+packages = ["src/harvest", "src/harvest_exporter", "src/harvest_rounder"]
 
+[tool.uv.sources]
+rest = { workspace = true }
+transferwise = { workspace = true }

@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, perSystem }:
 pkgs.python3.pkgs.buildPythonApplication {
   pname = "harvest-exporter";
   version = "0.1.0";
@@ -9,5 +9,9 @@ pkgs.python3.pkgs.buildPythonApplication {
 
   doCheck = false;
 
-  dependencies = [ pkgs.python3.pkgs.rich ];
+  dependencies = [
+    pkgs.python3.pkgs.rich
+    perSystem.self.rest
+    perSystem.self.transferwise
+  ];
 }

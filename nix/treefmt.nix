@@ -8,14 +8,45 @@
   programs.mypy = {
     enable = true;
     directories = {
+      "packages/rest" = {
+        modules = [ "src/rest" ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
+      "packages/transferwise" = {
+        modules = [ "src/transferwise" ];
+        extraPythonPackages = [ perSystem.self.rest ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
       "packages/harvest" = {
         modules = [
           "src/harvest"
           "src/harvest_exporter"
           "src/harvest_rounder"
+        ];
+        extraPythonPackages = [
+          perSystem.self.rest
+          perSystem.self.transferwise
+          pkgs.python3.pkgs.rich
+        ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
+      "packages/kimai" = {
+        modules = [
           "src/kimai"
           "src/kimai_exporter"
-          "src/rest"
+        ];
+        extraPythonPackages = [
+          perSystem.self.rest
+          perSystem.self.transferwise
         ];
         options = [
           "--config-file"
@@ -84,6 +115,18 @@
       "packages/sevdesk-cli" = {
         modules = [ "src/sevdesk_cli" ];
         extraPythonPackages = [ perSystem.self.sevdesk-api ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
+      "packages/ecbx" = {
+        modules = [ "src/ecbx" ];
+        extraPythonPackages = with pkgs.python3.pkgs; [
+          click
+          rich
+          types-requests
+        ];
         options = [
           "--config-file"
           "../../pyproject.toml"

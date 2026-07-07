@@ -165,6 +165,11 @@
             hx-post="/lines/undo" hx-target="#line-rows" hx-swap="outerHTML">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7v6h6"></path><path d="M3.5 13a9 9 0 1 0 2.3-7.7L3 8"></path></svg>
           </button>
+          <button id="redo-btn" type="button"
+            class="icon-btn-sm{{ '' if has_redo else ' is-disabled' }}" title="Redo last change"
+            hx-post="/lines/redo" hx-target="#line-rows" hx-swap="outerHTML">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 7v6h-6"></path><path d="M20.5 13a9 9 0 1 1-2.3-7.7L21 8"></path></svg>
+          </button>
         </div>
       </div>
       <div id="sel-bar" class="sel-bar" hidden>

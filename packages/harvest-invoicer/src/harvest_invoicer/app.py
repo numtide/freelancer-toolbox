@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import threading
+from collections import deque
 from dataclasses import asdict
 from datetime import date, timedelta
 from pathlib import Path
@@ -39,6 +40,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 _LOCAL_HOSTNAMES = ("127.0.0.1", "localhost")
+
+# Depth of the undo/redo history stacks.
+_UNDO_LIMIT = 20
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -147,9 +151,9 @@ def create_app(
     )
 
     # Mutable state bag on the app object — ephemeral, single-user.
-    # "undo" holds a single-level snapshot of the line items taken before
-    # the most recent mutation; undoing swaps it with the current lines,
-    # so pressing Undo twice acts as redo.
+    # "undo_stack"/"redo_stack" hold bounded histories of editing snapshots:
+    # each mutation pushes the pre-change state onto undo (clearing redo);
+    # Undo/Redo move a snapshot between the two stacks.
     if clients is None:
         clients = {}
     # Key of the invoice's client inside the clients mapping (by identity, so
@@ -164,7 +168,8 @@ def create_app(
         "current_client_key": current_client_key,
         "output_path": output_path,
         "user_templates_dir": user_templates_dir,
-        "undo": None,
+        "undo_stack": deque(maxlen=_UNDO_LIMIT),
+        "redo_stack": deque(maxlen=_UNDO_LIMIT),
         "last_fetch_range": (period_start, period_end)
         if period_start and period_end
         else None,
@@ -245,14 +250,14 @@ def create_app(
             fmt_money=fmt_money,
         )
 
-    def _snapshot_lines(inv: Invoice) -> None:
-        """Remember the current editing state so Undo can restore it.
+    def _capture_state(inv: Invoice) -> dict[str, Any]:
+        """A deep snapshot of the editing state Undo/Redo must restore.
 
         Lines alone are not enough: a bill-to switch changes VAT/extras on
-        the lines, so restoring them must also restore the client (and the
-        roster selection) they belong to.
+        the lines, so a snapshot also carries the client, roster selection,
+        and import generation the lines belong to.
         """
-        app.state["undo"] = {  # type: ignore[attr-defined]
+        return {
             "lines": copy.deepcopy(inv.lines),
             "client_key": app.state["current_client_key"],  # type: ignore[attr-defined]
             "selected_people": set(app.state["selected_people"]),  # type: ignore[attr-defined]
@@ -262,16 +267,51 @@ def create_app(
             "lines_dirty": app.state["lines_dirty"],  # type: ignore[attr-defined]
         }
 
+    def _restore_state(inv: Invoice, snapshot: dict[str, Any]) -> None:
+        """Apply a snapshot from :func:`_capture_state` to the live state."""
+        inv.lines[:] = snapshot["lines"]
+        clients_map: dict[str, dict[str, str]] = app.state["clients"]  # type: ignore[attr-defined]
+        key = snapshot["client_key"]
+        if key is not None and key in clients_map:
+            app.state["client"] = clients_map[key]  # type: ignore[attr-defined]
+            app.state["current_client_key"] = key  # type: ignore[attr-defined]
+        app.state["selected_people"] = snapshot["selected_people"]  # type: ignore[attr-defined]
+        app.state["import_raw"] = snapshot["import_raw"]  # type: ignore[attr-defined]
+        app.state["import_merge"] = snapshot["import_merge"]  # type: ignore[attr-defined]
+        app.state["last_fetch_range"] = snapshot["last_fetch_range"]  # type: ignore[attr-defined]
+        app.state["lines_dirty"] = snapshot["lines_dirty"]  # type: ignore[attr-defined]
+
+    def _snapshot_lines(inv: Invoice) -> None:
+        """Push the pre-mutation state onto the undo stack (a new edit
+        invalidates any redo history)."""
+        app.state["undo_stack"].append(_capture_state(inv))  # type: ignore[attr-defined]
+        app.state["redo_stack"].clear()  # type: ignore[attr-defined]
+
     _undo_svg = (
         '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
         'stroke="currentColor" stroke-width="1.7"><path d="M3 7v6h6"></path>'
         '<path d="M3.5 13a9 9 0 1 0 2.3-7.7L3 8"></path></svg>'
     )
+    _redo_svg = (
+        '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" '
+        'stroke="currentColor" stroke-width="1.7"><path d="M21 7v6h-6"></path>'
+        '<path d="M20.5 13a9 9 0 1 1-2.3-7.7L21 8"></path></svg>'
+    )
+
+    def _history_btn(kind: str, enabled: bool) -> str:
+        cls = "icon-btn-sm" if enabled else "icon-btn-sm is-disabled"
+        svg = _undo_svg if kind == "undo" else _redo_svg
+        return (
+            f'<button id="{kind}-btn" hx-swap-oob="outerHTML" type="button" '
+            f'class="{cls}" title="{kind.capitalize()} last change" '
+            f'hx-post="/lines/{kind}" hx-target="#line-rows" hx-swap="outerHTML">'
+            f"{svg}</button>"
+        )
 
     def _oob_extras(inv: Invoice) -> str:
         """OOB fragments riding along with every line mutation response:
-        the line-items header meta, the preview count, and the undo button
-        (greyed out while there is no history)."""
+        the line-items header meta, the preview count, and the undo/redo
+        buttons (greyed out when their stack is empty)."""
         count = len(inv.lines)
         meta = (
             f'<span id="items-meta" hx-swap-oob="outerHTML" class="hv-num card-meta">'
@@ -282,15 +322,9 @@ def create_app(
             f'<span id="preview-count" hx-swap-oob="outerHTML" class="hv-num preview-count">'
             f"{count} line items</span>"
         )
-        has_undo = app.state["undo"] is not None  # type: ignore[attr-defined]
-        undo_cls = "icon-btn-sm" if has_undo else "icon-btn-sm is-disabled"
-        undo = (
-            f'<button id="undo-btn" hx-swap-oob="outerHTML" type="button" '
-            f'class="{undo_cls}" title="Undo last change" '
-            f'hx-post="/lines/undo" hx-target="#line-rows" hx-swap="outerHTML">'
-            f"{_undo_svg}</button>"
-        )
-        return meta + pcount + undo + _import_note_oob()
+        undo = _history_btn("undo", bool(app.state["undo_stack"]))  # type: ignore[attr-defined]
+        redo = _history_btn("redo", bool(app.state["redo_stack"]))  # type: ignore[attr-defined]
+        return meta + pcount + undo + redo + _import_note_oob()
 
     def _store_import(raw_lines: list[InvoiceLine], merge: bool) -> None:
         """Remember the raw per-person import for chip-based re-derives."""
@@ -491,7 +525,8 @@ def create_app(
             current_client_key=app.state["current_client_key"],  # type: ignore[attr-defined]
             fmt_money=fmt_money,
             output_path=str(output_path),
-            has_undo=app.state["undo"] is not None,  # type: ignore[attr-defined]
+            has_undo=bool(app.state["undo_stack"]),  # type: ignore[attr-defined]
+            has_redo=bool(app.state["redo_stack"]),  # type: ignore[attr-defined]
             draft_restored=app.state["draft_restored"],  # type: ignore[attr-defined]
             **_import_note_ctx(),
         )
@@ -843,37 +878,28 @@ def create_app(
 
     @app.post("/lines/undo")
     def undo_lines() -> Response:
-        """Restore the editing state from before the last change.
+        """Step back one edit, pushing the current state onto the redo stack.
 
         Restores the lines together with the bill-to client and roster
-        selection they were derived from.  The replaced state becomes the
-        new snapshot, so a second Undo re-applies the change (acts as
-        redo).  No-op without history.
+        selection they were derived from.  No-op without history.
         """
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
-        snapshot = app.state["undo"]  # type: ignore[attr-defined]
-        if snapshot is None:
+        undo_stack = app.state["undo_stack"]  # type: ignore[attr-defined]
+        if not undo_stack:
             return _lines_response(inv)
-        app.state["undo"] = {  # type: ignore[attr-defined]
-            "lines": copy.deepcopy(inv.lines),
-            "client_key": app.state["current_client_key"],  # type: ignore[attr-defined]
-            "selected_people": set(app.state["selected_people"]),  # type: ignore[attr-defined]
-            "import_raw": copy.deepcopy(app.state["import_raw"]),  # type: ignore[attr-defined]
-            "import_merge": app.state["import_merge"],  # type: ignore[attr-defined]
-            "last_fetch_range": app.state["last_fetch_range"],  # type: ignore[attr-defined]
-            "lines_dirty": app.state["lines_dirty"],  # type: ignore[attr-defined]
-        }
-        inv.lines[:] = snapshot["lines"]
-        clients_map: dict[str, dict[str, str]] = app.state["clients"]  # type: ignore[attr-defined]
-        key = snapshot["client_key"]
-        if key is not None and key in clients_map:
-            app.state["client"] = clients_map[key]  # type: ignore[attr-defined]
-            app.state["current_client_key"] = key  # type: ignore[attr-defined]
-        app.state["selected_people"] = snapshot["selected_people"]  # type: ignore[attr-defined]
-        app.state["import_raw"] = snapshot["import_raw"]  # type: ignore[attr-defined]
-        app.state["import_merge"] = snapshot["import_merge"]  # type: ignore[attr-defined]
-        app.state["last_fetch_range"] = snapshot["last_fetch_range"]  # type: ignore[attr-defined]
-        app.state["lines_dirty"] = snapshot["lines_dirty"]  # type: ignore[attr-defined]
+        app.state["redo_stack"].append(_capture_state(inv))  # type: ignore[attr-defined]
+        _restore_state(inv, undo_stack.pop())
+        return _lines_response(inv, _client_inset_oob())
+
+    @app.post("/lines/redo")
+    def redo_lines() -> Response:
+        """Re-apply an undone edit, pushing the current state back onto undo."""
+        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
+        redo_stack = app.state["redo_stack"]  # type: ignore[attr-defined]
+        if not redo_stack:
+            return _lines_response(inv)
+        app.state["undo_stack"].append(_capture_state(inv))  # type: ignore[attr-defined]
+        _restore_state(inv, redo_stack.pop())
         return _lines_response(inv, _client_inset_oob())
 
     @app.post("/lines/reorder")
@@ -1255,7 +1281,8 @@ def create_app(
         if db_path is not None:
             clear_draft(db_path)
         _apply_draft(fresh_state)
-        app.state["undo"] = None  # type: ignore[attr-defined]
+        app.state["undo_stack"].clear()  # type: ignore[attr-defined]
+        app.state["redo_stack"].clear()  # type: ignore[attr-defined]
         app.state["draft_restored"] = False  # type: ignore[attr-defined]
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
         return _lines_response(

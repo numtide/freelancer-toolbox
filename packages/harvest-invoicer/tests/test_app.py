@@ -623,9 +623,9 @@ class TestBillToSwitch:
         assert b"Numtide Sarl" in preview.data
         # The response carries the picker/inset refresh for the UI
         assert b"client-inset" in resp.data
-        # Undo again = redo: back to Domestic with its VAT and extras
+        # Redo: back to Domestic with its VAT and extras
         with app.test_client() as c:
-            c.post("/lines/undo")
+            c.post("/lines/redo")
         assert app.state["current_client_key"] == "Domestic"  # type: ignore[attr-defined]
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         assert any(line.origin == "extra" for line in inv.lines)
@@ -1058,7 +1058,7 @@ class TestSettings:
 
 
 class TestUndo:
-    """Single-level undo for line-item mutations (second undo = redo)."""
+    """Multi-level undo/redo history for line-item mutations."""
 
     def test_undo_restores_dropped_line(self, client: FlaskClient) -> None:
         client.post("/lines/drop/0")
@@ -1067,16 +1067,43 @@ class TestUndo:
         assert b"Backend Development" in resp.data
         assert resp.data.count(b'type="checkbox"') == 2
 
-    def test_undo_twice_is_redo(self, client: FlaskClient) -> None:
+    def test_redo_reapplies_undone_change(self, client: FlaskClient) -> None:
         client.post("/lines/drop/0")
         client.post("/lines/undo")  # restore
-        resp = client.post("/lines/undo")  # redo the drop
+        resp = client.post("/lines/redo")  # re-apply the drop
         assert b"Backend Development" not in resp.data
+
+    def test_multi_level_undo_walks_back_several_edits(
+        self, client: FlaskClient
+    ) -> None:
+        # Three structural edits, then three undos should peel each back.
+        client.post("/lines/add")  # 3 rows
+        client.post("/lines/add")  # 4 rows
+        client.post("/lines/drop/0")  # 3 rows (Backend gone)
+        assert client.post("/lines/undo").data.count(b'type="checkbox"') == 4
+        assert client.post("/lines/undo").data.count(b'type="checkbox"') == 3
+        resp = client.post("/lines/undo")
+        assert resp.data.count(b'type="checkbox"') == 2  # back to the start
+        assert b"Backend Development" in resp.data
+
+    def test_new_edit_clears_redo(self, client: FlaskClient) -> None:
+        client.post("/lines/drop/0")
+        client.post("/lines/undo")  # redo now available
+        client.post("/lines/add")  # a fresh edit invalidates redo
+        resp = client.post("/lines/redo")  # no-op
+        # Still the post-add state: Backend restored + the added blank row.
+        assert b"Backend Development" in resp.data
+        assert resp.data.count(b'type="checkbox"') == 3
 
     def test_undo_without_history_is_noop(self, client: FlaskClient) -> None:
         resp = client.post("/lines/undo")
         assert resp.status_code == 200
         assert b"Backend Development" in resp.data
+        assert resp.data.count(b'type="checkbox"') == 2
+
+    def test_redo_without_history_is_noop(self, client: FlaskClient) -> None:
+        resp = client.post("/lines/redo")
+        assert resp.status_code == 200
         assert resp.data.count(b'type="checkbox"') == 2
 
     def test_undo_restores_lines_after_fetch(self, tmp_path: Path) -> None:
@@ -1110,9 +1137,11 @@ class TestUndo:
         assert b"Backend Development" in resp.data
         assert b"Changed" not in resp.data
 
-    def test_editor_has_undo_button(self, client: FlaskClient) -> None:
+    def test_editor_has_undo_and_redo_buttons(self, client: FlaskClient) -> None:
         resp = client.get("/")
         assert b"/lines/undo" in resp.data
+        assert b"/lines/redo" in resp.data
+        assert b'id="redo-btn"' in resp.data
 
 
 class TestReviewPolish:

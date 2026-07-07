@@ -1705,6 +1705,48 @@ class TestCsrfGuard:
         resp = client.get("/", headers={"Origin": "https://evil.example"})
         assert resp.status_code == 200
 
+    def _app(self, tmp_path: Path, allowed: set[str]):  # noqa: ANN202
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "i.pdf",
+            allowed_hosts=frozenset(allowed),
+        )
+        app.config["TESTING"] = True
+        return app
+
+    def test_configured_host_accepted(self, tmp_path: Path) -> None:
+        c = self._app(tmp_path, {"192.168.1.50"}).test_client()
+        resp = c.post("/lines/add", base_url="http://192.168.1.50:8321")
+        assert resp.status_code == 200
+
+    def test_unrecognized_host_rejected(self, tmp_path: Path) -> None:
+        c = self._app(tmp_path, set()).test_client()  # loopback only
+        resp = c.post("/lines/add", base_url="http://192.168.1.50:8321")
+        assert resp.status_code == 403
+
+    def test_wildcard_accepts_any_host_but_blocks_cross_origin(
+        self, tmp_path: Path
+    ) -> None:
+        c = self._app(tmp_path, {"*"}).test_client()
+        base = "http://10.0.0.9:8321"
+        # Any Host is fine when bound to a wildcard address...
+        assert c.post("/lines/add", base_url=base).status_code == 200
+        # ...same-origin is fine...
+        assert (
+            c.post("/lines/add", base_url=base, headers={"Origin": base}).status_code
+            == 200
+        )
+        # ...but a cross-origin Origin is still rejected.
+        assert (
+            c.post(
+                "/lines/add", base_url=base, headers={"Origin": "https://evil.example"}
+            ).status_code
+            == 403
+        )
+
 
 class TestReorder:
     """POST /lines/reorder applies the drag-and-drop order."""

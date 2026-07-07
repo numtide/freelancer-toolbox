@@ -260,6 +260,26 @@ def main() -> None:
     type=click.Path(),
     help="PDF output path (default: invoice-<number>.pdf).",
 )
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    show_default=True,
+    envvar="HARVEST_INVOICER_HOST",
+    help=(
+        "Address to bind the editor to. Use 0.0.0.0 to reach it from other "
+        "devices on your network (the app is unauthenticated — see --allowed-host)."
+    ),
+)
+@click.option(
+    "--allowed-host",
+    "allowed_hosts",
+    multiple=True,
+    metavar="HOST",
+    help=(
+        "Extra Host value(s) the CSRF guard accepts (repeatable). Needed when "
+        "binding to 0.0.0.0 and reaching the app via a specific hostname/IP."
+    ),
+)
 @click.option("--port", default=_DEFAULT_PORT, show_default=True, type=int)
 @click.option("--no-browser", is_flag=True, help="Don't open browser automatically.")
 @click.option(
@@ -289,6 +309,8 @@ def serve(
     db_path: Path | None,
     templates_dir: Path | None,
     output_path: str | None,
+    host: str,
+    allowed_hosts: tuple[str, ...],
     port: int,
     no_browser: bool,
     currency: str,
@@ -361,6 +383,17 @@ def serve(
     )
     out_path = Path(output_path or f"invoice-{number}.pdf")
 
+    # CSRF-guard allowlist: any explicit --allowed-host, plus the bind host
+    # itself when it is a concrete address; a wildcard bind (0.0.0.0/::)
+    # accepts any Host via "*" and relies on the same-origin check.
+    wildcard_hosts = {"0.0.0.0", "::", ""}  # noqa: S104 — matched, not bound
+    allowed = set(allowed_hosts)
+    if host in wildcard_hosts:
+        allowed.add("*")
+    else:
+        allowed.add(host)
+    is_loopback = host in ("127.0.0.1", "localhost", "::1")
+
     from harvest_invoicer.app import create_app  # noqa: PLC0415
 
     app = create_app(
@@ -382,17 +415,23 @@ def serve(
         import_raw=raw_import,
         # Matches the default-checked "Auto-merge duplicate entries" box.
         import_merge=True,
+        allowed_hosts=frozenset(allowed),
     )
 
-    url = (
-        f"http://127.0.0.1:{port}/settings"
-        if onboarding
-        else f"http://127.0.0.1:{port}/"
-    )
+    # A concrete bind host is browsable directly; a wildcard bind is reached
+    # via one of the machine's real addresses, so point the browser at loopback.
+    display_host = "127.0.0.1" if host in wildcard_hosts else host
+    path = "/settings" if onboarding else "/"
+    url = f"http://{display_host}:{port}{path}"
     if onboarding:
         click.echo(
             "No configuration found — opening Settings to create it "
             f"(saved to {db_file})."
+        )
+    if not is_loopback:
+        click.echo(
+            f"WARNING: binding to {host} exposes this unauthenticated editor "
+            "to your network. Only do this on a trusted network."
         )
     click.echo(f"Starting editor at {url}")
     click.echo("Press Ctrl-C to stop.")
@@ -400,7 +439,7 @@ def serve(
         webbrowser.open(url)
 
     # threaded: a ~1s WeasyPrint preview render must not block edits.
-    app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
+    app.run(host=host, port=port, debug=False, threaded=True)
 
 
 # ---------------------------------------------------------------------------

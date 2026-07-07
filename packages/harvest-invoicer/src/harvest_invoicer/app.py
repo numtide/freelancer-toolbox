@@ -111,12 +111,15 @@ def create_app(
     db_path: Path | None = None,
     import_raw: list[InvoiceLine] | None = None,
     import_merge: bool = True,
+    allowed_hosts: frozenset[str] = frozenset(),
 ) -> Flask:
     """Create and configure the Flask editor application.
 
     State (the current invoice) lives on ``app.state`` — a plain object that
-    is mutated in-place by htmx POST handlers.  The app is single-user and
-    binds to 127.0.0.1 only; no auth, no persistence.
+    is mutated in-place by htmx POST handlers.  The app is single-user with
+    no auth; a CSRF guard restricts mutating requests to the served host(s).
+    ``allowed_hosts`` extends the loopback default (e.g. when binding to a
+    LAN address); a literal ``"*"`` accepts any Host (wildcard binds).
 
     When *user_templates_dir* is supplied the ChoiceLoader (in render.py)
     checks that directory first, falling back to the packaged templates.
@@ -191,22 +194,34 @@ def create_app(
         "draft_restored": False,
     }
 
+    # Hostnames the CSRF guard accepts, beyond loopback. A literal "*"
+    # (set when binding to a wildcard address) accepts any Host and falls
+    # back to a same-origin check for Origin/Referer.
+    allowed = frozenset(_LOCAL_HOSTNAMES) | allowed_hosts
+    allow_any_host = "*" in allowed
+
     @app.before_request
     def _reject_cross_origin() -> Response | None:
-        """CSRF guard: mutating requests must come from the local editor.
+        """CSRF guard: mutating requests must come from the editor's origin.
 
-        The server binds to 127.0.0.1 with no auth, so a malicious web page
-        could otherwise fire state-changing (and config-writing) POSTs at
-        it.  Require a local Host, and when the browser sends an Origin or
-        Referer, require it to be local too.
+        The server has no auth, so a malicious web page could otherwise fire
+        state-changing (and config-writing) POSTs at it.  Require the Host to
+        be one the server was told to serve (loopback by default, plus any
+        configured host), and require a present Origin/Referer to be the
+        same origin.  When bound to a wildcard address ("*"), any Host is
+        accepted but Origin/Referer must still match it.
         """
         if request.method not in ("POST", "PUT", "DELETE", "PATCH"):
             return None
-        if (request.host.rsplit(":", 1)[0]) not in _LOCAL_HOSTNAMES:
-            return Response("Forbidden: non-local Host.", status=403)
+        host = request.host.rsplit(":", 1)[0]
+        if not allow_any_host and host not in allowed:
+            return Response("Forbidden: unrecognized Host.", status=403)
         origin = request.headers.get("Origin") or request.headers.get("Referer")
-        if origin and urlparse(origin).hostname not in _LOCAL_HOSTNAMES:
-            return Response("Forbidden: cross-origin request rejected.", status=403)
+        if origin:
+            origin_host = urlparse(origin).hostname
+            same_origin = allow_any_host and origin_host == host
+            if origin_host not in allowed and not same_origin:
+                return Response("Forbidden: cross-origin request rejected.", status=403)
         return None
 
     # The dev server runs threaded so slow PDF renders don't block edits,

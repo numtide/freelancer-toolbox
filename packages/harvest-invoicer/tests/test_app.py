@@ -428,6 +428,47 @@ class TestFetchFromEditor:
         assert inv.period_start == date(2026, 6, 1)
         assert inv.period_end == date(2026, 6, 30)
 
+    def test_empty_draft_is_not_restored(self, tmp_path: Path) -> None:
+        """A draft with no line items is dropped, not silently restored into
+        a confusing 'synced but empty' state."""
+        db = tmp_path / "state.db"
+        state_db.save_draft(
+            db,
+            {
+                "key": "2026-06",
+                "invoice": {"lines": [], "period_start": "2026-05-01"},
+                "import_raw": [{"concept": "X", "unit_price": 1, "quantity": 1}],
+            },
+        )
+        app = _make_app(tmp_path, db_path=db)
+        with app.test_client() as c:
+            resp = c.get("/")
+        assert resp.status_code == 200
+        assert not app.state["import_raw"]  # type: ignore[attr-defined]  # not restored
+        assert state_db.get_draft(db) is None  # degenerate draft dropped
+
+    def test_sync_seeds_when_synced_but_no_lines(self, tmp_path: Path) -> None:
+        """Regression: a state that recorded an import but has zero line
+        items (e.g. a restored draft) must still seed on sync, not fall
+        through to the no-op 'already up to date' re-sync path."""
+
+        def fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            return [InvoiceLine(concept="Fresh", unit_price=100.0, quantity=8.0)]
+
+        app = self._make_app(tmp_path, fetch)
+        # Simulate the stale state: import recorded, but no current lines.
+        app.state["import_raw"] = [  # type: ignore[attr-defined]
+            InvoiceLine(concept="Prev", unit_price=100.0, quantity=5.0, user="Al")
+        ]
+        app.state["invoice"].lines[:] = []  # type: ignore[attr-defined]
+        with app.test_client() as c:
+            resp = c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+        assert len(app.state["invoice"].lines) > 0  # type: ignore[attr-defined]
+        assert _toast_payload(resp)["title"] == "Synced from Harvest"
+
     def test_resync_preserves_edited_lines(self, tmp_path: Path) -> None:
         """A re-sync must never clobber hand-edited rows."""
         calls = {"n": 0}

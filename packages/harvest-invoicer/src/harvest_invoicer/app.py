@@ -510,12 +510,20 @@ def create_app(
             )
         app.state["lines_dirty"] = bool(data.get("lines_dirty", False))  # type: ignore[attr-defined]
 
-    # The just-seeded state, kept so the restored-draft note's Discard
-    # button can return to it.  Must be captured before the draft applies.
+    # The just-seeded state, kept so a corrupt/degenerate draft can roll
+    # back to it.  Must be captured before the draft applies.
     fresh_state = _draft_dump()
     if db_path is not None:
         stored_draft = get_draft(db_path)
-        if stored_draft and stored_draft.get("key") == invoice_number:
+        # Only resume a draft with actual line items: a draft that recorded
+        # an import but has zero rows is not meaningful work to restore, and
+        # (restored silently) would strand the editor in a confusing
+        # "synced but empty" state.  Drop it and start fresh instead.
+        invoice_data = stored_draft.get("invoice") if stored_draft else None
+        has_lines = (
+            bool(invoice_data.get("lines")) if isinstance(invoice_data, dict) else False
+        )
+        if stored_draft and stored_draft.get("key") == invoice_number and has_lines:
             try:
                 _apply_draft(stored_draft)
                 app.state["draft_restored"] = True  # type: ignore[attr-defined]
@@ -525,6 +533,8 @@ def create_app(
                 app.logger.warning("Ignoring corrupt draft", exc_info=True)
                 _apply_draft(fresh_state)
                 clear_draft(db_path)
+        elif stored_draft and not has_lines:
+            clear_draft(db_path)
 
     # Endpoints that never change the invoice's editing state; everything
     # else autosaves the draft after a successful POST.
@@ -830,7 +840,11 @@ def create_app(
             return _toast_response("err", "Sync failed", str(exc))
 
         merge = request.form.get("merge_duplicates") == "on"
-        first_sync = not app.state["import_raw"]  # type: ignore[attr-defined]
+        # Seed (rebuild) the lines on a first sync, and also whenever there
+        # are no line items to preserve — a stale/empty state (e.g. a
+        # restored draft that recorded an import but no rows) must still
+        # import, not fall through to the no-op re-sync path.
+        first_sync = not app.state["import_raw"] or not inv.lines  # type: ignore[attr-defined]
         # Snapshot before mutating: undo restores the previous import
         # generation together with the previous lines.
         _snapshot_lines(inv)

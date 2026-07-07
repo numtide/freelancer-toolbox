@@ -8,12 +8,14 @@
     <span class="num">Subtotal</span>
     <span></span>
   </div>
-  {% elif not synced %}
+  {% else %}
+  {# No line items: always offer a working Sync CTA so the invoice can be
+     (re)built, whether or not an import happened before. #}
   <div class="empty-state empty-sync">
     <span class="empty-icon">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FA5D00" stroke-width="1.8"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"></path><path d="M2 21c0-3 1.85-5.36 5.08-6"></path></svg>
     </span>
-    <p class="empty-title">No hours imported yet</p>
+    <p class="empty-title">{{ "No line items" if synced else "No hours imported yet" }}</p>
     <p class="empty-sub">Sync your tracked time from Harvest for the billing period to build
       this invoice — each project rolls up into an editable line item.</p>
     <button type="button" class="btn-orange sync-btn empty-cta"
@@ -22,15 +24,10 @@
       hx-indicator="this" hx-disabled-elt="this"
       hx-target="#line-rows" hx-swap="outerHTML">
       <svg class="sync-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-6.2-8.5"></path><path d="M21 3v6h-6"></path></svg>
-      <span class="sync-label">Sync from Harvest</span>
+      <span class="sync-label">{{ "Re-sync from Harvest" if synced else "Sync from Harvest" }}</span>
     </button>
     <button type="button" class="empty-add" hx-post="/lines/add"
       hx-target="#line-rows" hx-swap="outerHTML">or add a line manually</button>
-  </div>
-  {% else %}
-  <div class="empty-state">
-    <p class="empty-title">No line items</p>
-    <p class="empty-sub">Every line was removed. Re-sync from Harvest or add one below.</p>
   </div>
   {% endif %}
   {% for line in invoice.lines %}

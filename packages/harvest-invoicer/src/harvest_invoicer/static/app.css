@@ -251,6 +251,151 @@ button { color: var(--ink); }
 }
 .link-btn:hover { color: var(--orange-hover); }
 
+/* ===== Harvest source bar ===== */
+@keyframes hv-spin { to { transform: rotate(360deg); } }
+
+.source-bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.source-inner { max-width: 1560px; margin: 0 auto; padding: 0 28px; }
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 15px 0;
+  flex-wrap: wrap;
+}
+.source-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgba(250, 93, 0, 0.1);
+  flex: 0 0 auto;
+}
+.source-id { min-width: 0; }
+.source-id-top { display: flex; align-items: center; gap: 9px; }
+.source-title { font-size: 15px; font-weight: 700; }
+.source-summary { font-size: 13px; color: var(--text-2); margin-top: 2px; }
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--r-pill);
+  padding: 2px 9px;
+}
+.status-pill .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+.status-idle { color: var(--text-2); background: rgba(var(--ink-tint), 0.08); }
+.status-idle .status-dot { background: var(--text-4); }
+.status-ok { color: var(--ok); background: rgba(46, 138, 106, 0.1); }
+.status-ok .status-dot { background: var(--ok); }
+.source-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.btn-manage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 9px 15px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.btn-manage:hover { border-color: var(--ink); }
+.btn-manage .manage-caret { transition: transform 0.18s ease; }
+.btn-manage.open .manage-caret { transform: rotate(180deg); }
+.sync-btn.htmx-request .sync-icon { animation: hv-spin 0.8s linear infinite; }
+
+/* Manage panel */
+.source-manage {
+  display: none;
+  grid-template-columns: 300px 1fr;
+  gap: 24px;
+  padding: 4px 0 22px;
+  align-items: start;
+}
+.source-manage.open { display: grid; }
+.source-pane {
+  background: var(--cream);
+  border: 1px solid rgba(var(--ink-tint), 0.1);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+.source-pane .eyebrow { margin-bottom: 12px; }
+.pane-divider { height: 1px; background: var(--line); margin: 14px 0; }
+.roster-pane { padding: 0; overflow: hidden; }
+.roster-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.roster-head .eyebrow { margin-bottom: 0; }
+.roster-list {
+  max-height: 230px;
+  overflow-y: auto;
+  background: var(--surface);
+}
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 9px 18px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.roster-row:last-child { border-bottom: none; }
+.roster-row:hover { background: rgba(var(--ink-tint), 0.03); }
+.roster-check {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1.5px solid rgba(var(--ink-tint), 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+}
+.roster-row.on .roster-check { background: var(--orange); border-color: var(--orange); }
+.roster-name { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.pill-you {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--orange);
+  background: rgba(250, 93, 0, 0.1);
+  border-radius: var(--r-pill);
+  padding: 1px 7px;
+}
+.roster-bar { flex: 1; min-width: 36px; margin: 0 4px; }
+.roster-bar > .roster-fill,
+.roster-bar { display: block; }
+.roster-bar { height: 6px; border-radius: var(--r-pill); background: rgba(var(--ink-tint), 0.08); }
+.roster-fill { height: 6px; border-radius: var(--r-pill); background: var(--orange); }
+.roster-hours { font-size: 13px; color: var(--text-2); flex: 0 0 auto; }
+.roster-empty { padding: 18px; margin: 0; font-size: 13px; color: var(--text-3); }
+
+/* Draft-restored note (below the source bar) */
+.draft-note-wrap { max-width: 1560px; margin: 0 auto; padding: 12px 28px 0; }
+.draft-note { font-size: 13px; font-weight: 600; color: var(--ok); }
+
 /* ===== Editor layout ===== */
 .editor-grid {
   display: grid;
@@ -562,6 +707,7 @@ button[disabled] { opacity: 0.6; cursor: default; }
 .li-head h2 { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
 .li-head .card-meta { color: rgba(var(--ink-tint), 0.45); }
 .li-actions { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+.li-actions[hidden] { display: none; }
 .icon-btn-sm {
   width: 36px;
   height: 36px;
@@ -736,6 +882,32 @@ button[disabled] { opacity: 0.6; cursor: default; }
   font-size: 14px;
   color: var(--text-3);
 }
+/* Rich sync empty state (before first import). */
+.empty-sync { display: flex; flex-direction: column; align-items: center; }
+.empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  background: rgba(250, 93, 0, 0.1);
+  margin-bottom: 18px;
+}
+.empty-sync .empty-title { font-size: 20px; font-weight: 800; }
+.empty-sync .empty-sub { max-width: 400px; font-size: 15px; line-height: 1.5; }
+.empty-cta { margin-top: 22px; padding: 13px 24px; border-radius: 12px; font-size: 15px; }
+.empty-add {
+  margin-top: 14px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.empty-add:hover { color: var(--ink); }
 
 /* ===== Totals bar (always dark) ===== */
 /* Semantic ink-on-cream band: it stays dark in BOTH themes, so it uses
@@ -1218,6 +1390,8 @@ button:focus-visible, a:focus-visible {
   /* Two-up field grids stack. */
   .grid2, .sgrid, .acc-body { grid-template-columns: 1fr; }
   .sgrid-bank { grid-template-columns: 1fr; }
+  /* Source bar's Manage panel stacks (range over roster). */
+  .source-manage.open { grid-template-columns: 1fr; }
   /* Keep the line-items columns aligned by scrolling the table area
      horizontally rather than letting the inputs collapse. */
   .li-body { overflow-x: auto; }

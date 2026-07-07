@@ -59,6 +59,20 @@
     </div>
   </header>
 
+  {% include "partials/source_bar.html" %}
+
+  {% if draft_restored %}
+  <div class="draft-note-wrap">
+    <span class="draft-note">
+      Draft restored from your last session.
+      <button type="button" class="link-btn"
+        title="Throw away the draft and start over from the fresh session state"
+        hx-post="/draft/discard" hx-target="#line-rows" hx-swap="outerHTML"
+        hx-confirm="Discard the restored draft? Your saved edits will be lost.">Discard</button>
+    </span>
+  </div>
+  {% endif %}
+
   <main class="editor-grid" id="layout">
 
     <!-- ============ Invoice details ============ -->
@@ -78,53 +92,6 @@
           {% include "partials/period.html" %}
         </div>
       </form>
-      <div class="card-sec">
-        <div class="eyebrow">Import from Harvest</div>
-        <div class="import-panel">
-          <label class="chk-label">
-            <input type="checkbox" id="use-period" checked>
-            Use the invoice billing period
-          </label>
-          <div id="fetch-range" class="grid2" style="margin-top:16px;" hidden>
-            <div>
-              <label class="field-label" style="font-size:13px;color:var(--text-2);">Range start</label>
-              <input type="date" class="hv-num" id="fetch-start" name="fetch_start"
-                value="{{ invoice.period_start.isoformat() if invoice.period_start else '' }}">
-            </div>
-            <div>
-              <label class="field-label" style="font-size:13px;color:var(--text-2);">Range end</label>
-              <input type="date" class="hv-num" id="fetch-end" name="fetch_end"
-                value="{{ invoice.period_end.isoformat() if invoice.period_end else '' }}">
-            </div>
-          </div>
-          <div class="import-actions">
-            <label class="chk-label light">
-              <input type="checkbox" id="merge-on-fetch" name="merge_duplicates" checked>
-              Auto-merge duplicate entries
-            </label>
-            <button type="button" class="btn-orange"
-              title="Import time entries from Harvest for the range (replaces current line items)"
-              hx-post="/lines/fetch" hx-include="#fetch-start, #fetch-end, #merge-on-fetch"
-              hx-confirm="Replace the current line items with data fetched from Harvest?"
-              hx-indicator="#fetch-indicator" hx-disabled-elt="this"
-              hx-target="#line-rows" hx-swap="outerHTML">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-6.2-8.5"></path><path d="M21 3v6h-6"></path></svg>
-              Fetch from Harvest
-            </button>
-          </div>
-          <span id="fetch-indicator" class="htmx-indicator">Fetching…</span>
-          <span id="fetch-status"{% if draft_restored %} class="fetch-ok"{% endif %}>
-            {%- if draft_restored -%}
-              Draft restored from your last session.
-              <button type="button" class="link-btn"
-                title="Throw away the draft and start over from the fresh session state"
-                hx-post="/draft/discard" hx-target="#line-rows" hx-swap="outerHTML"
-                hx-confirm="Discard the restored draft? Your saved edits will be lost.">Discard</button>
-            {%- endif -%}
-          </span>
-          {% include "partials/import_note.html" %}
-        </div>
-      </div>
     </section>
 
     <!-- ============ Live preview ============ -->
@@ -155,7 +122,7 @@
       <div class="li-head">
         <h2>Line items</h2>
         <span id="items-meta" class="hv-num card-meta">{{ invoice.lines | length }} · {{ fmt_money(invoice.grand_total) }} {{ invoice.currency }}</span>
-        <div class="li-actions">
+        <div class="li-actions"{% if not invoice.lines %} hidden{% endif %}>
           <button type="button" class="icon-btn-sm" title="Merge duplicate lines"
             hx-post="/lines/merge-duplicates" hx-target="#line-rows" hx-swap="outerHTML">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 2 9 5-9 5-9-5 9-5z"></path><path d="m3 12 9 5 9-5"></path><path d="m3 17 9 5 9-5"></path></svg>
@@ -410,34 +377,48 @@
       }
     });
 
-    // ---- Import range: follow the billing period unless unchecked ----
+    // ---- Sync range: follow the billing period unless unchecked ----
     (function () {
       document.addEventListener("change", function (e) {
         if (e.target.id !== "use-period") return;
-        document.getElementById("fetch-range").hidden = e.target.checked;
+        var r = document.getElementById("fetch-range");
+        if (r) r.hidden = e.target.checked;
       });
       document.body.addEventListener("htmx:configRequest", function (evt) {
         if (evt.detail.path !== "/lines/fetch") return;
+        // When "use billing period" is checked (or the Manage panel isn't
+        // in play), the sync range follows the invoice period fields.
         var use = document.getElementById("use-period");
-        if (use && use.checked) {
+        if (!use || use.checked) {
           var ps = document.querySelector('[name="period_start"]');
           var pe = document.querySelector('[name="period_end"]');
           if (!ps || !pe || !ps.value || !pe.value) {
             // Never fall back to a stale range: block and explain.
             evt.preventDefault();
-            var st = document.getElementById("fetch-status");
-            st.className = "fetch-err";
-            st.textContent =
-              "Set the invoice billing period first (or untick to enter a range).";
+            if (window.showToast) {
+              window.showToast(
+                "Set the invoice billing period first (or open Manage to enter a range).",
+                "err"
+              );
+            }
             return;
           }
           evt.detail.parameters.fetch_start = ps.value;
           evt.detail.parameters.fetch_end = pe.value;
         }
       });
+      // While a sync is in flight, show "Syncing…" on the button; the OOB
+      // swap restores the real label (Re-sync) when it completes.
+      document.body.addEventListener("htmx:beforeRequest", function (evt) {
+        if (evt.detail.pathInfo && evt.detail.pathInfo.requestPath === "/lines/fetch") {
+          document.querySelectorAll(".sync-label").forEach(function (l) {
+            l.textContent = "Syncing…";
+          });
+        }
+      });
     })();
 
-    // ---- Row selection bar ----
+    // ---- Row selection bar + line-item action visibility ----
     (function () {
       function recount() {
         var checks = document.querySelectorAll(".row-check:checked");
@@ -445,6 +426,13 @@
         bar.hidden = checks.length === 0;
         document.getElementById("sel-count-n").textContent = checks.length;
         document.getElementById("merge-sel-btn").classList.toggle("is-dim", checks.length < 2);
+      }
+      function syncActions() {
+        // Merge/Undo/Redo are meaningless with no rows (the empty state):
+        // hide them until there is something to act on.
+        var hasRows = document.querySelectorAll("#line-rows .li-row").length > 0;
+        var actions = document.querySelector(".li-actions");
+        if (actions) actions.hidden = !hasRows;
       }
       document.addEventListener("change", function (e) {
         if (e.target.classList.contains("row-check")) recount();
@@ -454,8 +442,9 @@
         recount();
       });
       document.body.addEventListener("htmx:afterSwap", function (evt) {
-        if (evt.target && evt.target.id === "line-rows") recount();
+        if (evt.target && evt.target.id === "line-rows") { recount(); syncActions(); }
       });
+      syncActions();
     })();
 
     // ---- Drag-and-drop reordering (delegated; survives htmx swaps) ----

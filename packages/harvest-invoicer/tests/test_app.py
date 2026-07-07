@@ -29,6 +29,15 @@ def _toast_kind(resp: TestResponse) -> str | None:
     return payload.get("kind") if payload else None
 
 
+def _toast_msg(resp: TestResponse) -> str:
+    """The message text of the toast an HX-Trigger header carries ('' if none)."""
+    header = resp.headers.get("HX-Trigger")
+    if not header:
+        return ""
+    payload = json.loads(header).get("showtoast") or {}
+    return payload.get("message", "")
+
+
 def _fake_issuer() -> dict[str, object]:
     return {
         "name": "Jane Doe Consulting",
@@ -108,13 +117,13 @@ class TestLineEdits:
         resp = client.post("/lines/add")
         assert resp.status_code == 200
         # A blank row is appended (2 fixture rows + 1 new)
-        assert resp.data.count(b'type="checkbox"') == 3
+        assert resp.data.count(b'class="row-check"') == 3
 
     def test_merge_lines(self, client: FlaskClient) -> None:
         resp = client.post("/lines/merge", data={"selected": ["0", "1"]})
         assert resp.status_code == 200
         # After merging 2 lines there should be exactly 1 checkbox (one row)
-        assert resp.data.count(b'type="checkbox"') == 1
+        assert resp.data.count(b'class="row-check"') == 1
 
 
 class TestPreview:
@@ -392,7 +401,7 @@ class TestFetchFromEditor:
         app.config["TESTING"] = True
         return app
 
-    def test_fetch_replaces_lines_keeps_period(self, tmp_path: Path) -> None:
+    def test_first_sync_seeds_lines_keeps_period(self, tmp_path: Path) -> None:
         def fake_fetch(ps: date, pe: date) -> list[InvoiceLine]:
             assert ps == date(2026, 5, 1)
             assert pe == date(2026, 5, 31)
@@ -406,12 +415,39 @@ class TestFetchFromEditor:
             )
         assert resp.status_code == 200
         assert b"May Work" in resp.data
-        assert b"Imported 1 lines" in resp.data
+        assert _toast_kind(resp) == "ok"
+        assert "Synced from Harvest" in _toast_msg(resp)
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         assert len(inv.lines) == 1
         # The invoice's service period is independent of the import range.
         assert inv.period_start == date(2026, 6, 1)
         assert inv.period_end == date(2026, 6, 30)
+
+    def test_resync_preserves_edited_lines(self, tmp_path: Path) -> None:
+        """A re-sync must never clobber hand-edited rows."""
+        calls = {"n": 0}
+
+        def fetch(ps: date, pe: date) -> list[InvoiceLine]:
+            calls["n"] += 1
+            rows = [InvoiceLine(concept="Work", unit_price=100.0, quantity=10.0)]
+            if calls["n"] >= 2:  # a new entry appears on the second sync
+                rows.append(InvoiceLine(concept="Extra", unit_price=50.0, quantity=2.0))
+            return rows
+
+        app = self._make_app(tmp_path, fetch)
+        with app.test_client() as c:
+            c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+            app.state["invoice"].lines[0].concept = "EDITED BY HAND"  # type: ignore[attr-defined]
+            resp = c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert any(ln.concept == "EDITED BY HAND" for ln in inv.lines)  # kept
+        assert _toast_kind(resp) == "ok"
 
     def test_fetch_error_keeps_lines(self, tmp_path: Path) -> None:
         def failing_fetch(ps: date, pe: date) -> list[InvoiceLine]:
@@ -425,7 +461,8 @@ class TestFetchFromEditor:
                 data={"fetch_start": "2026-05-01", "fetch_end": "2026-05-31"},
             )
         assert resp.status_code == 200
-        assert b"No time entries found" in resp.data
+        assert _toast_kind(resp) == "err"
+        assert "No time entries found" in _toast_msg(resp)
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         assert len(inv.lines) == 2  # original lines untouched
         assert inv.period_start == date(2026, 6, 1)  # period untouched
@@ -434,7 +471,8 @@ class TestFetchFromEditor:
         app = self._make_app(tmp_path, lambda *_args: [])
         with app.test_client() as c:
             resp = c.post("/lines/fetch", data={"fetch_start": "", "fetch_end": ""})
-        assert b"valid import range" in resp.data
+        assert _toast_kind(resp) == "err"
+        assert "valid import range" in _toast_msg(resp)
 
     def test_fetch_end_before_start_rejected(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path, lambda *_args: [])
@@ -443,7 +481,7 @@ class TestFetchFromEditor:
                 "/lines/fetch",
                 data={"fetch_start": "2026-06-30", "fetch_end": "2026-06-01"},
             )
-        assert b"must not be before" in resp.data
+        assert "must not be before" in _toast_msg(resp)
 
     def test_fetch_without_callback_reports_unavailable(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path, None)
@@ -452,14 +490,14 @@ class TestFetchFromEditor:
                 "/lines/fetch",
                 data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
-        assert b"not available" in resp.data
+        assert "not available" in _toast_msg(resp)
 
-    def test_editor_has_fetch_button(self, client: FlaskClient) -> None:
+    def test_editor_has_source_bar(self, client: FlaskClient) -> None:
         resp = client.get("/")
-        assert b"Fetch from Harvest" in resp.data
-        assert b'id="fetch-status"' in resp.data
+        assert b'id="source-bar"' in resp.data
+        assert b"Sync from Harvest" in resp.data
+        assert b"Harvest source" in resp.data
         assert b'id="merge-on-fetch"' in resp.data
-        assert b'id="fetch-indicator"' in resp.data
         assert b'id="fetch-start"' in resp.data
         assert b'id="fetch-end"' in resp.data
 
@@ -484,7 +522,7 @@ class TestFetchFromEditor:
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         assert len(inv.lines) == 2
         assert inv.lines[0].quantity == pytest.approx(252.0)
-        assert b"Imported 2 lines" in resp.data
+        assert "2 line items added" in _toast_msg(resp)
 
     def test_fetch_keeps_raw_lines_when_unchecked(self, tmp_path: Path) -> None:
         def dup_fetch(ps: date, pe: date) -> list[InvoiceLine]:
@@ -501,6 +539,57 @@ class TestFetchFromEditor:
             )
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         assert len(inv.lines) == 2
+
+
+class TestSourceBar:
+    """The Harvest source bar: sync-state pill and Manage panel toggle."""
+
+    def _make_app(self, tmp_path: Path, **kwargs):  # noqa: ANN003, ANN202
+        app = create_app(
+            lines=[],
+            issuer=_fake_issuer(),
+            client=_fake_client(),
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            period_start=date(2026, 6, 1),
+            period_end=date(2026, 6, 30),
+            fetch_callback=lambda *_a: [
+                InvoiceLine(concept="W", unit_price=100.0, quantity=10.0, user="Al")
+            ],
+            **kwargs,
+        )
+        app.config["TESTING"] = True
+        return app
+
+    def test_starts_not_synced(self, tmp_path: Path) -> None:
+        with self._make_app(tmp_path).test_client() as c:
+            body = c.get("/").data
+        assert b"Not synced" in body
+        assert b">Synced<" not in body
+        assert b"No hours imported yet" in body
+
+    def test_manage_toggle_is_server_tracked(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path)
+        with app.test_client() as c:
+            assert b"source-manage open" not in c.get("/").data
+            opened = c.post("/source/toggle").data
+            assert b"source-manage open" in opened
+            assert app.state["source_open"] is True  # type: ignore[attr-defined]
+            closed = c.post("/source/toggle").data
+            assert b"source-manage open" not in closed
+
+    def test_sync_flips_pill_and_collapses_panel(self, tmp_path: Path) -> None:
+        app = self._make_app(tmp_path)
+        with app.test_client() as c:
+            c.post("/source/toggle")  # open the panel
+            resp = c.post(
+                "/lines/fetch",
+                data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+            )
+        assert b">Synced<" in resp.data
+        assert b"Re-sync" in resp.data
+        assert b"source-manage open" not in resp.data  # collapsed after sync
+        assert app.state["source_open"] is False  # type: ignore[attr-defined]
 
 
 class TestBillToSwitch:
@@ -1065,7 +1154,7 @@ class TestUndo:
         resp = client.post("/lines/undo")
         assert resp.status_code == 200
         assert b"Backend Development" in resp.data
-        assert resp.data.count(b'type="checkbox"') == 2
+        assert resp.data.count(b'class="row-check"') == 2
 
     def test_redo_reapplies_undone_change(self, client: FlaskClient) -> None:
         client.post("/lines/drop/0")
@@ -1080,10 +1169,10 @@ class TestUndo:
         client.post("/lines/add")  # 3 rows
         client.post("/lines/add")  # 4 rows
         client.post("/lines/drop/0")  # 3 rows (Backend gone)
-        assert client.post("/lines/undo").data.count(b'type="checkbox"') == 4
-        assert client.post("/lines/undo").data.count(b'type="checkbox"') == 3
+        assert client.post("/lines/undo").data.count(b'class="row-check"') == 4
+        assert client.post("/lines/undo").data.count(b'class="row-check"') == 3
         resp = client.post("/lines/undo")
-        assert resp.data.count(b'type="checkbox"') == 2  # back to the start
+        assert resp.data.count(b'class="row-check"') == 2  # back to the start
         assert b"Backend Development" in resp.data
 
     def test_new_edit_clears_redo(self, client: FlaskClient) -> None:
@@ -1093,18 +1182,18 @@ class TestUndo:
         resp = client.post("/lines/redo")  # no-op
         # Still the post-add state: Backend restored + the added blank row.
         assert b"Backend Development" in resp.data
-        assert resp.data.count(b'type="checkbox"') == 3
+        assert resp.data.count(b'class="row-check"') == 3
 
     def test_undo_without_history_is_noop(self, client: FlaskClient) -> None:
         resp = client.post("/lines/undo")
         assert resp.status_code == 200
         assert b"Backend Development" in resp.data
-        assert resp.data.count(b'type="checkbox"') == 2
+        assert resp.data.count(b'class="row-check"') == 2
 
     def test_redo_without_history_is_noop(self, client: FlaskClient) -> None:
         resp = client.post("/lines/redo")
         assert resp.status_code == 200
-        assert resp.data.count(b'type="checkbox"') == 2
+        assert resp.data.count(b'class="row-check"') == 2
 
     def test_undo_restores_lines_after_fetch(self, tmp_path: Path) -> None:
         app = create_app(
@@ -1297,23 +1386,23 @@ class TestImportRoster:
         app = self._make_app(tmp_path, import_raw=raw)
         with app.test_client() as c:
             resp = c.get("/")
-        assert b"across <strong>2 people</strong>" in resp.data
-        assert resp.data.count(b'class="chip on') == 2
+        assert resp.data.count(b'class="roster-row on') == 2
         assert b"Alice" in resp.data
         assert b"Bob" in resp.data
+        assert b"Who to include" in resp.data
 
-    def test_fetch_renders_roster_note(self, tmp_path: Path) -> None:
+    def test_fetch_renders_roster(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
         with app.test_client() as c:
             resp = c.post(
                 "/lines/fetch",
                 data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
-        assert b"across <strong>2 people</strong>" in resp.data
-        assert b"Choose who to include" in resp.data
-        assert resp.data.count(b'class="chip on') == 2
+        assert b'id="source-bar"' in resp.data  # the bar is refreshed OOB
+        assert resp.data.count(b'class="roster-row on') == 2
+        assert b">Synced<" in resp.data  # status pill flips to Synced
 
-    def test_single_person_import_has_no_chips(self, tmp_path: Path) -> None:
+    def test_single_person_import(self, tmp_path: Path) -> None:
         def solo(ps: date, pe: date) -> list[InvoiceLine]:
             return [
                 InvoiceLine(concept="Dev", unit_price=100.0, quantity=8.0, user="Al")
@@ -1325,8 +1414,8 @@ class TestImportRoster:
                 "/lines/fetch",
                 data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
-        assert b"across <strong>1 person</strong>" in resp.data
-        assert b'class="chip' not in resp.data
+        assert resp.data.count(b'class="roster-row') == 1
+        assert b"Al" in resp.data
 
     def test_toggle_excludes_person(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
@@ -1338,7 +1427,7 @@ class TestImportRoster:
             resp = c.post("/lines/people", data={"toggle": "Bob"})
         inv = app.state["invoice"]  # type: ignore[attr-defined]
         assert [ln.user for ln in inv.lines] == ["Alice"]
-        assert b"1 of 2 selected" in resp.data
+        assert b"1 of 2" in resp.data
         # Toggle back in re-derives both, without re-fetching
         with app.test_client() as c:
             c.post("/lines/people", data={"toggle": "Bob"})
@@ -1352,29 +1441,21 @@ class TestImportRoster:
                 data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
             resp = c.post("/lines/people", data={"none": "1"})
-            assert b"0 of 2 selected" in resp.data
+            assert b"0 of 2" in resp.data
             assert app.state["invoice"].lines == []  # type: ignore[attr-defined]
             resp = c.post("/lines/people", data={"all": "1"})
-            assert b"2 of 2 selected" in resp.data
+            assert b"2 of 2" in resp.data
         assert len(app.state["invoice"].lines) == 2  # type: ignore[attr-defined]
 
-    def test_note_renders_once_and_top_level(self, tmp_path: Path) -> None:
-        """Regression: the roster note is a single top-level OOB fragment.
-
-        An earlier build nested a second copy inside the fetch-status span,
-        which htmx materialised as a duplicated note in the editor.
-        """
+    def test_source_bar_renders_once(self, tmp_path: Path) -> None:
+        """The source bar is a single top-level OOB fragment on a sync."""
         app = self._make_app(tmp_path, fetch_callback=self._team_fetch)
         with app.test_client() as c:
             resp = c.post(
                 "/lines/fetch",
                 data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
-        body = resp.data.decode()
-        assert body.count('id="import-note"') == 1
-        status = body[body.index('id="fetch-status"') :]
-        status = status[: status.index("</span>")]
-        assert "import-note" not in status
+        assert resp.data.decode().count('id="source-bar"') == 1
 
     def test_manual_row_survives_rederive(self, tmp_path: Path) -> None:
         """H1: rows added by hand are preserved when chips re-slice."""
@@ -1667,7 +1748,7 @@ class TestDraftPersistence:
         c2 = _make_app(tmp_path, db_path=db).test_client()
         resp = c2.post("/draft/discard")
         assert resp.status_code == 200
-        assert b"Draft discarded" in resp.data
+        assert "Draft discarded" in _toast_msg(resp)
         assert b"Edited Concept" not in resp.data
         assert b"Backend Development" in resp.data
         assert state_db.get_draft(db) is None
@@ -1922,15 +2003,15 @@ class TestToasts:
 class TestEmptyStates:
     """Zero line items / zero clients show a friendly empty state."""
 
-    def test_empty_line_items_shows_empty_state(self, tmp_path: Path) -> None:
-        c = _make_app(tmp_path, lines=[]).test_client()
+    def test_unsynced_shows_sync_empty_state(self, tmp_path: Path) -> None:
+        c = _make_app(tmp_path, lines=[]).test_client()  # no import_raw -> unsynced
         body = c.get("/").data
-        assert b"No line items yet" in body
+        assert b"No hours imported yet" in body
         # The column header is suppressed when there is nothing to label.
         assert b'class="li-grid-head"' not in body
-        # ...but the ways to populate it stay available.
-        assert b"Add line item" in body
-        assert b"Fetch from Harvest" in body
+        # ...but both ways to populate it stay available.
+        assert b"or add a line manually" in body
+        assert b"Sync from Harvest" in body
 
     def test_header_returns_and_empty_state_clears_after_add(
         self, tmp_path: Path
@@ -1939,7 +2020,7 @@ class TestEmptyStates:
         resp = c.post("/lines/add")
         assert resp.status_code == 200
         assert b'class="li-grid-head"' in resp.data
-        assert b"No line items yet" not in resp.data
+        assert b"No hours imported yet" not in resp.data
 
     def test_empty_state_returns_when_last_line_removed(self, tmp_path: Path) -> None:
         c = _make_app(
@@ -1947,7 +2028,7 @@ class TestEmptyStates:
             lines=[InvoiceLine(concept="Only", unit_price=1.0, quantity=1.0)],
         ).test_client()
         resp = c.post("/lines/drop/0")
-        assert b"No line items yet" in resp.data
+        assert b"No hours imported yet" in resp.data  # unsynced empty state
         assert b'class="li-grid-head"' not in resp.data
 
     def test_settings_hints_when_no_clients(self, tmp_path: Path) -> None:

@@ -179,6 +179,9 @@ def create_app(
         # True once imported (origin "harvest") lines were hand-edited;
         # roster re-derives then ask for confirmation before discarding.
         "lines_dirty": False,
+        # Whether the Harvest source bar's "Manage" panel is expanded.
+        # Server-tracked so it survives the bar's OOB refreshes.
+        "source_open": False,
         # (key, bytes) of the last WeasyPrint render, keyed on the rendered
         # HTML + effective style.css, so unchanged previews are instant.
         "pdf_cache": None,
@@ -241,6 +244,7 @@ def create_app(
             "partials/rows.html",
             invoice=inv,
             fmt_money=fmt_money,
+            synced=bool(app.state["import_raw"]),  # type: ignore[attr-defined]
         )
 
     def _render_totals(inv: Invoice) -> str:
@@ -324,7 +328,7 @@ def create_app(
         )
         undo = _history_btn("undo", bool(app.state["undo_stack"]))  # type: ignore[attr-defined]
         redo = _history_btn("redo", bool(app.state["redo_stack"]))  # type: ignore[attr-defined]
-        return meta + pcount + undo + redo + _import_note_oob()
+        return meta + pcount + undo + redo + _source_bar_oob()
 
     def _store_import(raw_lines: list[InvoiceLine], merge: bool) -> None:
         """Remember the raw per-person import for chip-based re-derives."""
@@ -355,27 +359,69 @@ def create_app(
         )
         app.state["lines_dirty"] = False  # type: ignore[attr-defined]
 
-    def _import_note_ctx() -> dict[str, object]:
+    def _source_ctx() -> dict[str, object]:
+        """Context for the Harvest source bar (status, roster, sync range).
+
+        ``synced`` is true once an import exists; the roster carries each
+        person's hours plus a bar-fill percentage relative to the busiest
+        person, for the "Who to include" list.
+        """
         raw: list[InvoiceLine] = app.state["import_raw"]  # type: ignore[attr-defined]
         selected: set[str] = app.state["selected_people"]  # type: ignore[attr-defined]
+        you = str(issuer.get("harvest_user") or "").strip()
         hours: dict[str, float] = {}
         for ln in raw:
             if ln.user:
                 hours[ln.user] = hours.get(ln.user, 0.0) + ln.quantity
-        roster = sorted(hours.items())
+        ordered = sorted(hours.items())
+        peak = max(hours.values(), default=0.0)
+        roster = [
+            {
+                "name": name,
+                "hours": h,
+                "is_you": name == you,
+                "selected": name in selected,
+                "bar_pct": round(100 * h / peak) if peak else 0,
+            }
+            for name, h in ordered
+        ]
+        synced = bool(raw)
+        lfr = app.state["last_fetch_range"]  # type: ignore[attr-defined]
+        total = round(sum(hours.values()), 2)
+        sel_hours = round(sum(h for n, h in ordered if n in selected), 2)
+        if synced:
+            period = f"{lfr[0]:%b %Y}" if lfr else ""
+            parts = [f"{total:g}h"]
+            if period:
+                parts.append(period)
+            parts.append(f"{len(selected)} of {len(roster)} people")
+            parts.append("last synced just now")
+            summary = " · ".join(parts)
+        else:
+            summary = "Not connected — no hours imported for this invoice yet"
         return {
+            "synced": synced,
+            "source_open": app.state["source_open"],  # type: ignore[attr-defined]
+            "status_label": "Synced" if synced else "Not synced",
+            "sync_summary": summary,
+            "sync_btn_label": "Re-sync" if synced else "Sync from Harvest",
             "roster": roster,
-            "selected": selected,
+            "selected_count": len(selected),
+            "roster_count": len(roster),
+            "total_hours": total,
+            "selected_hours": sel_hours,
             "lines_dirty": app.state["lines_dirty"],  # type: ignore[attr-defined]
-            "you": str(issuer.get("harvest_user") or "").strip(),
-            "total_hours": round(sum(hours.values()), 2),
-            "selected_hours": round(sum(h for n, h in roster if n in selected), 2),
+            "fetch_start": lfr[0].isoformat()
+            if lfr
+            else (period_start.isoformat() if period_start else ""),
+            "fetch_end": lfr[1].isoformat()
+            if lfr
+            else (period_end.isoformat() if period_end else ""),
+            "import_merge": app.state["import_merge"],  # type: ignore[attr-defined]
         }
 
-    def _import_note_oob() -> str:
-        return render_template(
-            "partials/import_note.html", oob=True, **_import_note_ctx()
-        )
+    def _source_bar_oob() -> str:
+        return render_template("partials/source_bar.html", oob=True, **_source_ctx())
 
     def _lines_response(inv: Invoice, status_html: str = "") -> Response:
         """Standard response for line mutations: rows + totals + OOB extras."""
@@ -528,7 +574,7 @@ def create_app(
             has_undo=bool(app.state["undo_stack"]),  # type: ignore[attr-defined]
             has_redo=bool(app.state["redo_stack"]),  # type: ignore[attr-defined]
             draft_restored=app.state["draft_restored"],  # type: ignore[attr-defined]
-            **_import_note_ctx(),
+            **_source_ctx(),
         )
 
     @app.get("/static/htmx.min.js")
@@ -744,60 +790,89 @@ def create_app(
         inv.lines.insert(first_idx, merged)
         return _lines_response(inv)
 
-    def _fetch_status(
-        message: str, *, error: bool = False, extra_html: str = ""
-    ) -> str:
-        """OOB status span swapped into #fetch-status next to the button.
-
-        ``extra_html`` must already be escaped/safe markup.
-        """
-        css = "fetch-err" if error else "fetch-ok"
-        return (
-            f'<span id="fetch-status" hx-swap-oob="outerHTML" class="{css}">'
-            f"{escape(message)}{extra_html}</span>"
-        )
+    @app.post("/source/toggle")
+    def toggle_source() -> Response:
+        """Expand/collapse the source bar's Manage panel (server-tracked)."""
+        app.state["source_open"] = not app.state["source_open"]  # type: ignore[attr-defined]
+        return Response(_source_bar_oob(), content_type="text/html")
 
     @app.post("/lines/fetch")
     def fetch_lines_route() -> Response:
-        """Re-import line items from Harvest for the import range.
+        """Sync line items from Harvest for the import range (the source bar).
 
-        Reads fetch_start/fetch_end from the form and replaces the invoice
-        lines with freshly fetched data.  The invoice's service period is
-        independent and never modified here — edit it in the details form.
-        Errors are reported inline without touching the current lines.
+        First sync seeds the line items.  A re-sync is edit-safe: it
+        refreshes the roster/import generation but preserves the current
+        (possibly hand-edited) line items, reporting only what changed.
+        The invoice's service period is independent and never touched here.
+        Feedback rides a toast; errors keep the current lines intact.
         """
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
 
-        def _respond(
-            status: str, *, error: bool = False, extra_html: str = ""
-        ) -> Response:
-            return _lines_response(
-                inv, _fetch_status(status, error=error, extra_html=extra_html)
-            )
+        def _toast_response(kind: str, message: str) -> Response:
+            resp = _lines_response(inv)
+            resp.headers.update(_toast_header(kind, message))
+            return resp
 
         try:
             ps = date.fromisoformat(request.form.get("fetch_start", "").strip())
             pe = date.fromisoformat(request.form.get("fetch_end", "").strip())
         except ValueError:
-            return _respond("Select a valid import range first.", error=True)
+            return _toast_response("err", "Select a valid import range first.")
         if pe < ps:
-            return _respond("Import end must not be before import start.", error=True)
+            return _toast_response("err", "Import end must not be before import start.")
         if fetch_callback is None:
-            return _respond("Re-fetching is not available in this session.", error=True)
+            return _toast_response("err", "Syncing is not available in this session.")
 
         try:
             raw_lines = fetch_callback(ps, pe)
-        except Exception as exc:  # noqa: BLE001 — surface fetch errors inline
-            return _respond(str(exc), error=True)
+        except Exception as exc:  # noqa: BLE001 — surface sync errors as a toast
+            return _toast_response("err", f"Sync failed: {exc}")
 
-        # Snapshot before storing: undo must restore the previous import
+        merge = request.form.get("merge_duplicates") == "on"
+        first_sync = not app.state["import_raw"]  # type: ignore[attr-defined]
+        # Snapshot before mutating: undo restores the previous import
         # generation together with the previous lines.
         _snapshot_lines(inv)
-        _store_import(raw_lines, request.form.get("merge_duplicates") == "on")
-        _derive_from_import(inv)
-        app.state["last_fetch_range"] = (ps, pe)  # type: ignore[attr-defined]
+        # Collapse the Manage panel once a sync completes (matches v2).
+        app.state["source_open"] = False  # type: ignore[attr-defined]
 
-        return _respond(f"Imported {len(inv.lines)} lines for {ps} to {pe}.")
+        if first_sync:
+            _store_import(raw_lines, merge)
+            _derive_from_import(inv)
+            app.state["last_fetch_range"] = (ps, pe)  # type: ignore[attr-defined]
+            sc = _source_ctx()
+            return _toast_response(
+                "ok",
+                f"Synced from Harvest — {sc['selected_hours']:g}h · "
+                f"{sc['selected_count']} people · {len(inv.lines)} line items added",
+            )
+
+        # Edit-safe re-sync: refresh the roster/import generation and range
+        # but keep the current line items (never clobber edited rows).
+        prev_names = {
+            ln.user
+            for ln in app.state["import_raw"]  # type: ignore[attr-defined]
+            if ln.user
+        }
+        new_names = {ln.user for ln in raw_lines if ln.user}
+        app.state["import_raw"] = copy.deepcopy(raw_lines)  # type: ignore[attr-defined]
+        app.state["import_merge"] = merge  # type: ignore[attr-defined]
+        app.state["selected_people"] = {  # type: ignore[attr-defined]
+            n
+            for n in app.state["selected_people"]  # type: ignore[attr-defined]
+            if n in new_names
+        }
+        app.state["last_fetch_range"] = (ps, pe)  # type: ignore[attr-defined]
+        added = new_names - prev_names
+        if added:
+            noun = "member" if len(added) == 1 else "members"
+            message = (
+                f"Re-synced — {len(added)} new team {noun} available. "
+                "Existing line items kept."
+            )
+        else:
+            message = "Already up to date — no new entries since last sync."
+        return _toast_response("ok", message)
 
     @app.post("/lines/people")
     def toggle_people() -> Response:
@@ -1285,11 +1360,11 @@ def create_app(
         app.state["redo_stack"].clear()  # type: ignore[attr-defined]
         app.state["draft_restored"] = False  # type: ignore[attr-defined]
         inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
-        return _lines_response(
-            inv,
-            _client_inset_oob()
-            + _fetch_status("Draft discarded — back to the fresh session state."),
+        resp = _lines_response(inv, _client_inset_oob())
+        resp.headers.update(
+            _toast_header("ok", "Draft discarded — back to the fresh session state.")
         )
+        return resp
 
     # --- Quit ---
 

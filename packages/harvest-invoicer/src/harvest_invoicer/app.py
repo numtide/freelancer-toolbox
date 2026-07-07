@@ -867,11 +867,18 @@ def create_app(
             return _toast_response("err", "Sync failed", str(exc))
 
         merge = request.form.get("merge_duplicates") == "on"
-        # Seed (rebuild) the lines on a first sync, and also whenever there
-        # are no line items to preserve — a stale/empty state (e.g. a
-        # restored draft that recorded an import but no rows) must still
-        # import, not fall through to the no-op re-sync path.
-        first_sync = not app.state["import_raw"] or not inv.lines  # type: ignore[attr-defined]
+        # Rebuild the lines from the fetched data unless the user has hand-
+        # edited imported rows.  We seed on a first sync, on an empty/stale
+        # state (e.g. a restored draft that recorded an import but no rows),
+        # and on any re-sync of a *clean* invoice — only genuinely edited
+        # lines (``lines_dirty``) are preserved, so a clean re-sync of a new
+        # range actually refreshes the numbers instead of silently keeping
+        # the old month's.
+        first_sync = (
+            not app.state["import_raw"]  # type: ignore[attr-defined]
+            or not inv.lines
+            or not app.state["lines_dirty"]  # type: ignore[attr-defined]
+        )
         # Snapshot before mutating: undo restores the previous import
         # generation together with the previous lines.
         _snapshot_lines(inv)
@@ -906,15 +913,21 @@ def create_app(
             if n in new_names
         }
         app.state["last_fetch_range"] = (ps, pe)  # type: ignore[attr-defined]
+        # This path only runs for a hand-edited invoice, so the import
+        # generation is refreshed but the edited rows are deliberately kept.
+        # Never claim "up to date" — the underlying data may well differ.
         added = new_names - prev_names
         if added:
             noun = "member" if len(added) == 1 else "members"
-            title = "Re-synced"
-            body = f"{len(added)} new team {noun} available · existing line items kept"
+            body = (
+                f"{len(added)} new team {noun} available · "
+                "your edited line items were kept"
+            )
         else:
-            title = "Already up to date"
-            body = "No new entries since last sync"
-        return _toast_response("ok", title, body)
+            body = (
+                "Your edited line items were kept — use the roster to pull in new data"
+            )
+        return _toast_response("ok", "Re-synced", body)
 
     @app.post("/lines/people")
     def toggle_people() -> Response:
@@ -1132,11 +1145,17 @@ def create_app(
     )
 
     def _smtp_settings() -> SmtpSettings:
-        """The effective SMTP settings (stored + env), tolerant of bad data."""
+        """The effective SMTP settings (stored + env), tolerant of bad data.
+
+        A malformed stored record or SMTP environment variable (e.g. a bad
+        encryption/port) must never crash the pages that render config —
+        fall back to safe, env-free defaults (which reads as "not
+        configured"; the actual error surfaces on Send / Send test).
+        """
         try:
             return SmtpSettings(**app.state["email"])  # type: ignore[attr-defined]
         except ValidationError:
-            return SmtpSettings()
+            return SmtpSettings.model_construct()
 
     def _smtp_enabled() -> bool:
         """Whether sending is configured (host set in the DB or the env)."""
@@ -1237,7 +1256,8 @@ def create_app(
         """Verify the SMTP connection without sending an invoice."""
         from harvest_invoicer.mail import MailConfigError, verify_smtp  # noqa: PLC0415
 
-        # Save the current form first so the test uses unsaved edits.
+        # Test against the current (possibly unsaved) form values, without
+        # persisting them; env overrides still apply, password comes from env.
         values = {f: request.form.get(f, "").strip() for f in email_fields}
         try:
             host = verify_smtp(values)

@@ -99,7 +99,9 @@ def _connect(settings: SmtpSettings) -> smtplib.SMTP:
     else:
         conn = smtplib.SMTP(settings.host, port, timeout=_SMTP_TIMEOUT)
         conn.ehlo()
-        if settings.encryption == "starttls" or conn.has_extn("starttls"):
+        # Honor the explicit choice: only upgrade to TLS for "starttls".
+        # "none" stays plaintext (for local relays / self-signed dev servers).
+        if settings.encryption == "starttls":
             conn.starttls()
             conn.ehlo()
     if settings.username:

@@ -487,6 +487,9 @@ class TestFetchFromEditor:
                 data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
             )
             app.state["invoice"].lines[0].concept = "EDITED BY HAND"  # type: ignore[attr-defined]
+            # A real hand edit goes through /lines/update, which marks the
+            # invoice dirty; that is what protects the row from a re-sync.
+            app.state["lines_dirty"] = True  # type: ignore[attr-defined]
             resp = c.post(
                 "/lines/fetch",
                 data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
@@ -648,6 +651,84 @@ class TestSourceBar:
         assert payload["kind"] == "ok"
         assert payload["title"] == "Synced from Harvest"
         assert "line items added" in payload["body"]
+
+    def _mutable_fetch_app(self, tmp_path: Path):  # noqa: ANN202
+        """An app whose fetch payload can be swapped between syncs."""
+        box: dict[str, list[tuple[str, float]]] = {"data": [("Al", 10.0)]}
+
+        def cb(*_a: object) -> list[InvoiceLine]:
+            return [
+                InvoiceLine(
+                    concept=f"{n} work",
+                    unit_price=100.0,
+                    quantity=h,
+                    user=n,
+                    origin="harvest",
+                )
+                for n, h in box["data"]
+            ]
+
+        app = create_app(
+            lines=[],
+            issuer=_fake_issuer(),
+            client={"vat_rate": 0},
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            period_start=date(2026, 6, 1),
+            period_end=date(2026, 6, 30),
+            fetch_callback=cb,
+        )
+        app.config["TESTING"] = True
+        return app, box
+
+    def test_clean_resync_rebuilds_new_range(self, tmp_path: Path) -> None:
+        """A clean (un-edited) invoice re-synced against a new range must pull
+        in the new numbers, not silently keep the old month's."""
+        app, box = self._mutable_fetch_app(tmp_path)
+        c = app.test_client()
+        c.post(
+            "/lines/fetch",
+            data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+        )
+        c.post("/lines/people", data={"all": "1"})
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        assert sum(line.quantity for line in inv.lines) == 10.0
+        assert app.state["lines_dirty"] is False  # type: ignore[attr-defined]
+
+        box["data"] = [("Al", 10.0), ("Bo", 20.0)]
+        resp = c.post(
+            "/lines/fetch",
+            data={"fetch_start": "2026-07-01", "fetch_end": "2026-07-31"},
+        )
+        c.post("/lines/people", data={"all": "1"})
+        assert sum(line.quantity for line in inv.lines) == 30.0  # rebuilt
+        assert _toast_payload(resp)["title"] == "Synced from Harvest"
+
+    def test_dirty_resync_preserves_edits_without_false_up_to_date(
+        self, tmp_path: Path
+    ) -> None:
+        """A hand-edited invoice re-synced keeps the edited rows and never
+        claims 'up to date' when the underlying data changed."""
+        app, box = self._mutable_fetch_app(tmp_path)
+        c = app.test_client()
+        c.post(
+            "/lines/fetch",
+            data={"fetch_start": "2026-06-01", "fetch_end": "2026-06-30"},
+        )
+        c.post("/lines/people", data={"all": "1"})
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        inv.lines[0].quantity = 999.0
+        app.state["lines_dirty"] = True  # type: ignore[attr-defined]
+
+        box["data"] = [("Al", 1.0)]
+        resp = c.post(
+            "/lines/fetch",
+            data={"fetch_start": "2026-07-01", "fetch_end": "2026-07-31"},
+        )
+        assert any(line.quantity == 999.0 for line in inv.lines)  # edit kept
+        payload = _toast_payload(resp)
+        assert payload["title"] == "Re-synced"
+        assert "up to date" not in payload["body"].lower()
 
 
 class TestBillToSwitch:
@@ -2097,6 +2178,27 @@ class TestSendInvoice:
         assert b"Invoice 2026-06" in body  # subject resolved
         assert b'name="copy_self"' in body
 
+    def test_encryption_none_skips_starttls(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An explicit encryption=none must stay plaintext even if the server
+        advertises STARTTLS."""
+        import smtplib  # noqa: PLC0415
+
+        calls: list[str] = []
+
+        class Fake(_FakeSMTP):
+            def starttls(self) -> None:
+                calls.append("starttls")
+
+        monkeypatch.setattr(smtplib, "SMTP", Fake)
+        app = self._app(
+            tmp_path, email_config={"host": "smtp.test", "encryption": "none"}
+        )
+        resp = self._send(app.test_client())
+        assert _toast_kind(resp) == "ok"
+        assert calls == []  # never upgraded despite has_extn("starttls") == True
+
     def test_send_button_opens_modal_when_smtp_enabled(self, tmp_path: Path) -> None:
         app = self._app(tmp_path, email_config={"host": "smtp.test"})
         resp = app.test_client().get("/")
@@ -2217,6 +2319,18 @@ class TestEmailSettings:
         # The password value is NEVER rendered to the client.
         assert b"sup3r-secret" not in body
         assert b"\xe2\x80\xa2\xe2\x80\xa2" in body  # masked bullets shown instead
+
+    def test_malformed_smtp_env_does_not_crash_pages(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A bad SMTP env var must not 500 the editor/settings (it falls back
+        to 'not configured'); the error surfaces only on Send / Send test."""
+        monkeypatch.setenv("HARVEST_INVOICER_SMTP_ENCRYPTION", "bogus")
+        app = _make_app(tmp_path, email_config={"host": "smtp.test"})
+        c = app.test_client()
+        assert c.get("/").status_code == 200
+        assert c.get("/settings").status_code == 200
+        assert b"Send invoice" not in c.get("/").data  # reads as disabled
 
     def test_env_controlled_field_survives_save(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

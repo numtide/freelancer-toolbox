@@ -8,6 +8,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "ecbx",
     "harvest-exporter",
     "harvest-invoicer",
     "kimai",
@@ -304,6 +305,30 @@ sdist = { url = "https://files.pythonhosted.org/packages/e0/20/92eaa6b0aec7189fa
 wheels = [
     { url = "https://files.pythonhosted.org/packages/21/0e/8459ca4413e1a21a06c97d134bfaf18adfd27cea068813dc0faae06cbf00/cssselect2-0.9.0-py3-none-any.whl", hash = "sha256:6a99e5f91f9a016a304dd929b0966ca464bcfda15177b6fb4a118fc0fb5d9563", size = 15453, upload-time = "2026-02-12T17:16:38.317Z" },
 ]
+
+[[package]]
+name = "ecbx"
+version = "0.1.0"
+source = { editable = "packages/ecbx" }
+dependencies = [
+    { name = "click" },
+    { name = "requests" },
+    { name = "rich" },
+]
+
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click" },
+    { name = "pytest", marker = "extra == 'test'" },
+    { name = "requests" },
+    { name = "rich" },
+]
+provides-extras = ["test"]
 
 [[package]]
 name = "flask"

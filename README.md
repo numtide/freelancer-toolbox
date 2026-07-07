@@ -98,6 +98,12 @@ This package exposes two commands:
 
 </details>
 
+### Currency & Rates
+
+| Tool | Description |
+|------|-------------|
+| **[ecbx](packages/ecbx/README.md)** | Fetch and query exchange rates from the [European Central Bank](https://www.ecb.europa.eu) |
+
 ### Banking
 
 <details>

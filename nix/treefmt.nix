@@ -109,6 +109,18 @@
           "../../pyproject.toml"
         ];
       };
+      "packages/ecbx" = {
+        modules = [ "src/ecbx" ];
+        extraPythonPackages = with pkgs.python3.pkgs; [
+          click
+          rich
+          types-requests
+        ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
     };
   };
 

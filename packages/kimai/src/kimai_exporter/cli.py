@@ -278,7 +278,10 @@ def main() -> None:
         generate_report(options)
     except Exception:
         print(f"Failed to generate report for {options.client}", file=sys.stderr)
-        print(json.dumps(options, indent=2, cls=JsonEncoder), file=sys.stderr)
+        # Dump the options to aid debugging, but never the API key.
+        redacted = options.to_dict()
+        redacted["kimai_api_key"] = "***"
+        print(json.dumps(redacted, indent=2), file=sys.stderr)
         raise
 
 

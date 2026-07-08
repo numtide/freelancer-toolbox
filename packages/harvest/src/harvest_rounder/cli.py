@@ -47,14 +47,12 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--start",
-        type=int,
-        help="Start date i.e. 20220101",
+        help="Start date i.e. 2022-01-01",
     )
 
     parser.add_argument(
         "--end",
-        type=int,
-        help="End date i.e. 20220101",
+        help="End date i.e. 2022-01-01",
     )
 
     parser.add_argument(
@@ -96,11 +94,23 @@ def parse_args() -> argparse.Namespace:
     # Default to the past 4 weeks (28 days) starting from today
     if not args.start and not args.end:
         four_weeks_ago = today - timedelta(days=28)
-        args.start = int(four_weeks_ago.strftime("%Y%m%d"))
-        args.end = int(today.strftime("%Y%m%d"))
+        args.start = four_weeks_ago.strftime("%Y-%m-%d")
+        args.end = today.strftime("%Y-%m-%d")
     elif (args.start and not args.end) or (args.end and not args.start):
         print("Both --start and --end must be provided together", file=sys.stderr)
         sys.exit(1)
+    else:
+        # Validate and normalize caller-supplied dates to YYYY-MM-DD, the
+        # format the Harvest API expects (matching harvest-exporter). This
+        # tool writes back rounded hours, so a malformed bound that widens
+        # the query beyond the intended window must fail rather than fetch.
+        for name in ("start", "end"):
+            value = getattr(args, name)
+            try:
+                parsed = datetime.strptime(value, "%Y-%m-%d")
+            except ValueError:
+                parser.error(f"--{name} must be YYYY-MM-DD, got {value!r}")
+            setattr(args, name, parsed.strftime("%Y-%m-%d"))
 
     return args
 

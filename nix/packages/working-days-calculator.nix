@@ -9,10 +9,6 @@ pkgs.python3.pkgs.buildPythonApplication {
 
   build-system = [ pkgs.python3.pkgs.hatchling ];
 
-  dependencies = [
-    pkgs.python3.pkgs.pandas
-  ];
-
   doCheck = false;
 
   meta = with pkgs.lib; {

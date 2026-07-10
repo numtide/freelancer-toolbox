@@ -5,9 +5,7 @@ description = "Calculate working days from a Harvest time report CSV"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
-dependencies = [
-    "pandas",
-]
+dependencies = []
 
 [project.scripts]
 working-days-calculator = "working_days_calculator:main"

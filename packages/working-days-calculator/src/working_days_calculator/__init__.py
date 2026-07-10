@@ -1,6 +1,7 @@
+import csv
 import sys
-
-import pandas as pd
+from datetime import date
+from pathlib import Path
 
 
 def main() -> None:
@@ -11,12 +12,15 @@ def main() -> None:
         )
         sys.exit(1)
 
-    csv_file = sys.argv[1]
-    df = pd.read_csv(csv_file, parse_dates=["Date"])
-    working_days = len(df["Date"].unique())
-    start = df["Date"].min()
-    end = df["Date"].max()
-    print(f"Working days: {working_days} from {start} to {end}")
+    csv_file = Path(sys.argv[1])
+    with csv_file.open(newline="") as f:
+        dates = {date.fromisoformat(row["Date"]) for row in csv.DictReader(f)}
+
+    if not dates:
+        print("No entries found in CSV")
+        sys.exit(1)
+
+    print(f"Working days: {len(dates)} from {min(dates)} to {max(dates)}")
 
 
 if __name__ == "__main__":

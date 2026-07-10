@@ -117,10 +117,6 @@
       };
       "packages/working-days-calculator" = {
         modules = [ "src/working_days_calculator" ];
-        extraPythonPackages = with pkgs.python3.pkgs; [
-          pandas
-          pandas-stubs
-        ];
         options = [
           "--config-file"
           "../../pyproject.toml"

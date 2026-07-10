@@ -1,4 +1,4 @@
-{ pkgs, perSystem }:
+{ pkgs, harvest-exporter }:
 pkgs.python3.pkgs.buildPythonApplication {
   pname = "harvest-invoicer";
   version = "0.1.0";
@@ -8,7 +8,7 @@ pkgs.python3.pkgs.buildPythonApplication {
   build-system = [ pkgs.python3.pkgs.hatchling ];
 
   dependencies = with pkgs.python3.pkgs; [
-    (pkgs.python3.pkgs.toPythonModule perSystem.self.harvest-exporter)
+    (pkgs.python3.pkgs.toPythonModule harvest-exporter)
     flask
     jinja2
     weasyprint
@@ -25,7 +25,7 @@ pkgs.python3.pkgs.buildPythonApplication {
   ];
 
   # Run the full pytest suite as part of the build, so `nix flake check`
-  # gates on it (blueprint surfaces package builds as checks).  The
+  # gates on it (package builds are exposed as checks).  The
   # WeasyPrint-dependent tests use their own env-guard and simply skip if
   # the native libraries are ever unavailable in the sandbox.
   doCheck = true;

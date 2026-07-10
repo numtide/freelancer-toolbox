@@ -115,6 +115,13 @@
           "../../pyproject.toml"
         ];
       };
+      "packages/working-days-calculator" = {
+        modules = [ "src/working_days_calculator" ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
       "packages/sevdesk-cli" = {
         modules = [ "src/sevdesk_cli" ];
         extraPythonPackages = [ toolbox.sevdesk-api ];

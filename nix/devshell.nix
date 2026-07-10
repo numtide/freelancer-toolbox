@@ -6,8 +6,6 @@ pkgs.mkShell {
     ++ [
       perSystem.self.formatter
       pkgs.python3Packages.rsa
-      pkgs.texlive.combined.scheme-small
-      pkgs.pandoc
       pkgs.ruff
       pkgs.uv
     ];

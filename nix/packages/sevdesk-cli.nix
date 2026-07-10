@@ -1,4 +1,4 @@
-{ pkgs, perSystem }:
+{ pkgs, sevdesk-api }:
 pkgs.python3.pkgs.buildPythonApplication {
   pname = "sevdesk-cli";
   version = "0.1.0";
@@ -9,7 +9,7 @@ pkgs.python3.pkgs.buildPythonApplication {
   build-system = [ pkgs.python3.pkgs.hatchling ];
 
   dependencies = [
-    perSystem.self.sevdesk-api
+    sevdesk-api
   ];
 
   pythonImportsCheck = [ "sevdesk_cli" ];

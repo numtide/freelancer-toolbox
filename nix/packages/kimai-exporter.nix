@@ -1,4 +1,8 @@
-{ pkgs, perSystem }:
+{
+  pkgs,
+  rest,
+  transferwise,
+}:
 pkgs.python3.pkgs.buildPythonApplication {
   pname = "kimai-exporter";
   version = "0.1.0";
@@ -8,8 +12,8 @@ pkgs.python3.pkgs.buildPythonApplication {
   build-system = [ pkgs.python3.pkgs.hatchling ];
 
   dependencies = [
-    perSystem.self.rest
-    perSystem.self.transferwise
+    rest
+    transferwise
   ];
 
   doCheck = false;

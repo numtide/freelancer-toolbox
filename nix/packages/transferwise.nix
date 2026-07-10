@@ -1,4 +1,4 @@
-{ pkgs, perSystem }:
+{ pkgs, rest }:
 let
   inherit (pkgs) lib python3;
 in
@@ -13,7 +13,7 @@ python3.pkgs.buildPythonPackage {
     hatchling
   ];
 
-  dependencies = [ perSystem.self.rest ];
+  dependencies = [ rest ];
 
   pythonImportsCheck = [ "transferwise" ];
 

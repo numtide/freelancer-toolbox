@@ -8,7 +8,7 @@ import logging
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -328,8 +328,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     options = parse_args(argv)
     configure_logging(debug=options.debug)
 
-    # Debug logging
-    logger.debug("Options: %s", options)
+    # Debug logging — never emit the API token. The "***" here is a redaction
+    # placeholder, not a credential (hence the S106 suppression).
+    safe_options = replace(options, token="***") if options.token else options  # noqa: S106
+    logger.debug("Options: %s", safe_options)
     logger.debug("Command: %s", options.command)
 
     if not options.command:

@@ -32,6 +32,22 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+# Keys whose values must never reach the debug log (e.g. mail-account IMAP
+# passwords returned by the API, or an auth token echoed back in a payload).
+_SENSITIVE_KEYS = frozenset({"password", "token", "authorization"})
+
+
+def _redact(obj: Any) -> Any:
+    """Recursively mask sensitive values so debug logging can't leak secrets."""
+    if isinstance(obj, dict):
+        return {
+            k: ("***" if k.lower() in _SENSITIVE_KEYS else _redact(v))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_redact(v) for v in obj]
+    return obj
+
 
 class PaperlessAPIError(Exception):
     """Exception raised for Paperless API errors."""
@@ -83,7 +99,7 @@ class PaperlessClient:
 
         # Log HTTP request
         logger.debug(f"HTTP Request: {method} {url}")
-        logger.debug(f"Headers: {headers}")
+        logger.debug(f"Headers: {_redact(headers)}")
         if data:
             logger.debug(f"Body: {json.dumps(data, indent=2)}")
 
@@ -99,7 +115,9 @@ class PaperlessClient:
                 response_text = response.read().decode("utf-8")
                 response_body = json.loads(response_text)
                 logger.debug(f"HTTP Response: {response.status}")
-                logger.debug(f"Response body: {json.dumps(response_body, indent=2)}")
+                logger.debug(
+                    f"Response body: {json.dumps(_redact(response_body), indent=2)}"
+                )
                 return cast("dict[str, Any]", response_body)
         except urllib.error.HTTPError as e:
             error_body = e.read().decode("utf-8")

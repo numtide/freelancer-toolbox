@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harvest Invoicer — {{ invoice.number }}</title>
+  {# Set the theme before first paint to avoid a light flash, and expose
+     toggleTheme() shared across both screens via localStorage. #}
+  <script src="/static/theme.js"></script>
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/toast.js" defer></script>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand-link" href="/" title="Back to the editor">
+        <img class="logo" src="/static/harvest-logo.svg" alt="Harvest">
+      </a>
+      <h1>Invoicer</h1>
+      <span id="inv-no-crumb" class="crumb">/ Invoice {{ invoice.number }}</span>
+      <div class="actions">
+        <div id="render-status"></div>
+        <button type="button" class="icon-btn active" id="preview-toggle"
+          title="Toggle live preview" aria-label="Toggle live preview">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        </button>
+        <button type="button" class="icon-btn theme-toggle" data-theme-toggle
+          onclick="toggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">
+          <svg class="icon-moon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg class="icon-sun" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+        </button>
+        <a class="icon-btn" href="/settings" title="Settings" aria-label="Settings">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </a>
+        {# The split-button's primary action is the configured default; the
+           other action moves to the dropdown. "Send invoice" only appears
+           when SMTP is configured (send_available). #}
+        {%- macro generate_attrs() -%}
+          title="Output: {{ output_path }}" hx-post="/render" hx-target="#render-status" hx-swap="outerHTML" hx-disabled-elt="this"
+        {%- endmacro -%}
+        {%- macro send_attrs() -%}
+          title="Compose and email the invoice PDF to the client" hx-get="/send/modal" hx-target="#modal-root" hx-swap="innerHTML"
+        {%- endmacro -%}
+        {% set icon_file %}<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>{% endset %}
+        {% set icon_plane %}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FA5D00" stroke-width="1.8"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4z"></path></svg>{% endset %}
+        {% set primary_send = send_available and default_action == 'send' %}
+        <div class="split">
+          {% if primary_send %}
+          <button type="button" class="split-main" {{ send_attrs() }}>
+            {{ icon_plane }} Send invoice
+          </button>
+          {% else %}
+          <button type="button" class="split-main{{ '' if send_available else ' solo' }}" {{ generate_attrs() }}>
+            {{ icon_file }} Generate PDF
+          </button>
+          {% endif %}
+          {% if send_available %}
+          <details class="menu">
+            <summary class="menu-caret" aria-label="More invoice actions">&#9662;</summary>
+            <div class="menu-items">
+              {% if primary_send %}
+              <button type="button" {{ generate_attrs() }}>
+                {{ icon_file }} Generate PDF
+              </button>
+              {% else %}
+              <button type="button" class="send-row" {{ send_attrs() }}>
+                {{ icon_plane }} Send invoice
+              </button>
+              {% endif %}
+            </div>
+          </details>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </header>
+
+  {% include "partials/source_bar.html" %}
+
+  {# The draft autosave restores the previous session silently on load
+     (no banner, per the design). The safety net stays; only the visible
+     element is gone. #}
+
+  <main class="editor-grid" id="layout">
+
+    <!-- ============ Invoice details ============ -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Invoice details</h2>
+      </div>
+      <form id="meta-form">
+        <div class="card-sec">
+          <div class="eyebrow">Client &amp; dates</div>
+          <label class="field-label">Bill to</label>
+          {% include "partials/client_picker.html" %}
+          {% include "partials/client_inset.html" %}
+          {% include "partials/meta.html" %}
+        </div>
+        <div class="card-sec">
+          {% include "partials/period.html" %}
+        </div>
+      </form>
+    </section>
+
+    <!-- ============ Live preview ============ -->
+    <div class="preview-col">
+      <div class="preview-head">
+        <h2>Live preview</h2>
+        <span class="pill-draft"><span class="dot"></span>DRAFT</span>
+        <div class="preview-actions">
+          <div class="seg" role="tablist" aria-label="Preview mode">
+            <button type="button" id="mode-html" class="seg-btn"
+              title="Instant HTML preview (same template and stylesheet as the PDF)">HTML</button>
+            <button type="button" id="mode-pdf" class="seg-btn active"
+              title="Exact PDF preview — byte-identical to the generated file">PDF</button>
+          </div>
+          <button type="button" id="preview-open" class="btn-outline"
+            title="Open the preview in a separate window">
+            Open
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path></svg>
+          </button>
+        </div>
+      </div>
+      <iframe id="preview-frame" src="/preview.pdf#toolbar=0" title="Invoice preview"></iframe>
+      <span id="preview-count" class="hv-num preview-count">{{ invoice.lines | length }} line items</span>
+    </div>
+
+    <!-- ============ Line items (full width) ============ -->
+    <section class="card span-full">
+      <div class="li-head">
+        <h2>Line items</h2>
+        <span id="items-meta" class="hv-num card-meta">{{ invoice.lines | length }} · {{ fmt_money(invoice.grand_total) }} {{ invoice.currency }}</span>
+        <div class="li-actions"{% if not invoice.lines %} hidden{% endif %}>
+          <button type="button" class="icon-btn-sm" title="Merge duplicate lines"
+            hx-post="/lines/merge-duplicates" hx-target="#line-rows" hx-swap="outerHTML">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 2 9 5-9 5-9-5 9-5z"></path><path d="m3 12 9 5 9-5"></path><path d="m3 17 9 5 9-5"></path></svg>
+          </button>
+          <button id="undo-btn" type="button"
+            class="icon-btn-sm{{ '' if has_undo else ' is-disabled' }}" title="Undo last change"
+            hx-post="/lines/undo" hx-target="#line-rows" hx-swap="outerHTML">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7v6h6"></path><path d="M3.5 13a9 9 0 1 0 2.3-7.7L3 8"></path></svg>
+          </button>
+          <button id="redo-btn" type="button"
+            class="icon-btn-sm{{ '' if has_redo else ' is-disabled' }}" title="Redo last change"
+            hx-post="/lines/redo" hx-target="#line-rows" hx-swap="outerHTML">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 7v6h-6"></path><path d="M20.5 13a9 9 0 1 1-2.3-7.7L21 8"></path></svg>
+          </button>
+        </div>
+      </div>
+      <div id="sel-bar" class="sel-bar" hidden>
+        <span class="hv-num sel-count"><span id="sel-count-n">0</span> selected</span>
+        <div class="sel-actions">
+          <button type="button" id="merge-sel-btn" class="btn-orange-sm is-dim"
+            title="Combine into one line"
+            hx-post="/lines/merge" hx-include="#merge-form"
+            hx-target="#line-rows" hx-swap="outerHTML">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 3v6a5 5 0 0 0 5 5 5 5 0 0 1 5 5v2"></path><path d="M17 3v2a5 5 0 0 1-5 5"></path></svg>
+            Merge
+          </button>
+          <button type="button" class="btn-danger-sm"
+            hx-post="/lines/delete-selected" hx-include="#merge-form"
+            hx-target="#line-rows" hx-swap="outerHTML">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m1 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path></svg>
+            Delete
+          </button>
+          <button type="button" class="text-btn" id="sel-clear">Clear</button>
+        </div>
+      </div>
+      <div class="li-body">
+        {% include "partials/rows.html" %}
+        <form id="merge-form" hidden></form>
+        <button type="button" class="ghost-add"
+          hx-post="/lines/add" hx-target="#line-rows" hx-swap="outerHTML">
+          <span style="font-size:16px;line-height:1;">＋</span> Add line item
+        </button>
+      </div>
+    </section>
+
+    <!-- ============ Totals bar (full width) ============ -->
+    <div class="span-full">
+      {% include "partials/totals.html" %}
+    </div>
+
+  </main>
+
+  <!-- Send-invoice modal is fetched here on demand. -->
+  <div id="modal-root"></div>
+
+  <script>
+    // ---- Send-invoice modal: close on backdrop / × / Cancel / Escape ----
+    (function () {
+      function closeModal() {
+        var root = document.getElementById("modal-root");
+        if (root) root.innerHTML = "";
+      }
+      document.addEventListener("click", function (e) {
+        var closer = e.target.closest("[data-modal-close]");
+        if (!closer) return;
+        // The overlay only closes on a direct backdrop click, not on clicks
+        // that bubbled up from inside the card.
+        if (closer.classList.contains("modal-overlay") && e.target !== closer) return;
+        closeModal();
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && document.querySelector(".modal-overlay")) closeModal();
+      });
+      // Focus the first field when the modal loads.
+      document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.target && evt.target.id === "modal-root") {
+          var f = evt.target.querySelector('input[name="to"]');
+          if (f) f.focus();
+        }
+      });
+    })();
+
+    // ---- Preview control: PDF mode default, Open in window, eye toggle ----
+    (function () {
+      var frame = document.getElementById("preview-frame");
+      var htmlBtn = document.getElementById("mode-html");
+      var pdfBtn = document.getElementById("mode-pdf");
+      var openBtn = document.getElementById("preview-open");
+      var toggleBtn = document.getElementById("preview-toggle");
+      var mode = "pdf";
+      var hidden = false;
+      var stale = false;
+      var debounce = null;
+
+      function srcFor(m) {
+        return m === "pdf" ? "/preview.pdf?t=" + Date.now() + "#toolbar=0" : "/preview";
+      }
+      function refresh() {
+        if (hidden) { stale = true; return; }
+        if (mode === "pdf") { frame.src = srcFor("pdf"); }
+        else if (frame.contentWindow) { frame.contentWindow.location.reload(); }
+      }
+      function setMode(m) {
+        mode = m;
+        htmlBtn.classList.toggle("active", m === "html");
+        pdfBtn.classList.toggle("active", m === "pdf");
+        frame.src = srcFor(m);
+      }
+      htmlBtn.addEventListener("click", function () { setMode("html"); });
+      pdfBtn.addEventListener("click", function () { setMode("pdf"); });
+      openBtn.addEventListener("click", function () {
+        window.open(srcFor(mode), "invoice-preview", "width=880,height=1100");
+      });
+      toggleBtn.addEventListener("click", function () {
+        hidden = !hidden;
+        document.getElementById("layout").classList.toggle("preview-hidden", hidden);
+        toggleBtn.classList.toggle("active", !hidden);
+        if (!hidden && stale) { stale = false; refresh(); }
+      });
+      document.body.addEventListener("htmx:afterRequest", function (evt) {
+        if (!evt.detail.successful) return;
+        clearTimeout(debounce);
+        debounce = setTimeout(refresh, mode === "pdf" ? 600 : 0);
+      });
+    })();
+
+    // ---- Dropdowns (client picker, payment terms): mouse + keyboard ----
+    // Combobox/listbox semantics: the button toggles a listbox; options are
+    // arrow-navigable, Enter/Space selects, Escape closes and returns focus.
+    (function () {
+      function optionsIn(panel) {
+        return Array.prototype.filter.call(
+          panel.querySelectorAll(".dd-row"),
+          function (r) { return !r.hidden; }
+        );
+      }
+      function selectedIndex(opts) {
+        for (var i = 0; i < opts.length; i++) {
+          if (opts[i].getAttribute("aria-selected") === "true") return i;
+        }
+        return 0;
+      }
+      function focusOption(opts, i) {
+        if (!opts.length) return;
+        opts[Math.max(0, Math.min(opts.length - 1, i))].focus();
+      }
+      function filterClients(panel, q) {
+        panel.querySelectorAll(".client-row").forEach(function (r) {
+          r.hidden = q !== "" && r.dataset.name.indexOf(q) === -1;
+        });
+      }
+      function open(dd) {
+        var btn = dd.querySelector(".dd-btn");
+        var panel = dd.querySelector(".dd-panel");
+        closeAll(panel);
+        panel.hidden = false;
+        btn.classList.add("open");
+        btn.setAttribute("aria-expanded", "true");
+        var s = panel.querySelector(".dd-search");
+        if (s) { s.value = ""; filterClients(panel, ""); s.focus(); }
+        else { var o = optionsIn(panel); focusOption(o, selectedIndex(o)); }
+      }
+      function close(dd, returnFocus) {
+        var btn = dd.querySelector(".dd-btn");
+        var panel = dd.querySelector(".dd-panel");
+        panel.hidden = true;
+        btn.classList.remove("open");
+        btn.setAttribute("aria-expanded", "false");
+        if (returnFocus) btn.focus();
+      }
+      function closeAll(except) {
+        document.querySelectorAll(".dd").forEach(function (dd) {
+          var panel = dd.querySelector(".dd-panel");
+          if (panel && panel !== except && !panel.hidden) close(dd, false);
+        });
+        document.querySelectorAll("details.menu[open]").forEach(function (d) {
+          d.removeAttribute("open");
+        });
+      }
+
+      document.addEventListener("click", function (e) {
+        var btn = e.target.closest(".dd-btn");
+        if (btn) {
+          var dd = btn.closest(".dd");
+          if (dd.querySelector(".dd-panel").hidden) open(dd);
+          else close(dd, false);
+          return;
+        }
+        if (e.target.closest(".client-row") || e.target.closest(".terms-row")) {
+          var dd2 = e.target.closest(".dd");
+          if (dd2) close(dd2, false);
+          return;
+        }
+        if (!e.target.closest(".dd") && !e.target.closest(".menu")) closeAll(null);
+      });
+
+      document.addEventListener("input", function (e) {
+        if (!e.target.classList.contains("dd-search")) return;
+        filterClients(e.target.closest(".dd-panel"), e.target.value.toLowerCase());
+      });
+
+      document.addEventListener("keydown", function (e) {
+        var dd = e.target.closest(".dd");
+        if (!dd) return;
+        var panel = dd.querySelector(".dd-panel");
+        var onBtn = e.target.classList.contains("dd-btn");
+        var onSearch = e.target.classList.contains("dd-search");
+        var onOption = e.target.classList.contains("dd-row");
+
+        if (onBtn && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          if (panel.hidden) open(dd);
+          return;
+        }
+        if (panel.hidden) return;
+        var opts = optionsIn(panel);
+        if (e.key === "Escape") { e.preventDefault(); close(dd, true); return; }
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          if (onOption) focusOption(opts, opts.indexOf(e.target) + 1);
+          else focusOption(opts, 0);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          if (onOption) {
+            var i = opts.indexOf(e.target);
+            var search = panel.querySelector(".dd-search");
+            if (i <= 0 && search) { search.focus(); return; }
+            focusOption(opts, i - 1);
+          }
+          return;
+        }
+        if (onOption && (e.key === "Home")) { e.preventDefault(); focusOption(opts, 0); return; }
+        if (onOption && (e.key === "End")) { e.preventDefault(); focusOption(opts, opts.length - 1); return; }
+        if (onOption && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          e.target.click();
+        }
+      });
+    })();
+
+    // ---- Payment terms -> due date (derived, local time) ----
+    (function () {
+      function addDays(iso, days) {
+        var p = iso.split("-").map(Number);
+        var d = new Date(p[0], p[1] - 1, p[2] + days);
+        var mm = String(d.getMonth() + 1).padStart(2, "0");
+        var dd = String(d.getDate()).padStart(2, "0");
+        return d.getFullYear() + "-" + mm + "-" + dd;
+      }
+      document.addEventListener("click", function (e) {
+        var row = e.target.closest(".terms-row");
+        if (!row) return;
+        var mb = document.getElementById("meta-block");
+        mb.dataset.termsDays = row.dataset.days;
+        var due = document.getElementById("due-input");
+        htmx.trigger(due, "change");
+      });
+      // Every meta update recomputes due = issue + terms (due is derived).
+      document.body.addEventListener("htmx:configRequest", function (evt) {
+        if (evt.detail.path !== "/meta/update") return;
+        var mb = document.getElementById("meta-block");
+        var days = parseInt(mb.dataset.termsDays || "15", 10);
+        var issue = evt.detail.parameters.issue_date;
+        if (issue) evt.detail.parameters.due_date = addDays(issue, days);
+      });
+    })();
+
+    // ---- Legal note collapse/expand ----
+    document.addEventListener("click", function (e) {
+      if (e.target.id === "legal-add") {
+        document.getElementById("legal-expanded").hidden = false;
+        e.target.hidden = true;
+        document.getElementById("legal-input").focus();
+      }
+      if (e.target.id === "legal-remove") {
+        var inp = document.getElementById("legal-input");
+        inp.value = "";
+        htmx.trigger(inp, "change");
+      }
+    });
+
+    // ---- Sync range: follow the billing period unless unchecked ----
+    (function () {
+      document.addEventListener("change", function (e) {
+        if (e.target.id !== "use-period") return;
+        var r = document.getElementById("fetch-range");
+        if (r) r.hidden = e.target.checked;
+      });
+      document.body.addEventListener("htmx:configRequest", function (evt) {
+        if (evt.detail.path !== "/lines/fetch") return;
+        // When "use billing period" is checked (or the Manage panel isn't
+        // in play), the sync range follows the invoice period fields.
+        var use = document.getElementById("use-period");
+        if (!use || use.checked) {
+          var ps = document.querySelector('[name="period_start"]');
+          var pe = document.querySelector('[name="period_end"]');
+          if (!ps || !pe || !ps.value || !pe.value) {
+            // Never fall back to a stale range: block and explain.
+            evt.preventDefault();
+            if (window.showToast) {
+              window.showToast(
+                "Set the invoice billing period first",
+                "Or open Manage to enter a range.",
+                "err"
+              );
+            }
+            return;
+          }
+          evt.detail.parameters.fetch_start = ps.value;
+          evt.detail.parameters.fetch_end = pe.value;
+        }
+      });
+      // While a sync is in flight, show "Syncing…" on the button; the OOB
+      // swap restores the real label (Re-sync) when it completes.
+      document.body.addEventListener("htmx:beforeRequest", function (evt) {
+        if (evt.detail.pathInfo && evt.detail.pathInfo.requestPath === "/lines/fetch") {
+          document.querySelectorAll(".sync-label").forEach(function (l) {
+            l.textContent = "Syncing…";
+          });
+        }
+      });
+    })();
+
+    // ---- Row selection bar + line-item action visibility ----
+    (function () {
+      function recount() {
+        var checks = document.querySelectorAll(".row-check:checked");
+        var bar = document.getElementById("sel-bar");
+        bar.hidden = checks.length === 0;
+        document.getElementById("sel-count-n").textContent = checks.length;
+        document.getElementById("merge-sel-btn").classList.toggle("is-dim", checks.length < 2);
+      }
+      function syncActions() {
+        // Merge/Undo/Redo are meaningless with no rows (the empty state):
+        // hide them until there is something to act on.
+        var hasRows = document.querySelectorAll("#line-rows .li-row").length > 0;
+        var actions = document.querySelector(".li-actions");
+        if (actions) actions.hidden = !hasRows;
+      }
+      document.addEventListener("change", function (e) {
+        if (e.target.classList.contains("row-check")) recount();
+      });
+      document.getElementById("sel-clear").addEventListener("click", function () {
+        document.querySelectorAll(".row-check:checked").forEach(function (c) { c.checked = false; });
+        recount();
+      });
+      document.body.addEventListener("htmx:afterSwap", function (evt) {
+        if (evt.target && evt.target.id === "line-rows") { recount(); syncActions(); }
+      });
+      syncActions();
+    })();
+
+    // ---- Drag-and-drop reordering (delegated; survives htmx swaps) ----
+    (function () {
+      var dragRow = null;
+      document.addEventListener("dragstart", function (e) {
+        var handle = e.target.closest && e.target.closest(".drag-handle");
+        if (!handle) return;
+        dragRow = handle.closest(".li-row");
+        dragRow.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", "");
+      });
+      document.addEventListener("dragover", function (e) {
+        if (!dragRow) return;
+        var row = e.target.closest && e.target.closest("#line-rows .li-row");
+        if (!row || row === dragRow) return;
+        e.preventDefault();
+        var rect = row.getBoundingClientRect();
+        var after = e.clientY > rect.top + rect.height / 2;
+        row.parentNode.insertBefore(dragRow, after ? row.nextSibling : row);
+      });
+      document.addEventListener("dragend", function () {
+        if (!dragRow) return;
+        dragRow.classList.remove("dragging");
+        dragRow = null;
+        var order = Array.prototype.map.call(
+          document.querySelectorAll("#line-rows .li-row"),
+          function (r) { return r.dataset.idx; }
+        ).join(",");
+        htmx.ajax("POST", "/lines/reorder", {
+          target: "#line-rows",
+          swap: "outerHTML",
+          values: { order: order },
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

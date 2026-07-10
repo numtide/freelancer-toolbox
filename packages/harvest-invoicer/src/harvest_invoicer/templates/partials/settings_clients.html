@@ -1,0 +1,124 @@
+{%- macro initials(name) -%}
+{{ name.split()[:2] | map('first') | join('') | upper }}
+{%- endmacro -%}
+{%- macro client_fields(key, entry) -%}
+      <div>
+        <label class="slabel">Harvest client name (key)</label>
+        <input type="text" class="hv-num" name="key" value="{{ key }}">
+        <div class="help">Must match the name in Harvest</div>
+      </div>
+      <div>
+        <label class="slabel">Legal name for invoice</label>
+        <input type="text" name="name" value="{{ entry.get('name', '') }}">
+      </div>
+      <div>
+        <label class="slabel">Address line 1</label>
+        <input type="text" name="address_line1" value="{{ entry.get('address_line1', '') }}">
+      </div>
+      <div>
+        <label class="slabel">Address line 2</label>
+        <input type="text" name="address_line2" value="{{ entry.get('address_line2', '') }}">
+      </div>
+      <div>
+        <label class="slabel">Country</label>
+        <input type="text" name="country" value="{{ entry.get('country', '') }}">
+      </div>
+      <div>
+        <label class="slabel">Tax ID</label>
+        <input type="text" class="hv-num" name="tax_id" value="{{ entry.get('tax_id', '') }}">
+      </div>
+      <div>
+        <label class="slabel">Tax ID label</label>
+        <input type="text" name="tax_id_label" value="{{ entry.get('tax_id_label', '') }}">
+        <div class="help">How it's labelled on the invoice</div>
+      </div>
+      <div>
+        <label class="slabel">Email</label>
+        <input type="text" name="email" value="{{ entry.get('email', '') }}">
+        <div class="help">For sending the invoice; optional</div>
+      </div>
+      <div>
+        <label class="slabel">Invoice language</label>
+        <select name="language">
+          <option value="" {% if not entry.get('language') %}selected{% endif %}>Issuer default</option>
+          <option value="en" {% if entry.get('language') == 'en' %}selected{% endif %}>English</option>
+          <option value="es" {% if entry.get('language') == 'es' %}selected{% endif %}>Español</option>
+        </select>
+        <div class="help">Language of invoices for this client</div>
+      </div>
+      <div>
+        <label class="slabel">VAT rate</label>
+        <input type="number" name="vat_rate" step="0.01" min="0" max="1"
+          value="{{ entry.get('vat_rate', '') }}">
+        <div class="help">0–1, e.g. 0.21 for 21%; empty = none</div>
+      </div>
+      <div class="wide">
+        <label class="slabel">Recurring extra lines</label>
+        <textarea name="extra_lines" rows="2" placeholder="Monthly retainer ; 500 ; 1">
+{%- for x in entry.get('extra_lines', []) -%}
+{{ x['concept'] }} ; {{ x['unit_price'] }} ; {{ x['quantity'] }}
+{% endfor -%}
+</textarea>
+        <div class="help">One per line: description ; unit price ; quantity</div>
+      </div>
+{%- endmacro -%}
+<div id="clients-block" class="acc-list">
+  {% for key, entry in clients.items() %}
+  {% set name = entry.get('name', key) %}
+  {% set city = (entry.get('address_line2', '').split(',')[-1]).strip().split(' ')[-1] %}
+  {% set is_open = (key == open_key) if open_key else loop.first %}
+  <div class="acc-item{% if is_open %} open{% endif %}">
+    <div class="acc-head" data-acc>
+      <span class="avatar avatar-lg">{{ initials(name) }}</span>
+      <div class="acc-title">
+        <div class="acc-name-row">
+          <span class="acc-name">{{ name }}</span>
+          {% if key == current_client_key %}<span class="pill-current">Current invoice</span>{% endif %}
+        </div>
+        <div class="hv-num acc-meta">{{ key }}{% if city %} · {{ city }}{% endif %}</div>
+      </div>
+      <span class="acc-chevron">&#8964;</span>
+    </div>
+    <form class="acc-body" hx-post="/settings/clients/save"
+      hx-target="#clients-block" hx-swap="outerHTML"{% if not is_open %} hidden{% endif %}>
+      <input type="hidden" name="original_key" value="{{ key }}">
+      {{ client_fields(key, entry) }}
+      <div class="acc-foot">
+        <button type="button" class="btn-danger-sm"
+          hx-post="/settings/clients/delete" hx-include="closest form"
+          hx-confirm="Delete client '{{ key }}'?"
+          hx-target="#clients-block" hx-swap="outerHTML">Remove client</button>
+        <button type="submit" class="btn-primary-sm">Save client</button>
+      </div>
+    </form>
+  </div>
+  {% endfor %}
+
+  {% if not clients %}
+  <div class="empty-state">
+    <p class="empty-title">No clients yet</p>
+    <p class="empty-sub">Add your first client below — it becomes selectable as the invoice's bill-to.</p>
+  </div>
+  {% endif %}
+
+  <div class="acc-item" id="new-client">
+    <div class="acc-head" data-acc>
+      <span class="avatar avatar-lg">＋</span>
+      <div class="acc-title">
+        <div class="acc-name-row"><span class="acc-name">New client</span></div>
+        <div class="acc-meta">Add billing details for another client</div>
+      </div>
+      <span class="acc-chevron">&#8964;</span>
+    </div>
+    <form class="acc-body" data-new-client hx-post="/settings/clients/save"
+      hx-target="#clients-block" hx-swap="outerHTML" hidden>
+      <input type="hidden" name="original_key" value="">
+      {{ client_fields('', {}) }}
+      <div class="acc-foot">
+        <button type="submit" class="btn-primary-sm">Add client</button>
+      </div>
+    </form>
+  </div>
+
+  <span id="clients-status" class="{{ 'status-err' if status_error else 'status-ok' }}">{{ status or '' }}</span>
+</div>

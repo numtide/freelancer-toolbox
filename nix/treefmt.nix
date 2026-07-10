@@ -1,6 +1,5 @@
-# treefmt-nix module config, evaluated by formatter.nix.
-# Not part of blueprint's folder mapping.
-{ pkgs, perSystem }:
+# treefmt-nix module config, evaluated in flake.nix.
+{ pkgs, toolbox }:
 {
   # Used to find the project root
   projectRootFile = "flake.lock";
@@ -17,7 +16,7 @@
       };
       "packages/transferwise" = {
         modules = [ "src/transferwise" ];
-        extraPythonPackages = [ perSystem.self.rest ];
+        extraPythonPackages = [ toolbox.rest ];
         options = [
           "--config-file"
           "../../pyproject.toml"
@@ -30,8 +29,8 @@
           "src/harvest_rounder"
         ];
         extraPythonPackages = [
-          perSystem.self.rest
-          perSystem.self.transferwise
+          toolbox.rest
+          toolbox.transferwise
           pkgs.python3.pkgs.rich
         ];
         options = [
@@ -45,8 +44,8 @@
           "src/kimai_exporter"
         ];
         extraPythonPackages = [
-          perSystem.self.rest
-          perSystem.self.transferwise
+          toolbox.rest
+          toolbox.transferwise
         ];
         options = [
           "--config-file"
@@ -81,7 +80,7 @@
           "src/sevdesk_wise_importer"
           "src/sevdesk_tax_estimator"
         ];
-        extraPythonPackages = [ perSystem.self.sevdesk-api ];
+        extraPythonPackages = [ toolbox.sevdesk-api ];
         options = [
           "--config-file"
           "../../pyproject.toml"
@@ -89,6 +88,21 @@
       };
       "packages/wise-exporter" = {
         extraPythonPackages = [ pkgs.python3.pkgs.rsa ];
+        options = [
+          "--config-file"
+          "../../pyproject.toml"
+        ];
+      };
+      "packages/harvest-invoicer" = {
+        modules = [ "src/harvest_invoicer" ];
+        extraPythonPackages = with pkgs.python3.pkgs; [
+          (pkgs.python3.pkgs.toPythonModule toolbox.harvest-exporter)
+          flask
+          click
+          jinja2
+          pydantic
+          pydantic-settings
+        ];
         options = [
           "--config-file"
           "../../pyproject.toml"
@@ -114,7 +128,7 @@
       };
       "packages/sevdesk-cli" = {
         modules = [ "src/sevdesk_cli" ];
-        extraPythonPackages = [ perSystem.self.sevdesk-api ];
+        extraPythonPackages = [ toolbox.sevdesk-api ];
         options = [
           "--config-file"
           "../../pyproject.toml"

@@ -1,0 +1,27 @@
+{# Billing period block; swapped OOB when /meta/update responds. #}
+<div id="period-block" hx-swap-oob="outerHTML">
+  <div class="sec-head">
+    <div class="eyebrow">Billing period</div>
+    <span class="hv-num sec-meta">
+      {%- if invoice.period_start and invoice.period_end -%}
+      {{ invoice.period_start.isoformat() }} &#8594; {{ invoice.period_end.isoformat() }}
+      {%- endif -%}
+    </span>
+  </div>
+  <div class="grid2">
+    <div>
+      <label class="field-label">Period start</label>
+      <input type="date" class="hv-num" name="period_start"
+        value="{{ invoice.period_start.isoformat() if invoice.period_start else '' }}"
+        hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+        hx-target="#meta-block" hx-swap="outerHTML">
+    </div>
+    <div>
+      <label class="field-label">Period end</label>
+      <input type="date" class="hv-num" name="period_end"
+        value="{{ invoice.period_end.isoformat() if invoice.period_end else '' }}"
+        hx-post="/meta/update" hx-trigger="change" hx-include="#meta-form"
+        hx-target="#meta-block" hx-swap="outerHTML">
+    </div>
+  </div>
+</div>

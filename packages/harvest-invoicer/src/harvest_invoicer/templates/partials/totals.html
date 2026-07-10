@@ -1,0 +1,17 @@
+{# hx-swap-oob: when this fragment rides along in a line-mutation response,
+   htmx swaps it into the existing #totals-block. Inert on the initial page. #}
+{% set rates = invoice.lines | map(attribute='vat_rate') | unique | list %}
+<div id="totals-block" hx-swap-oob="outerHTML" class="totals-bar">
+  <div>
+    <div class="tb-eyebrow">Subtotal</div>
+    <div class="hv-num tb-val">{{ fmt_money(invoice.subtotal) }} <span class="tb-cur">{{ invoice.currency }}</span></div>
+  </div>
+  <div>
+    <div class="tb-eyebrow">VAT{% if rates | length == 1 %} ({{ (rates[0] * 100) | round | int }}%){% endif %}</div>
+    <div class="hv-num tb-val">{{ fmt_money(invoice.vat_total) }} <span class="tb-cur">{{ invoice.currency }}</span></div>
+  </div>
+  <div class="tb-total">
+    <div class="tb-eyebrow tb-orange">Total due</div>
+    <div class="hv-num tb-big">{{ fmt_money(invoice.grand_total) }} <span class="tb-cur">{{ invoice.currency }}</span></div>
+  </div>
+</div>

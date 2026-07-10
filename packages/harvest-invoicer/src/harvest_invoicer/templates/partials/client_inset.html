@@ -1,0 +1,14 @@
+<div id="client-inset" class="client-inset"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
+  <div class="left">
+    <div class="inset-eyebrow">Billing address</div>
+    {{ client.get('name', '—') }}<br>
+    {%- if client.get('address_line1') %}{{ client.get('address_line1') }}<br>{% endif %}
+    {%- if client.get('address_line2') %}{{ client.get('address_line2') }}<br>{% endif %}
+    {{- client.get('country', '') }}
+  </div>
+  <div class="right">
+    <div class="inset-eyebrow">Currency · Tax</div>
+    <div style="font-weight:700;">{{ invoice.currency }}</div>
+    <div class="hv-num" style="color:var(--text-2);">{{ client.get('tax_id', '') }}</div>
+  </div>
+</div>

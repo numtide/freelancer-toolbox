@@ -1,0 +1,17 @@
+{
+  "name": "Jane Doe Consulting",
+  "address_line1": "12 Example Street",
+  "address_line2": "10115 Berlin",
+  "country": "Germany",
+  "tax_id": "DE000000000",
+  "tax_id_label": "VAT ID",
+  "phone": "+49 30 00000000",
+  "email": "jane@example.com",
+  "bank": {
+    "iban": "DE00 0000 0000 0000 0000 00",
+    "bic": "EXAMPLEXXX"
+  },
+  "date_format": "%d.%m.%Y",
+  "legal_note": "VAT exemption applies under §19 UStG (small-business regulation).",
+  "number_template": "{year}-{month}"
+}

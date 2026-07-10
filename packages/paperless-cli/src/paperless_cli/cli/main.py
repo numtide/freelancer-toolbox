@@ -231,9 +231,18 @@ def parse_args() -> Options:
     update_parser.add_argument("rule_id", type=int, help="Rule ID")
     update_parser.add_argument("--name", help="New rule name")
     update_parser.add_argument("--order", type=int, help="New rule order")
-    update_parser.add_argument("--enabled", action="store_true", help="Enable rule")
+    # Default to None (not argparse's implicit False) so that omitting both
+    # flags leaves the rule's enabled state untouched on update, instead of
+    # silently disabling it.
     update_parser.add_argument(
-        "--disabled", dest="enabled", action="store_false", help="Disable rule"
+        "--enabled", action="store_true", default=None, help="Enable rule"
+    )
+    update_parser.add_argument(
+        "--disabled",
+        dest="enabled",
+        action="store_false",
+        default=None,
+        help="Disable rule",
     )
     update_parser.add_argument("--account", type=int, help="Mail account ID")
     update_parser.add_argument("--filter-from", help="Filter by sender")

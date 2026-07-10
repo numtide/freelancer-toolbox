@@ -50,6 +50,14 @@ working-days-calculator annual-report.csv
 ### Invoicing & Accounting
 
 <details>
+<summary><strong>harvest-invoicer</strong> - Fetch Harvest time data, edit line items in a local browser, and generate PDF invoices</summary>
+
+- **Usage**: `nix run github:numtide/freelancer-toolbox#harvest-invoicer -- serve` (interactive editor) or `... generate --month YYYY-MM` (headless)
+- **Nix**: [nix/packages/harvest-invoicer.nix](nix/packages/harvest-invoicer.nix)
+- **Documentation**: [packages/harvest-invoicer/README.md](packages/harvest-invoicer/README.md)
+
+</details>
+<details>
 <summary><strong>sevdesk-invoicer</strong> - SevDesk integration: invoice generation, Wise bank imports, and German tax estimation</summary>
 
 This package exposes three commands:

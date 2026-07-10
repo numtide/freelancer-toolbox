@@ -91,8 +91,8 @@ def parse_time_entry(entry: dict[str, Any], increment_minutes: int = 15) -> Time
 def get_time_entries(
     account_id: str,
     access_token: str,
-    from_date: int,
-    to_date: int,
+    from_date: str,
+    to_date: str,
     increment_minutes: int = 15,
 ) -> list[TimeEntry]:
     """Fetch time entries from Harvest and parse them.
@@ -100,8 +100,8 @@ def get_time_entries(
     Args:
         account_id: Harvest account ID
         access_token: Harvest bearer token
-        from_date: Start date as YYYYMMDD integer
-        to_date: End date as YYYYMMDD integer
+        from_date: Start date as a YYYY-MM-DD string
+        to_date: End date as a YYYY-MM-DD string
         increment_minutes: The increment in minutes for rounding
 
     Returns:

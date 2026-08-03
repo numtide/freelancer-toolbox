@@ -182,3 +182,31 @@ def fmt_vat_cell(line: InvoiceLine) -> str:
     if line.vat_rate == 0:
         return f"{fmt_money(0.0)} (0%)"
     return f"{fmt_money(line.vat)} ({line.vat_rate * 100:.0f}%)"
+
+
+def fmt_tax_label(override: object, lang: str) -> str:
+    """Resolve the tax-ID label for *lang*.
+
+    ``override`` is the issuer/client ``tax_id_label`` field, which may be:
+
+    * a plain string — used verbatim in every language (e.g. a fixed
+      "VAT No."), the historical behaviour; or
+    * a per-language mapping such as ``{"en": "Tax ID", "es":
+      "Identificador fiscal"}`` — the entry for *lang* is used, falling
+      back to the English entry so a label set for one language never
+      leaks into another.
+
+    An absent or empty override falls back to the translated default
+    (``t('tax_id')``), so a client with no override is still localized.
+    """
+    from collections.abc import Mapping  # noqa: PLC0415
+
+    from harvest_invoicer.i18n import translator  # noqa: PLC0415
+
+    if isinstance(override, Mapping):
+        label = override.get(lang) or override.get("en")
+        if label:
+            return str(label)
+    elif isinstance(override, str) and override:
+        return override
+    return translator(lang)("tax_id")

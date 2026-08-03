@@ -65,7 +65,7 @@ class IssuerConfig(BaseModel):
     country: str = ""
     phone: str = ""
     tax_id: str = ""
-    tax_id_label: str = ""
+    tax_id_label: str | dict[str, str] = ""
     date_format: str = ""
     number_template: str = ""
     harvest_user: str = ""
@@ -99,7 +99,7 @@ class ClientConfig(BaseModel):
     address_line2: str = ""
     country: str = ""
     tax_id: str = ""
-    tax_id_label: str = ""
+    tax_id_label: str | dict[str, str] = ""
     email: str = ""
     language: str = ""
     vat_rate: float | None = None

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang }}">
 
 <head>
   <meta charset="utf-8">
@@ -23,7 +23,7 @@
       <p>{{ issuer.address_line1 }}</p>
       <p>{{ issuer.address_line2 }}</p>
       <p>{{ issuer.country }}</p>
-      <p><span class="muted">{{ issuer.tax_id_label | default(t('tax_id')) }}</span> {{ issuer.tax_id }}</p>
+      <p><span class="muted">{{ issuer.tax_id_label | tax_label(lang) }}</span> {{ issuer.tax_id }}</p>
       <p><span class="muted">{{ t('tel') }}</span> {{ issuer.phone }}</p>
       <p><span class="muted">{{ t('email') }}</span> {{ issuer.email }}</p>
     </div>
@@ -60,7 +60,7 @@
     <p>{{ client.address_line1 }}</p>
     <p>{{ client.address_line2 }}</p>
     <p>{{ client.country }}</p>
-    <p><span class="muted">{{ client.tax_id_label | default(t('tax_id')) }}</span> {{ client.tax_id }}</p>
+    <p><span class="muted">{{ client.tax_id_label | tax_label(lang) }}</span> {{ client.tax_id }}</p>
   </section>
 
   <table class="items">

@@ -204,7 +204,7 @@ Settings page — fill in your details and they are saved.  Headless
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `tax_id_label` | `"Tax ID"` | Label shown next to your tax ID on the invoice |
+| `tax_id_label` | `"Tax ID"` | Label shown next to your tax ID. A plain string is used verbatim; a per-language map (e.g. `{"en": "Tax ID", "es": "Identificador fiscal"}`) is localized to the invoice language |
 | `date_format` | `"%Y-%m-%d"` | Python strftime pattern for all dates |
 | `legal_note` | _(absent)_ | Legal text at the invoice footer; omitted entirely when not set |
 | `number_template` | _(absent)_ | Invoice number template with `{year}` and `{month}` placeholders |
@@ -251,8 +251,10 @@ invoice; reserved for sending the invoice by email.
 for this client — headings, column labels, payment block, and the PDF page
 footer.  Defaults to the issuer-level `language`, then English.  Dates keep
 following `date_format` and amounts keep one consistent notation regardless
-of language; `tax_id_label` still overrides the translated default.  Custom
-templates receive the same `t(key)` helper and `lang` variable.
+of language.  A plain-string `tax_id_label` still overrides the translated
+default in every language; use the per-language map form (see above) to keep
+the label localized.  Custom templates receive the same `t(key)` helper and
+`lang` variable.
 
 **Optional `extra_lines`**: recurring non-Harvest items (fixed retainer,
 license pass-through, …) automatically appended to every import for that

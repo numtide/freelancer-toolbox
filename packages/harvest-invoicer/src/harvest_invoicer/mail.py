@@ -150,7 +150,10 @@ def send_invoice_email(
         email["Reply-To"] = settings.reply_to
     recipients = [recipient]
     if copy_self and from_address and from_address != recipient:
-        email["Cc"] = from_address
+        # Blind copy: the self-copy is still delivered (it's in ``recipients``
+        # / ``to_addrs``), but ``send_message`` strips the Bcc header from the
+        # transmitted message, so the client never sees the sender's address.
+        email["Bcc"] = from_address
         recipients.append(from_address)
     email["Subject"] = subject.strip() or f"Invoice {invoice.number}"
     email.set_content(message.rstrip() + "\n")

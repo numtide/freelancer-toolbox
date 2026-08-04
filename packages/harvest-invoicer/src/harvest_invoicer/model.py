@@ -160,12 +160,14 @@ def merge_duplicate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
 
 def fmt_money(n: float) -> str:
     """Format a monetary value as 1,234.56 (English locale, comma thousands, period decimal)."""
-    return f"{n:,.2f}"
+    # ``+ 0.0`` collapses a negative zero (a tiny negative that rounds to
+    # 0.00) so an amount never prints as "-0.00".
+    return f"{round(n, 2) + 0.0:,.2f}"
 
 
 def fmt_qty(n: float) -> str:
     """Format a quantity value (same style as fmt_money)."""
-    return f"{n:,.2f}"
+    return f"{round(n, 2) + 0.0:,.2f}"
 
 
 def fmt_date(d: date, date_format: str = "%Y-%m-%d") -> str:

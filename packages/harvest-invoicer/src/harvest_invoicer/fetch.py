@@ -334,14 +334,19 @@ def resolve_client(
     Otherwise, infer the client name from the first line's concept prefix.
     """
     if client_filter:
-        if client_filter not in clients:
-            available = ", ".join(sorted(clients.keys())) or "(none)"
-            msg = (
-                f"Client '{client_filter}' not found in the configured clients.\n"
-                f"  Available keys: {available}"
-            )
-            raise click.ClickException(msg)
-        return clients[client_filter]
+        if client_filter in clients:
+            return clients[client_filter]
+        # Tolerate case differences on the --client key when it stays
+        # unambiguous (a single case-insensitive match).
+        matches = [k for k in clients if k.casefold() == client_filter.casefold()]
+        if len(matches) == 1:
+            return clients[matches[0]]
+        available = ", ".join(sorted(clients.keys())) or "(none)"
+        msg = (
+            f"Client '{client_filter}' not found in the configured clients.\n"
+            f"  Available keys: {available}"
+        )
+        raise click.ClickException(msg)
 
     # Auto-detect from first line
     if lines:

@@ -83,6 +83,12 @@ def test_fmt_money_zero() -> None:
     assert fmt_money(0.0) == "0.00"
 
 
+def test_fmt_money_negative_zero_normalized() -> None:
+    # A tiny negative that rounds to zero must not print as "-0.00".
+    assert fmt_money(-0.001) == "0.00"
+    assert fmt_money(-0.0) == "0.00"
+
+
 def test_fmt_qty() -> None:
     assert fmt_qty(40.0) == "40.00"
 

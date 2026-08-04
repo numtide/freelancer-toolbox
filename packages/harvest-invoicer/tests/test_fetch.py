@@ -16,6 +16,7 @@ from harvest_invoicer.fetch import (
     client_extra_lines,
     fetch_lines,
     load_clients,
+    resolve_client,
 )
 from harvest_invoicer.model import InvoiceLine
 
@@ -240,3 +241,22 @@ class TestExtraLines:
         p.write_text(json.dumps({"Acme": {"name": "Acme Ltd", "extra_lines": "nope"}}))
         with pytest.raises(click.ClickException, match="must be a list"):
             load_clients(str(p))
+
+
+class TestResolveClient:
+    def test_exact_match(self) -> None:
+        clients = {"Acme Corp": {"name": "Acme"}, "Beta": {"name": "B"}}
+        assert resolve_client("Acme Corp", clients, [])["name"] == "Acme"
+
+    def test_case_insensitive_unique_fallback(self) -> None:
+        clients = {"Acme Corp": {"name": "Acme"}, "Beta": {"name": "B"}}
+        assert resolve_client("acme corp", clients, [])["name"] == "Acme"
+
+    def test_ambiguous_case_match_errors(self) -> None:
+        clients = {"acme": {"name": "a"}, "ACME": {"name": "b"}}
+        with pytest.raises(click.ClickException):
+            resolve_client("Acme", clients, [])
+
+    def test_not_found_errors(self) -> None:
+        with pytest.raises(click.ClickException, match="not found"):
+            resolve_client("nope", {"Acme": {"name": "a"}}, [])

@@ -1377,7 +1377,9 @@ def create_app(
             stripped = row.strip()
             if not stripped:
                 continue
-            parts = [p.strip() for p in stripped.split(";")]
+            # Split from the right so a ';' inside the description survives:
+            # only the trailing price (and optional quantity) are separated.
+            parts = [p.strip() for p in stripped.rsplit(";", 2)]
             if len(parts) not in (2, 3) or not parts[0]:
                 return [], (
                     f"Extra line {lineno}: expected "

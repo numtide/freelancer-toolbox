@@ -978,6 +978,41 @@ class TestExtraLinesInEditor:
             {"concept": "License", "unit_price": 20.0, "quantity": 3.0},
         ]
 
+    def test_settings_saves_extra_line_with_semicolon_in_concept(
+        self, tmp_path: Path
+    ) -> None:
+        clients = {"Acme Corp": _fake_client()}
+        clients_path = tmp_path / "state.db"
+        state_db.save_clients(clients_path, clients)
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=clients["Acme Corp"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+            db_path=clients_path,
+        )
+        app.config["TESTING"] = True
+        form = {
+            "original_key": "Acme Corp",
+            "key": "Acme Corp",
+            "name": "Acme Corp Ltd.",
+            "address_line1": "1 Acme Blvd",
+            "address_line2": "EC1A 1BB London",
+            "country": "United Kingdom",
+            "tax_id": "GB000000000",
+            "extra_lines": "Consulting; phase 1 ; 500 ; 2",
+        }
+        with app.test_client() as c:
+            resp = c.post("/settings/clients/save", data=form)
+            assert b"saved" in resp.data
+        saved = state_db.get_clients(clients_path)
+        # The ';' in the description survives; only price/quantity are split off.
+        assert saved["Acme Corp"]["extra_lines"] == [
+            {"concept": "Consulting; phase 1", "unit_price": 500.0, "quantity": 2.0},
+        ]
+
     def test_settings_rejects_bad_extra_lines(self, tmp_path: Path) -> None:
         app = create_app(
             lines=_fake_lines(),
@@ -2147,7 +2182,9 @@ class TestSendInvoice:
         assert len(_FakeSMTP.sent) == 1
         msg, to_addrs = _FakeSMTP.sent[0]
         assert msg["To"] == "billing@acme.test"
-        assert msg["Cc"] == "me@jane.test"
+        # Self-copy is blind: delivered via to_addrs, not exposed as Cc.
+        assert msg["Bcc"] == "me@jane.test"
+        assert msg["Cc"] is None
         assert to_addrs == ["billing@acme.test", "me@jane.test"]
         att = next(iter(msg.iter_attachments()))
         assert att.get_filename() == "invoice-2026-06.pdf"

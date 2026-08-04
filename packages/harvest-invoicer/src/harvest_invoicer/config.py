@@ -42,20 +42,22 @@ DefaultAction = Literal["generate", "send"]
 def _validate_email_shape(v: str) -> str:
     """Reject clearly-invalid addresses; an empty string means "unset".
 
-    Only a shape check (local part + a dotted domain), not deliverability —
-    but enough to reject the values the bare ``"@" in v`` test used to let
-    through, e.g. ``"a@"``, ``"@"``, ``"a@@b"``, ``"a@b"``.
+    A structural shape check only (one ``@``, a non-empty local part and a
+    non-empty whitespace-free domain), not deliverability.  It rejects the
+    values the bare ``"@" in v`` test let through (``"a@"``, ``"@"``,
+    ``"a@@b"``) while still accepting single-label internal domains
+    (``"user@localhost"``) for local-relay setups.
     """
     if not v:
         return v
     _, addr = parseaddr(v)
-    local, _, domain = addr.partition("@")
+    local, sep, domain = addr.partition("@")
     if (
-        not local
+        not sep
+        or not local
         or not domain
-        or "." not in domain
-        or domain.startswith(".")
-        or domain.endswith(".")
+        or "@" in domain
+        or any(c.isspace() for c in addr)
     ):
         msg = "Email must be a valid address."
         raise ValueError(msg)
@@ -219,6 +221,13 @@ class SmtpSettings(BaseSettings):
     subject_template: str = DEFAULT_SUBJECT_TEMPLATE
     message_template: str = DEFAULT_MESSAGE_TEMPLATE
     default_action: DefaultAction = "generate"
+
+    @field_validator("from_address", "reply_to")
+    @classmethod
+    def _address_shape(cls, v: str) -> str:
+        # These feed the From:/Reply-To: headers, so hold them to the same
+        # shape check as the issuer/client addresses.
+        return _validate_email_shape(v)
 
     @field_validator("port", mode="before")
     @classmethod

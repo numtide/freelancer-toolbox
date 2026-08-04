@@ -998,10 +998,14 @@ def create_app(
         # Old client's recurring extras out, new client's in.
         kept = [line for line in inv.lines if line.origin != "extra"]
         inv.lines[:] = kept + client_extra_lines(entry)
-        # The new client's effective VAT applies to all lines (0 when unset,
-        # replacing any rate inherited from the previous client).
+        # The new client's effective VAT applies to Harvest/manual lines (0
+        # when unset, replacing any rate inherited from the previous client).
+        # Extras are skipped — client_extra_lines already gave them the right
+        # rate (their own, or the new client's inherited rate).
         vat = float(str(entry.get("vat_rate") or 0.0))
         for line in inv.lines:
+            if line.origin == "extra":
+                continue
             line.vat_rate = vat
         return _lines_response(inv, _client_inset_oob())
 

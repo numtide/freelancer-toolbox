@@ -814,6 +814,42 @@ class TestBillToSwitch:
         assert "Retainer" not in concepts  # other client's extras removed
         assert all(line.vat_rate == 0.0 for line in inv.lines)
 
+    def test_switch_preserves_extra_own_vat(self, tmp_path: Path) -> None:
+        # An extra with its own vat_rate (reverse charge) must not be
+        # clobbered by the new client's rate on switch; Harvest lines still
+        # take the client rate.
+        clients = {
+            "Numtide": _fake_client(),
+            "Mixed": {
+                "name": "Mixed S.L.",
+                "address_line1": "X",
+                "address_line2": "Y",
+                "country": "Spain",
+                "tax_id": "B1",
+                "vat_rate": 0.21,
+                "extra_lines": [
+                    {"concept": "Reverse charge", "unit_price": 100.0, "vat_rate": 0.0}
+                ],
+            },
+        }
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=clients["Numtide"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            c.post("/invoice/client", data={"client_key": "Mixed"})
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        rates = {line.concept: line.vat_rate for line in inv.lines}
+        assert rates["Reverse charge"] == 0.0
+        assert all(
+            line.vat_rate == 0.21 for line in inv.lines if line.origin != "extra"
+        )
+
     def test_unknown_key_is_noop(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path)
         with app.test_client() as c:

@@ -67,6 +67,15 @@ class TestSmtpSettings:
         assert s.from_address == "env@from.io"
         assert s.password.get_secret_value() == "secret"
 
+    def test_from_address_shape_validated(self) -> None:
+        with pytest.raises(ValidationError):
+            SmtpSettings(host="h", from_address="a@@b")
+        with pytest.raises(ValidationError):
+            SmtpSettings(host="h", reply_to="nope@")
+        # Empty is fine (unset), and a normal address passes.
+        assert SmtpSettings(host="h").from_address == ""
+        assert SmtpSettings(host="h", from_address="me@x.io").from_address == "me@x.io"
+
     def test_password_excluded_from_dump(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HARVEST_INVOICER_SMTP_PASSWORD", "secret")
         s = SmtpSettings(host="h")
@@ -103,11 +112,18 @@ class TestClientConfig:
             ClientConfig(email="notanemail")
         assert ClientConfig(email="a@b.io").email == "a@b.io"
 
-    @pytest.mark.parametrize("bad", ["a@", "@", "@b.io", "a@@b", "a@b", "a@b."])
+    @pytest.mark.parametrize("bad", ["a@", "@", "@b.io", "a@@b"])
     def test_email_shape_rejects_malformed(self, bad: str) -> None:
         # The old bare `"@" in v` check let all of these through.
         with pytest.raises(ValidationError):
             ClientConfig(email=bad)
+
+    @pytest.mark.parametrize(
+        "ok", ["a@b.io", "user@sub.example.co.uk", "a+b@x.io", "user@localhost"]
+    )
+    def test_email_shape_accepts_valid_including_internal(self, ok: str) -> None:
+        # Single-label internal domains stay valid for local-relay setups.
+        assert ClientConfig(email=ok).email == ok
 
     def test_email_empty_is_allowed(self) -> None:
         assert ClientConfig(email="").email == ""

@@ -81,6 +81,15 @@ class TestClientConfig:
             ClientConfig(email="notanemail")
         assert ClientConfig(email="a@b.io").email == "a@b.io"
 
+    @pytest.mark.parametrize("bad", ["a@", "@", "@b.io", "a@@b", "a@b", "a@b."])
+    def test_email_shape_rejects_malformed(self, bad: str) -> None:
+        # The old bare `"@" in v` check let all of these through.
+        with pytest.raises(ValidationError):
+            ClientConfig(email=bad)
+
+    def test_email_empty_is_allowed(self) -> None:
+        assert ClientConfig(email="").email == ""
+
     def test_extra_lines_coerced(self) -> None:
         c = ClientConfig(
             extra_lines=[{"concept": "Fee", "unit_price": "10", "quantity": "2"}]

@@ -2056,8 +2056,11 @@ class _FakeSMTP:
 
     sent: list[Any] = []  # noqa: RUF012 — shared capture across instances
 
-    def __init__(self, host: str, port: int, timeout: int = 0) -> None:
+    def __init__(
+        self, host: str, port: int, timeout: int = 0, context: object = None
+    ) -> None:
         self.host, self.port = host, port
+        self.context = context
 
     def __enter__(self) -> Self:
         return self
@@ -2071,8 +2074,8 @@ class _FakeSMTP:
     def has_extn(self, _name: str) -> bool:
         return True
 
-    def starttls(self) -> None:
-        pass
+    def starttls(self, *, context: object = None) -> None:
+        self.context = context
 
     def login(self, _user: str, _password: str) -> None:
         pass
@@ -2200,7 +2203,7 @@ class TestSendInvoice:
         calls: list[str] = []
 
         class Fake(_FakeSMTP):
-            def starttls(self) -> None:
+            def starttls(self, *, context: object = None) -> None:
                 calls.append("starttls")
 
         monkeypatch.setattr(smtplib, "SMTP", Fake)

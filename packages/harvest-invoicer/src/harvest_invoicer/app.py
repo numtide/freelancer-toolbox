@@ -35,6 +35,7 @@ from harvest_invoicer.model import (
     Invoice,
     InvoiceLine,
     fmt_money,
+    fmt_rate_pct,
     merge_duplicate_lines,
 )
 from harvest_invoicer.render import _effective_base_url, pdf_from_html, render_html
@@ -149,6 +150,9 @@ def create_app(
         static_folder=str(_STATIC_DIR),
         static_url_path="/static",
     )
+    # Same VAT-rate formatting the invoice PDF uses, so the editor's rate
+    # badge never disagrees with the rendered document (e.g. 7.5% vs "8%").
+    app.jinja_env.filters["rate_pct"] = fmt_rate_pct
 
     invoice = _make_invoice(
         lines,

@@ -11,6 +11,7 @@ from harvest_invoicer.model import (
     fmt_date,
     fmt_money,
     fmt_qty,
+    fmt_rate_pct,
     fmt_vat_cell,
     merge_duplicate_lines,
 )
@@ -114,6 +115,21 @@ def test_fmt_vat_cell_nonzero() -> None:
     result = fmt_vat_cell(line)
     assert "21%" in result
     assert "21.00" in result
+
+
+def test_fmt_rate_pct_trims_trailing_zeros() -> None:
+    assert fmt_rate_pct(0.21) == "21"
+    assert fmt_rate_pct(0.075) == "7.5"
+    assert fmt_rate_pct(0.001) == "0.1"
+    assert fmt_rate_pct(0.196) == "19.6"
+
+
+def test_fmt_vat_cell_fractional_rate_not_rounded() -> None:
+    # A fractional rate must not be printed as a misleading whole number.
+    line = InvoiceLine(concept="x", unit_price=100.0, quantity=1.0, vat_rate=0.075)
+    result = fmt_vat_cell(line)
+    assert "(7.5%)" in result
+    assert "(8%)" not in result
 
 
 def test_merge_duplicates_preserves_extra_lines() -> None:

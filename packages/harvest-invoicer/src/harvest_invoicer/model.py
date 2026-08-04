@@ -177,11 +177,22 @@ def fmt_date(d: date, date_format: str = "%Y-%m-%d") -> str:
     return d.strftime(date_format)
 
 
+def fmt_rate_pct(rate: float) -> str:
+    """Format a VAT rate as a percentage without spurious trailing zeros.
+
+    Keeps fractional rates honest instead of rounding the label to a whole
+    number: ``0.21`` -> ``"21"``, ``0.075`` -> ``"7.5"``, ``0.001`` ->
+    ``"0.1"``.  (The amount was always exact; only the printed percent was
+    being rounded, which produced legally wrong labels like ``7.50 (8%)``.)
+    """
+    return f"{rate * 100:.2f}".rstrip("0").rstrip(".")
+
+
 def fmt_vat_cell(line: InvoiceLine) -> str:
     """Render the VAT cell: amount and rate percentage."""
     if line.vat_rate == 0:
         return f"{fmt_money(0.0)} (0%)"
-    return f"{fmt_money(line.vat)} ({line.vat_rate * 100:.0f}%)"
+    return f"{fmt_money(line.vat)} ({fmt_rate_pct(line.vat_rate)}%)"
 
 
 def fmt_tax_label(override: object, lang: str) -> str:

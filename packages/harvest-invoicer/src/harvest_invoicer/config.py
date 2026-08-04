@@ -11,6 +11,7 @@ environment; it is never serialized to the DB or echoed to the browser.
 
 from __future__ import annotations
 
+from email.utils import parseaddr
 from typing import Literal
 
 from pydantic import (
@@ -35,6 +36,30 @@ DEFAULT_MESSAGE_TEMPLATE = (
 
 Encryption = Literal["starttls", "ssl", "none"]
 DefaultAction = Literal["generate", "send"]
+
+
+def _validate_email_shape(v: str) -> str:
+    """Reject clearly-invalid addresses; an empty string means "unset".
+
+    Only a shape check (local part + a dotted domain), not deliverability —
+    but enough to reject the values the bare ``"@" in v`` test used to let
+    through, e.g. ``"a@"``, ``"@"``, ``"a@@b"``, ``"a@b"``.
+    """
+    if not v:
+        return v
+    _, addr = parseaddr(v)
+    local, _, domain = addr.partition("@")
+    if (
+        not local
+        or not domain
+        or "." not in domain
+        or domain.startswith(".")
+        or domain.endswith(".")
+    ):
+        msg = "Email must be a valid address."
+        raise ValueError(msg)
+    return v
+
 
 # Non-secret SMTP fields overridable from the environment, mapped to their
 # variable names (used for the read-only "set via env" UI indicators).
@@ -77,10 +102,7 @@ class IssuerConfig(BaseModel):
     @field_validator("email")
     @classmethod
     def _email_shape(cls, v: str) -> str:
-        if v and "@" not in v:
-            msg = "Email must be a valid address."
-            raise ValueError(msg)
-        return v
+        return _validate_email_shape(v)
 
 
 class ExtraLine(BaseModel):
@@ -108,10 +130,7 @@ class ClientConfig(BaseModel):
     @field_validator("email")
     @classmethod
     def _email_shape(cls, v: str) -> str:
-        if v and "@" not in v:
-            msg = "Email must be a valid address (missing '@')."
-            raise ValueError(msg)
-        return v
+        return _validate_email_shape(v)
 
     @field_validator("vat_rate", mode="before")
     @classmethod

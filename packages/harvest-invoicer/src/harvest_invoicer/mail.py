@@ -9,6 +9,7 @@ environment only and is never persisted or echoed.
 from __future__ import annotations
 
 import smtplib
+import ssl
 from email.message import EmailMessage
 from typing import TYPE_CHECKING, Any
 
@@ -92,9 +93,13 @@ def _connect(settings: SmtpSettings) -> smtplib.SMTP:
         msg = "SMTP host is not configured — set it in Settings > Email."
         raise MailConfigError(msg)
     port = settings.port or _DEFAULT_PORTS[settings.encryption]
+    # A verifying context (cert chain + hostname): smtplib otherwise defaults
+    # to an *unauthenticated* TLS channel (CERT_NONE), which a MITM can
+    # trivially intercept to harvest the SMTP credentials and the invoice PDF.
+    context = ssl.create_default_context()
     if settings.encryption == "ssl":
         conn: smtplib.SMTP = smtplib.SMTP_SSL(
-            settings.host, port, timeout=_SMTP_TIMEOUT
+            settings.host, port, timeout=_SMTP_TIMEOUT, context=context
         )
     else:
         conn = smtplib.SMTP(settings.host, port, timeout=_SMTP_TIMEOUT)
@@ -102,7 +107,7 @@ def _connect(settings: SmtpSettings) -> smtplib.SMTP:
         # Honor the explicit choice: only upgrade to TLS for "starttls".
         # "none" stays plaintext (for local relays / self-signed dev servers).
         if settings.encryption == "starttls":
-            conn.starttls()
+            conn.starttls(context=context)
             conn.ehlo()
     if settings.username:
         conn.login(settings.username, settings.password.get_secret_value())

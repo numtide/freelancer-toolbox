@@ -8,9 +8,31 @@ from harvest_invoicer.config import (
     IssuerConfig,
     SmtpSettings,
     friendly_error,
+    parse_tax_id_label,
     smtp_env_raw,
 )
 from pydantic import ValidationError
+
+
+class TestParseTaxIdLabel:
+    def test_plain_string_kept(self) -> None:
+        assert parse_tax_id_label("VAT No.") == "VAT No."
+        assert parse_tax_id_label("  NIF  ") == "NIF"
+        assert parse_tax_id_label("") == ""
+
+    def test_json_map_parsed(self) -> None:
+        assert parse_tax_id_label('{"en": "Tax ID", "es": "NIF"}') == {
+            "en": "Tax ID",
+            "es": "NIF",
+        }
+
+    @pytest.mark.parametrize(
+        "raw",
+        ['{"en": 5}', "{}", "{not json", '["en", "es"]', '"just a string"'],
+    )
+    def test_malformed_map_kept_as_string(self, raw: str) -> None:
+        # Anything that is not a non-empty string->string object stays a string.
+        assert parse_tax_id_label(raw) == raw.strip()
 
 
 class TestSmtpSettings:
@@ -44,6 +66,15 @@ class TestSmtpSettings:
         assert s.host == "env-host"
         assert s.from_address == "env@from.io"
         assert s.password.get_secret_value() == "secret"
+
+    def test_from_address_shape_validated(self) -> None:
+        with pytest.raises(ValidationError):
+            SmtpSettings(host="h", from_address="a@@b")
+        with pytest.raises(ValidationError):
+            SmtpSettings(host="h", reply_to="nope@")
+        # Empty is fine (unset), and a normal address passes.
+        assert SmtpSettings(host="h").from_address == ""
+        assert SmtpSettings(host="h", from_address="me@x.io").from_address == "me@x.io"
 
     def test_password_excluded_from_dump(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HARVEST_INVOICER_SMTP_PASSWORD", "secret")
@@ -80,6 +111,22 @@ class TestClientConfig:
         with pytest.raises(ValidationError):
             ClientConfig(email="notanemail")
         assert ClientConfig(email="a@b.io").email == "a@b.io"
+
+    @pytest.mark.parametrize("bad", ["a@", "@", "@b.io", "a@@b"])
+    def test_email_shape_rejects_malformed(self, bad: str) -> None:
+        # The old bare `"@" in v` check let all of these through.
+        with pytest.raises(ValidationError):
+            ClientConfig(email=bad)
+
+    @pytest.mark.parametrize(
+        "ok", ["a@b.io", "user@sub.example.co.uk", "a+b@x.io", "user@localhost"]
+    )
+    def test_email_shape_accepts_valid_including_internal(self, ok: str) -> None:
+        # Single-label internal domains stay valid for local-relay setups.
+        assert ClientConfig(email=ok).email == ok
+
+    def test_email_empty_is_allowed(self) -> None:
+        assert ClientConfig(email="").email == ""
 
     def test_extra_lines_coerced(self) -> None:
         c = ClientConfig(

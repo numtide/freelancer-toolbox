@@ -35,6 +35,7 @@ from harvest_invoicer.model import (
     Invoice,
     InvoiceLine,
     fmt_money,
+    fmt_rate_pct,
     merge_duplicate_lines,
 )
 from harvest_invoicer.render import _effective_base_url, pdf_from_html, render_html
@@ -149,6 +150,14 @@ def create_app(
         static_folder=str(_STATIC_DIR),
         static_url_path="/static",
     )
+    # Same VAT-rate formatting the invoice PDF uses, so the editor's rate
+    # badge never disagrees with the rendered document (e.g. 7.5% vs "8%").
+    app.jinja_env.filters["rate_pct"] = fmt_rate_pct
+    # Render a stored tax_id_label (plain string or per-language map) back
+    # into its settings text field without flattening a map to its repr.
+    from harvest_invoicer.config import tax_id_label_field  # noqa: PLC0415
+
+    app.jinja_env.filters["tax_id_label_field"] = tax_id_label_field
 
     invoice = _make_invoice(
         lines,
@@ -989,10 +998,14 @@ def create_app(
         # Old client's recurring extras out, new client's in.
         kept = [line for line in inv.lines if line.origin != "extra"]
         inv.lines[:] = kept + client_extra_lines(entry)
-        # The new client's effective VAT applies to all lines (0 when unset,
-        # replacing any rate inherited from the previous client).
+        # The new client's effective VAT applies to Harvest/manual lines (0
+        # when unset, replacing any rate inherited from the previous client).
+        # Extras are skipped — client_extra_lines already gave them the right
+        # rate (their own, or the new client's inherited rate).
         vat = float(str(entry.get("vat_rate") or 0.0))
         for line in inv.lines:
+            if line.origin == "extra":
+                continue
             line.vat_rate = vat
         return _lines_response(inv, _client_inset_oob())
 
@@ -1340,20 +1353,32 @@ def create_app(
         from harvest_invoicer.config import (  # noqa: PLC0415
             IssuerConfig,
             friendly_error,
+            parse_tax_id_label,
         )
+
+        # tax_id_label may be a plain string or a per-language JSON map.
+        label = parse_tax_id_label(request.form.get("tax_id_label", ""))
 
         # The model is the schema/validation authority (email shape, types).
         try:
-            IssuerConfig.model_validate({**values, "bank": {"iban": iban, "bic": bic}})
+            IssuerConfig.model_validate(
+                {**values, "tax_id_label": label, "bank": {"iban": iban, "bic": bic}}
+            )
         except ValidationError as exc:
             return _status(friendly_error(exc), error=True)
 
         # Mutate the shared issuer dict in place so the preview updates too.
         for f in text_fields:
+            if f == "tax_id_label":
+                continue  # handled below (may be a map, not a plain string)
             if values[f]:
                 issuer[f] = values[f]
             else:
                 issuer.pop(f, None)
+        if label:
+            issuer["tax_id_label"] = label
+        else:
+            issuer.pop("tax_id_label", None)
         bank = issuer.get("bank")
         if not isinstance(bank, dict):
             bank = {}
@@ -1373,7 +1398,9 @@ def create_app(
             stripped = row.strip()
             if not stripped:
                 continue
-            parts = [p.strip() for p in stripped.split(";")]
+            # Split from the right so a ';' inside the description survives:
+            # only the trailing price (and optional quantity) are separated.
+            parts = [p.strip() for p in stripped.rsplit(";", 2)]
             if len(parts) not in (2, 3) or not parts[0]:
                 return [], (
                     f"Extra line {lineno}: expected "
@@ -1419,6 +1446,7 @@ def create_app(
         from harvest_invoicer.config import (  # noqa: PLC0415
             ClientConfig,
             friendly_error,
+            parse_tax_id_label,
         )
 
         values = {f: request.form.get(f, "").strip() for f in fields}
@@ -1445,6 +1473,9 @@ def create_app(
             model = ClientConfig.model_validate(
                 {
                     **values,
+                    "tax_id_label": parse_tax_id_label(
+                        request.form.get("tax_id_label", "")
+                    ),
                     "vat_rate": request.form.get("vat_rate", "").strip(),
                     "extra_lines": extra_items,
                 }

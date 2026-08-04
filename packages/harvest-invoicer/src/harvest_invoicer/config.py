@@ -11,6 +11,8 @@ environment; it is never serialized to the DB or echoed to the browser.
 
 from __future__ import annotations
 
+import json
+from email.utils import parseaddr
 from typing import Literal
 
 from pydantic import (
@@ -35,6 +37,67 @@ DEFAULT_MESSAGE_TEMPLATE = (
 
 Encryption = Literal["starttls", "ssl", "none"]
 DefaultAction = Literal["generate", "send"]
+
+
+def _validate_email_shape(v: str) -> str:
+    """Reject clearly-invalid addresses; an empty string means "unset".
+
+    A structural shape check only (one ``@``, a non-empty local part and a
+    non-empty whitespace-free domain), not deliverability.  It rejects the
+    values the bare ``"@" in v`` test let through (``"a@"``, ``"@"``,
+    ``"a@@b"``) while still accepting single-label internal domains
+    (``"user@localhost"``) for local-relay setups.
+    """
+    if not v:
+        return v
+    _, addr = parseaddr(v)
+    local, sep, domain = addr.partition("@")
+    if (
+        not sep
+        or not local
+        or not domain
+        or "@" in domain
+        or any(c.isspace() for c in addr)
+    ):
+        msg = "Email must be a valid address."
+        raise ValueError(msg)
+    return v
+
+
+def parse_tax_id_label(raw: str) -> str | dict[str, str]:
+    """Parse the settings-form ``tax_id_label`` field.
+
+    The same text field accepts either a plain label or a per-language
+    JSON map (``{"en": "Tax ID", "es": "Identificador fiscal"}``), so the
+    map survives the settings round-trip instead of being flattened to its
+    ``str`` repr.  Anything that is not a well-formed non-empty object of
+    string→string is kept as the plain trimmed string.
+    """
+    raw = raw.strip()
+    if raw.startswith("{"):
+        try:
+            val = json.loads(raw)
+        except ValueError:
+            return raw
+        if (
+            isinstance(val, dict)
+            and val
+            and all(isinstance(k, str) and isinstance(v, str) for k, v in val.items())
+        ):
+            return dict(val)
+    return raw
+
+
+def tax_id_label_field(v: object) -> str:
+    """Render a stored ``tax_id_label`` back into the settings text field.
+
+    A per-language map is shown as its JSON so it can be edited and saved
+    again; a plain string is shown verbatim.
+    """
+    if isinstance(v, dict):
+        return json.dumps(v, ensure_ascii=False)
+    return str(v) if v else ""
+
 
 # Non-secret SMTP fields overridable from the environment, mapped to their
 # variable names (used for the read-only "set via env" UI indicators).
@@ -65,7 +128,7 @@ class IssuerConfig(BaseModel):
     country: str = ""
     phone: str = ""
     tax_id: str = ""
-    tax_id_label: str = ""
+    tax_id_label: str | dict[str, str] = ""
     date_format: str = ""
     number_template: str = ""
     harvest_user: str = ""
@@ -77,10 +140,7 @@ class IssuerConfig(BaseModel):
     @field_validator("email")
     @classmethod
     def _email_shape(cls, v: str) -> str:
-        if v and "@" not in v:
-            msg = "Email must be a valid address."
-            raise ValueError(msg)
-        return v
+        return _validate_email_shape(v)
 
 
 class ExtraLine(BaseModel):
@@ -99,7 +159,7 @@ class ClientConfig(BaseModel):
     address_line2: str = ""
     country: str = ""
     tax_id: str = ""
-    tax_id_label: str = ""
+    tax_id_label: str | dict[str, str] = ""
     email: str = ""
     language: str = ""
     vat_rate: float | None = None
@@ -108,10 +168,7 @@ class ClientConfig(BaseModel):
     @field_validator("email")
     @classmethod
     def _email_shape(cls, v: str) -> str:
-        if v and "@" not in v:
-            msg = "Email must be a valid address (missing '@')."
-            raise ValueError(msg)
-        return v
+        return _validate_email_shape(v)
 
     @field_validator("vat_rate", mode="before")
     @classmethod
@@ -164,6 +221,13 @@ class SmtpSettings(BaseSettings):
     subject_template: str = DEFAULT_SUBJECT_TEMPLATE
     message_template: str = DEFAULT_MESSAGE_TEMPLATE
     default_action: DefaultAction = "generate"
+
+    @field_validator("from_address", "reply_to")
+    @classmethod
+    def _address_shape(cls, v: str) -> str:
+        # These feed the From:/Reply-To: headers, so hold them to the same
+        # shape check as the issuer/client addresses.
+        return _validate_email_shape(v)
 
     @field_validator("port", mode="before")
     @classmethod

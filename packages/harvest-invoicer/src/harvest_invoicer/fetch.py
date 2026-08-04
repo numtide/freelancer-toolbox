@@ -175,7 +175,9 @@ def resolve_invoice_number(
         try:
             year, mon = month.split("-")
             return number_template.format(year=year, month=mon)
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, IndexError, AttributeError, TypeError):
+            # Any str.format failure mode (bad spec, unknown/positional field,
+            # attribute access) degrades to the default instead of crashing.
             click.echo(
                 f"  warn: number_template '{number_template}' could not be rendered "
                 f"for month '{month}'; using default.",
@@ -293,12 +295,17 @@ def client_extra_lines(client_entry: dict[str, str]) -> list[InvoiceLine]:
     raw = client_entry.get("extra_lines")
     if not isinstance(raw, list):
         return []
+    # An extra keeps its own ``vat_rate`` when it sets one (e.g. a
+    # reverse-charge disbursement at 0%); otherwise it inherits the client
+    # rate, so a retainer is taxed like the rest of the invoice.
+    client_vat = client_entry.get("vat_rate")
+    inherited_vat = float(client_vat) if client_vat is not None else 0.0
     return [
         InvoiceLine(
             concept=str(item["concept"]),
             unit_price=float(item["unit_price"]),
             quantity=float(item.get("quantity", 1.0)),
-            vat_rate=float(item.get("vat_rate", 0.0)),
+            vat_rate=float(item["vat_rate"]) if "vat_rate" in item else inherited_vat,
             origin="extra",
         )
         for item in raw
@@ -309,9 +316,11 @@ def apply_client_vat(
     lines: list[InvoiceLine],
     client_entry: dict[str, str],
 ) -> list[InvoiceLine]:
-    """Apply the client's optional ``vat_rate`` to every line.
+    """Apply the client's optional ``vat_rate`` to Harvest/manual lines.
 
-    Lines keep their existing rate when the client entry has no
+    Extra lines are skipped — they already carry the correct rate (their
+    own, or the client rate inherited in :func:`client_extra_lines`).  All
+    lines keep their existing rate when the client entry has no
     ``vat_rate``.  Returns the same list for chaining.
     """
     vat_raw = client_entry.get("vat_rate")
@@ -319,6 +328,10 @@ def apply_client_vat(
         return lines
     vat = float(vat_raw)
     for line in lines:
+        # Extras already resolved their VAT in client_extra_lines (own rate
+        # or the inherited client rate); only Harvest/manual lines take it here.
+        if line.origin == "extra":
+            continue
         line.vat_rate = vat
     return lines
 
@@ -334,14 +347,19 @@ def resolve_client(
     Otherwise, infer the client name from the first line's concept prefix.
     """
     if client_filter:
-        if client_filter not in clients:
-            available = ", ".join(sorted(clients.keys())) or "(none)"
-            msg = (
-                f"Client '{client_filter}' not found in the configured clients.\n"
-                f"  Available keys: {available}"
-            )
-            raise click.ClickException(msg)
-        return clients[client_filter]
+        if client_filter in clients:
+            return clients[client_filter]
+        # Tolerate case differences on the --client key when it stays
+        # unambiguous (a single case-insensitive match).
+        matches = [k for k in clients if k.casefold() == client_filter.casefold()]
+        if len(matches) == 1:
+            return clients[matches[0]]
+        available = ", ".join(sorted(clients.keys())) or "(none)"
+        msg = (
+            f"Client '{client_filter}' not found in the configured clients.\n"
+            f"  Available keys: {available}"
+        )
+        raise click.ClickException(msg)
 
     # Auto-detect from first line
     if lines:

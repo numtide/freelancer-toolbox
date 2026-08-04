@@ -29,7 +29,7 @@
       </div>
       <div>
         <label class="slabel">Tax ID label</label>
-        <input type="text" name="tax_id_label" value="{{ entry.get('tax_id_label', '') }}">
+        <input type="text" name="tax_id_label" value="{{ entry.get('tax_id_label', '') | tax_id_label_field }}">
         <div class="help">How it's labelled on the invoice</div>
       </div>
       <div>

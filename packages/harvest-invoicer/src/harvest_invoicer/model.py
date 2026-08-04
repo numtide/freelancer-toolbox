@@ -64,8 +64,14 @@ class InvoiceLine:
 
     @property
     def total(self) -> float:
-        """Line total including VAT."""
-        return self.base + self.vat
+        """Line total including VAT.
+
+        Built from the base and VAT each rounded to cents (not
+        ``round(base + vat)``), so the printed line cells add up exactly:
+        the Total column equals Subtotal + VAT per row, and the sum of the
+        line totals equals the invoice ``grand_total``.
+        """
+        return round(self.base, 2) + round(self.vat, 2)
 
 
 @dataclass
@@ -160,12 +166,14 @@ def merge_duplicate_lines(lines: list[InvoiceLine]) -> list[InvoiceLine]:
 
 def fmt_money(n: float) -> str:
     """Format a monetary value as 1,234.56 (English locale, comma thousands, period decimal)."""
-    return f"{n:,.2f}"
+    # ``+ 0.0`` collapses a negative zero (a tiny negative that rounds to
+    # 0.00) so an amount never prints as "-0.00".
+    return f"{round(n, 2) + 0.0:,.2f}"
 
 
 def fmt_qty(n: float) -> str:
     """Format a quantity value (same style as fmt_money)."""
-    return f"{n:,.2f}"
+    return f"{round(n, 2) + 0.0:,.2f}"
 
 
 def fmt_date(d: date, date_format: str = "%Y-%m-%d") -> str:
@@ -177,8 +185,47 @@ def fmt_date(d: date, date_format: str = "%Y-%m-%d") -> str:
     return d.strftime(date_format)
 
 
+def fmt_rate_pct(rate: float) -> str:
+    """Format a VAT rate as a percentage without spurious trailing zeros.
+
+    Keeps fractional rates honest instead of rounding the label to a whole
+    number: ``0.21`` -> ``"21"``, ``0.075`` -> ``"7.5"``, ``0.001`` ->
+    ``"0.1"``.  (The amount was always exact; only the printed percent was
+    being rounded, which produced legally wrong labels like ``7.50 (8%)``.)
+    """
+    return f"{rate * 100:.2f}".rstrip("0").rstrip(".")
+
+
 def fmt_vat_cell(line: InvoiceLine) -> str:
     """Render the VAT cell: amount and rate percentage."""
     if line.vat_rate == 0:
         return f"{fmt_money(0.0)} (0%)"
-    return f"{fmt_money(line.vat)} ({line.vat_rate * 100:.0f}%)"
+    return f"{fmt_money(line.vat)} ({fmt_rate_pct(line.vat_rate)}%)"
+
+
+def fmt_tax_label(override: object, lang: str) -> str:
+    """Resolve the tax-ID label for *lang*.
+
+    ``override`` is the issuer/client ``tax_id_label`` field, which may be:
+
+    * a plain string — used verbatim in every language (e.g. a fixed
+      "VAT No."), the historical behaviour; or
+    * a per-language mapping such as ``{"en": "Tax ID", "es":
+      "Identificador fiscal"}`` — the entry for *lang* is used, falling
+      back to the English entry so a label set for one language never
+      leaks into another.
+
+    An absent or empty override falls back to the translated default
+    (``t('tax_id')``), so a client with no override is still localized.
+    """
+    from collections.abc import Mapping  # noqa: PLC0415
+
+    from harvest_invoicer.i18n import translator  # noqa: PLC0415
+
+    if isinstance(override, Mapping):
+        label = override.get(lang) or override.get("en")
+        if label:
+            return str(label)
+    elif isinstance(override, str) and override:
+        return override
+    return translator(lang)("tax_id")

@@ -14,8 +14,11 @@ from harvest_exporter.cli import NUMTIDE_RATE
 from harvest_invoicer.fetch import (
     apply_client_vat,
     client_extra_lines,
+    default_invoice_number,
     fetch_lines,
     load_clients,
+    resolve_client,
+    resolve_invoice_number,
 )
 from harvest_invoicer.model import InvoiceLine
 
@@ -240,3 +243,74 @@ class TestExtraLines:
         p.write_text(json.dumps({"Acme": {"name": "Acme Ltd", "extra_lines": "nope"}}))
         with pytest.raises(click.ClickException, match="must be a list"):
             load_clients(str(p))
+
+
+class TestResolveClient:
+    def test_exact_match(self) -> None:
+        clients = {"Acme Corp": {"name": "Acme"}, "Beta": {"name": "B"}}
+        assert resolve_client("Acme Corp", clients, [])["name"] == "Acme"
+
+    def test_case_insensitive_unique_fallback(self) -> None:
+        clients = {"Acme Corp": {"name": "Acme"}, "Beta": {"name": "B"}}
+        assert resolve_client("acme corp", clients, [])["name"] == "Acme"
+
+    def test_ambiguous_case_match_errors(self) -> None:
+        clients = {"acme": {"name": "a"}, "ACME": {"name": "b"}}
+        with pytest.raises(click.ClickException):
+            resolve_client("Acme", clients, [])
+
+    def test_not_found_errors(self) -> None:
+        with pytest.raises(click.ClickException, match="not found"):
+            resolve_client("nope", {"Acme": {"name": "a"}}, [])
+
+
+class TestExtraLineVat:
+    """Extra lines resolve their VAT once; apply_client_vat never clobbers them."""
+
+    def test_extra_inherits_client_vat_when_unset(self) -> None:
+        entry = {
+            "name": "Acme",
+            "vat_rate": 0.21,
+            "extra_lines": [{"concept": "Retainer", "unit_price": 500.0}],
+        }
+        lines = client_extra_lines(entry)  # type: ignore[arg-type]
+        assert lines[0].vat_rate == pytest.approx(0.21)
+
+    def test_extra_keeps_own_vat_over_client(self) -> None:
+        entry = {
+            "name": "Acme",
+            "vat_rate": 0.21,
+            "extra_lines": [
+                {"concept": "Reverse charge", "unit_price": 500.0, "vat_rate": 0.0}
+            ],
+        }
+        lines = client_extra_lines(entry)  # type: ignore[arg-type]
+        assert lines[0].vat_rate == 0.0
+
+    def test_apply_client_vat_leaves_extras_untouched(self) -> None:
+        harvest = InvoiceLine(concept="Dev", unit_price=100.0, quantity=10.0)
+        extra = InvoiceLine(
+            concept="RC", unit_price=500.0, quantity=1.0, vat_rate=0.0, origin="extra"
+        )
+        apply_client_vat([harvest, extra], {"vat_rate": 0.21})  # type: ignore[arg-type]
+        assert harvest.vat_rate == pytest.approx(0.21)
+        assert extra.vat_rate == 0.0
+
+
+class TestResolveInvoiceNumber:
+    def test_template_renders(self) -> None:
+        assert (
+            resolve_invoice_number("2026-07", number_template="INV-{year}-{month}")
+            == "INV-2026-07"
+        )
+
+    def test_positional_template_falls_back_without_crashing(self) -> None:
+        # A positional {} raises IndexError inside str.format; must degrade.
+        assert resolve_invoice_number(
+            "2026-07", number_template="{}/{month}"
+        ) == default_invoice_number("2026-07")
+
+    def test_unknown_field_falls_back(self) -> None:
+        assert resolve_invoice_number(
+            "2026-07", number_template="{quarter}"
+        ) == default_invoice_number("2026-07")

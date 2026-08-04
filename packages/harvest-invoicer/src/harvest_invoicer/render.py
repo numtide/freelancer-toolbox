@@ -18,6 +18,7 @@ from harvest_invoicer.model import (
     fmt_date,
     fmt_money,
     fmt_qty,
+    fmt_tax_label,
     fmt_vat_cell,
 )
 
@@ -55,6 +56,7 @@ def _build_jinja_env(
     env.filters["qty"] = fmt_qty
     env.filters["fmtdate"] = lambda d: fmt_date(d, date_format)
     env.filters["vat_cell"] = fmt_vat_cell
+    env.filters["tax_label"] = fmt_tax_label
     return env
 
 

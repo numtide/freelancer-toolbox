@@ -814,6 +814,42 @@ class TestBillToSwitch:
         assert "Retainer" not in concepts  # other client's extras removed
         assert all(line.vat_rate == 0.0 for line in inv.lines)
 
+    def test_switch_preserves_extra_own_vat(self, tmp_path: Path) -> None:
+        # An extra with its own vat_rate (reverse charge) must not be
+        # clobbered by the new client's rate on switch; Harvest lines still
+        # take the client rate.
+        clients = {
+            "Numtide": _fake_client(),
+            "Mixed": {
+                "name": "Mixed S.L.",
+                "address_line1": "X",
+                "address_line2": "Y",
+                "country": "Spain",
+                "tax_id": "B1",
+                "vat_rate": 0.21,
+                "extra_lines": [
+                    {"concept": "Reverse charge", "unit_price": 100.0, "vat_rate": 0.0}
+                ],
+            },
+        }
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=clients["Numtide"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            c.post("/invoice/client", data={"client_key": "Mixed"})
+        inv = app.state["invoice"]  # type: ignore[attr-defined]
+        rates = {line.concept: line.vat_rate for line in inv.lines}
+        assert rates["Reverse charge"] == 0.0
+        assert all(
+            line.vat_rate == 0.21 for line in inv.lines if line.origin != "extra"
+        )
+
     def test_unknown_key_is_noop(self, tmp_path: Path) -> None:
         app = self._make_app(tmp_path)
         with app.test_client() as c:
@@ -977,6 +1013,77 @@ class TestExtraLinesInEditor:
             {"concept": "Monthly retainer", "unit_price": 500.0, "quantity": 1.0},
             {"concept": "License", "unit_price": 20.0, "quantity": 3.0},
         ]
+
+    def test_settings_saves_extra_line_with_semicolon_in_concept(
+        self, tmp_path: Path
+    ) -> None:
+        clients = {"Acme Corp": _fake_client()}
+        clients_path = tmp_path / "state.db"
+        state_db.save_clients(clients_path, clients)
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=clients["Acme Corp"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+            db_path=clients_path,
+        )
+        app.config["TESTING"] = True
+        form = {
+            "original_key": "Acme Corp",
+            "key": "Acme Corp",
+            "name": "Acme Corp Ltd.",
+            "address_line1": "1 Acme Blvd",
+            "address_line2": "EC1A 1BB London",
+            "country": "United Kingdom",
+            "tax_id": "GB000000000",
+            "extra_lines": "Consulting; phase 1 ; 500 ; 2",
+        }
+        with app.test_client() as c:
+            resp = c.post("/settings/clients/save", data=form)
+            assert b"saved" in resp.data
+        saved = state_db.get_clients(clients_path)
+        # The ';' in the description survives; only price/quantity are split off.
+        assert saved["Acme Corp"]["extra_lines"] == [
+            {"concept": "Consulting; phase 1", "unit_price": 500.0, "quantity": 2.0},
+        ]
+
+    def test_settings_saves_tax_id_label_map(self, tmp_path: Path) -> None:
+        # A per-language map typed into the field is stored as a map, not
+        # flattened to its str repr, and round-trips back into the field.
+        clients = {"Acme Corp": _fake_client()}
+        clients_path = tmp_path / "state.db"
+        state_db.save_clients(clients_path, clients)
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=clients["Acme Corp"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+            db_path=clients_path,
+        )
+        app.config["TESTING"] = True
+        form = {
+            "original_key": "Acme Corp",
+            "key": "Acme Corp",
+            "name": "Acme Corp Ltd.",
+            "address_line1": "1 Acme Blvd",
+            "address_line2": "EC1A 1BB London",
+            "country": "United Kingdom",
+            "tax_id": "GB000000000",
+            "tax_id_label": '{"en": "Tax ID", "es": "Identificador fiscal"}',
+        }
+        with app.test_client() as c:
+            resp = c.post("/settings/clients/save", data=form)
+            assert b"saved" in resp.data
+            assert b"Identificador fiscal" in resp.data
+        saved = state_db.get_clients(clients_path)
+        assert saved["Acme Corp"]["tax_id_label"] == {
+            "en": "Tax ID",
+            "es": "Identificador fiscal",
+        }
 
     def test_settings_rejects_bad_extra_lines(self, tmp_path: Path) -> None:
         app = create_app(
@@ -2056,8 +2163,11 @@ class _FakeSMTP:
 
     sent: list[Any] = []  # noqa: RUF012 — shared capture across instances
 
-    def __init__(self, host: str, port: int, timeout: int = 0) -> None:
+    def __init__(
+        self, host: str, port: int, timeout: int = 0, context: object = None
+    ) -> None:
         self.host, self.port = host, port
+        self.context = context
 
     def __enter__(self) -> Self:
         return self
@@ -2071,8 +2181,8 @@ class _FakeSMTP:
     def has_extn(self, _name: str) -> bool:
         return True
 
-    def starttls(self) -> None:
-        pass
+    def starttls(self, *, context: object = None) -> None:
+        self.context = context
 
     def login(self, _user: str, _password: str) -> None:
         pass
@@ -2144,7 +2254,9 @@ class TestSendInvoice:
         assert len(_FakeSMTP.sent) == 1
         msg, to_addrs = _FakeSMTP.sent[0]
         assert msg["To"] == "billing@acme.test"
-        assert msg["Cc"] == "me@jane.test"
+        # Self-copy is blind: delivered via to_addrs, not exposed as Cc.
+        assert msg["Bcc"] == "me@jane.test"
+        assert msg["Cc"] is None
         assert to_addrs == ["billing@acme.test", "me@jane.test"]
         att = next(iter(msg.iter_attachments()))
         assert att.get_filename() == "invoice-2026-06.pdf"
@@ -2200,7 +2312,7 @@ class TestSendInvoice:
         calls: list[str] = []
 
         class Fake(_FakeSMTP):
-            def starttls(self) -> None:
+            def starttls(self, *, context: object = None) -> None:
                 calls.append("starttls")
 
         monkeypatch.setattr(smtplib, "SMTP", Fake)

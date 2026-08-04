@@ -92,7 +92,7 @@
               </div>
               <div>
                 <label class="slabel">Tax ID label</label>
-                <input type="text" name="tax_id_label" value="{{ issuer.get('tax_id_label', '') }}" placeholder="NIF, VAT ID…">
+                <input type="text" name="tax_id_label" value="{{ issuer.get('tax_id_label', '') | tax_id_label_field }}" placeholder="NIF, VAT ID…">
                 <div class="help">How it's labelled on the invoice</div>
               </div>
             </div>

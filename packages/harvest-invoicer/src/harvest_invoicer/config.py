@@ -11,6 +11,7 @@ environment; it is never serialized to the DB or echoed to the browser.
 
 from __future__ import annotations
 
+import json
 from email.utils import parseaddr
 from typing import Literal
 
@@ -59,6 +60,41 @@ def _validate_email_shape(v: str) -> str:
         msg = "Email must be a valid address."
         raise ValueError(msg)
     return v
+
+
+def parse_tax_id_label(raw: str) -> str | dict[str, str]:
+    """Parse the settings-form ``tax_id_label`` field.
+
+    The same text field accepts either a plain label or a per-language
+    JSON map (``{"en": "Tax ID", "es": "Identificador fiscal"}``), so the
+    map survives the settings round-trip instead of being flattened to its
+    ``str`` repr.  Anything that is not a well-formed non-empty object of
+    string→string is kept as the plain trimmed string.
+    """
+    raw = raw.strip()
+    if raw.startswith("{"):
+        try:
+            val = json.loads(raw)
+        except ValueError:
+            return raw
+        if (
+            isinstance(val, dict)
+            and val
+            and all(isinstance(k, str) and isinstance(v, str) for k, v in val.items())
+        ):
+            return dict(val)
+    return raw
+
+
+def tax_id_label_field(v: object) -> str:
+    """Render a stored ``tax_id_label`` back into the settings text field.
+
+    A per-language map is shown as its JSON so it can be edited and saved
+    again; a plain string is shown verbatim.
+    """
+    if isinstance(v, dict):
+        return json.dumps(v, ensure_ascii=False)
+    return str(v) if v else ""
 
 
 # Non-secret SMTP fields overridable from the environment, mapped to their

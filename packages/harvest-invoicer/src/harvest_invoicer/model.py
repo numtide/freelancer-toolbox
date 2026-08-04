@@ -64,8 +64,14 @@ class InvoiceLine:
 
     @property
     def total(self) -> float:
-        """Line total including VAT."""
-        return self.base + self.vat
+        """Line total including VAT.
+
+        Built from the base and VAT each rounded to cents (not
+        ``round(base + vat)``), so the printed line cells add up exactly:
+        the Total column equals Subtotal + VAT per row, and the sum of the
+        line totals equals the invoice ``grand_total``.
+        """
+        return round(self.base, 2) + round(self.vat, 2)
 
 
 @dataclass

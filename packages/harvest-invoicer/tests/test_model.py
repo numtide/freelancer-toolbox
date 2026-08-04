@@ -172,3 +172,28 @@ def test_totals_match_displayed_line_amounts() -> None:
     assert per_line == ["1.00", "1.00"]
     assert fmt_money(inv.subtotal) == "2.00"
     assert fmt_money(inv.grand_total) == "2.00"
+
+
+def test_line_total_uses_rounded_components() -> None:
+    """The Total column adds up with the other cells and with the grand total.
+
+    With ``round(base + vat)`` the per-line total diverged from
+    ``round(base) + round(vat)`` and from ``grand_total`` by a cent.
+    """
+    lines = [
+        InvoiceLine(concept=str(i), unit_price=1.005, quantity=1.0, vat_rate=0.10)
+        for i in range(3)
+    ]
+    inv = Invoice(
+        number="X",
+        issue_date=date(2026, 6, 1),
+        due_date=date(2026, 6, 15),
+        lines=lines,
+    )
+    line = lines[0]
+    # Within a row: Subtotal + VAT == Total.
+    assert fmt_money(line.total) == fmt_money(round(line.base, 2) + round(line.vat, 2))
+    assert fmt_money(line.total) == "1.10"
+    # The Total column sums to the printed grand total.
+    assert fmt_money(sum(x.total for x in lines)) == fmt_money(inv.grand_total)
+    assert fmt_money(inv.grand_total) == "3.30"

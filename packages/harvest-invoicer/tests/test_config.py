@@ -8,9 +8,31 @@ from harvest_invoicer.config import (
     IssuerConfig,
     SmtpSettings,
     friendly_error,
+    parse_tax_id_label,
     smtp_env_raw,
 )
 from pydantic import ValidationError
+
+
+class TestParseTaxIdLabel:
+    def test_plain_string_kept(self) -> None:
+        assert parse_tax_id_label("VAT No.") == "VAT No."
+        assert parse_tax_id_label("  NIF  ") == "NIF"
+        assert parse_tax_id_label("") == ""
+
+    def test_json_map_parsed(self) -> None:
+        assert parse_tax_id_label('{"en": "Tax ID", "es": "NIF"}') == {
+            "en": "Tax ID",
+            "es": "NIF",
+        }
+
+    @pytest.mark.parametrize(
+        "raw",
+        ['{"en": 5}', "{}", "{not json", '["en", "es"]', '"just a string"'],
+    )
+    def test_malformed_map_kept_as_string(self, raw: str) -> None:
+        # Anything that is not a non-empty string->string object stays a string.
+        assert parse_tax_id_label(raw) == raw.strip()
 
 
 class TestSmtpSettings:

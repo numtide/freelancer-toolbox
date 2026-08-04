@@ -1013,6 +1013,42 @@ class TestExtraLinesInEditor:
             {"concept": "Consulting; phase 1", "unit_price": 500.0, "quantity": 2.0},
         ]
 
+    def test_settings_saves_tax_id_label_map(self, tmp_path: Path) -> None:
+        # A per-language map typed into the field is stored as a map, not
+        # flattened to its str repr, and round-trips back into the field.
+        clients = {"Acme Corp": _fake_client()}
+        clients_path = tmp_path / "state.db"
+        state_db.save_clients(clients_path, clients)
+        app = create_app(
+            lines=_fake_lines(),
+            issuer=_fake_issuer(),
+            client=clients["Acme Corp"],
+            invoice_number="2026-06",
+            output_path=tmp_path / "invoice.pdf",
+            clients=clients,
+            db_path=clients_path,
+        )
+        app.config["TESTING"] = True
+        form = {
+            "original_key": "Acme Corp",
+            "key": "Acme Corp",
+            "name": "Acme Corp Ltd.",
+            "address_line1": "1 Acme Blvd",
+            "address_line2": "EC1A 1BB London",
+            "country": "United Kingdom",
+            "tax_id": "GB000000000",
+            "tax_id_label": '{"en": "Tax ID", "es": "Identificador fiscal"}',
+        }
+        with app.test_client() as c:
+            resp = c.post("/settings/clients/save", data=form)
+            assert b"saved" in resp.data
+            assert b"Identificador fiscal" in resp.data
+        saved = state_db.get_clients(clients_path)
+        assert saved["Acme Corp"]["tax_id_label"] == {
+            "en": "Tax ID",
+            "es": "Identificador fiscal",
+        }
+
     def test_settings_rejects_bad_extra_lines(self, tmp_path: Path) -> None:
         app = create_app(
             lines=_fake_lines(),

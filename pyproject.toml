@@ -49,6 +49,8 @@ ignore = [
   "PLR0915",
   # Too many arguments in function definition
   "PLR0913",
+  "PLR0917", # Too many positional arguments; same intent as PLR0913
+  "CPY001", # Missing copyright notice; the repo LICENSE covers it
   "PLR0912", # Too many branches
   # $X is too complex
   "C901",

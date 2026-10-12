@@ -559,9 +559,9 @@ def create_app(
             try:
                 _apply_draft(stored_draft)
                 app.state["draft_restored"] = True  # type: ignore[attr-defined]
-            except Exception:  # noqa: BLE001 — a corrupt draft must never
-                # prevent the editor from starting.  Roll back whatever was
-                # partially applied and drop the bad record.
+            except Exception:
+                # A corrupt draft must never prevent the editor from starting.
+                # Roll back whatever was partially applied and drop the bad record.
                 app.logger.warning("Ignoring corrupt draft", exc_info=True)
                 _apply_draft(fresh_state)
                 clear_draft(db_path)

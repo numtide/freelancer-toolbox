@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from flask import Flask, Response, g, render_template, request
 from markupsafe import escape
 from pydantic import ValidationError
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from harvest_invoicer.config import SmtpSettings
 from harvest_invoicer.db import (
@@ -42,6 +43,8 @@ from harvest_invoicer.render import _effective_base_url, pdf_from_html, render_h
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from harvest_invoicer.config import OidcSettings
 
 _LOCAL_HOSTNAMES = ("127.0.0.1", "localhost")
 
@@ -117,6 +120,8 @@ def create_app(
     import_merge: bool = True,
     allowed_hosts: frozenset[str] = frozenset(),
     email_config: dict[str, object] | None = None,
+    oidc: OidcSettings | None = None,
+    trusted_proxies: int = 0,
 ) -> Flask:
     """Create and configure the Flask editor application.
 
@@ -143,6 +148,11 @@ def create_app(
     that choose whose hours the invoice includes, re-derived locally
     without re-hitting the API.  ``import_merge`` records whether duplicate
     merging applies when re-deriving.
+
+    ``oidc`` turns the editor into a server app: every request needs an
+    allow-listed OpenID Connect login (see auth.py).  ``None`` keeps the
+    local, unauthenticated editor.  ``trusted_proxies`` is how many reverse
+    proxies' X-Forwarded-* headers to honor (0: none).
     """
     app = Flask(
         __name__,
@@ -214,7 +224,27 @@ def create_app(
     # (set when binding to a wildcard address) accepts any Host and falls
     # back to a same-origin check for Origin/Referer.
     allowed = frozenset(_LOCAL_HOSTNAMES) | allowed_hosts
+    if oidc is not None and oidc.public_url:
+        allowed |= {urlparse(oidc.public_url).hostname or ""}
     allow_any_host = "*" in allowed
+
+    if trusted_proxies:
+        # Behind a reverse proxy (e.g. Traefik terminating TLS): take the
+        # client's scheme/host from X-Forwarded-*, so redirect URIs, the
+        # Secure cookie flag and the CSRF guard see the public origin.
+        app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
+            app.wsgi_app,
+            x_for=trusted_proxies,
+            x_proto=trusted_proxies,
+            x_host=trusted_proxies,
+            x_port=trusted_proxies,
+        )
+
+    if oidc is not None:
+        from harvest_invoicer.auth import init_oidc  # noqa: PLC0415
+
+        # Registered first, so its login guard runs before every other hook.
+        init_oidc(app, oidc)
 
     @app.before_request
     def _reject_cross_origin() -> Response | None:
@@ -256,6 +286,10 @@ def create_app(
         "render_pdf_route",
         "send_invoice",
         "send_test",  # SMTP handshake — must not hold the state lock
+        # Login flow: talks to the OIDC provider, touches no editor state.
+        "oidc_login",
+        "oidc_callback",
+        "oidc_logout",
     }
 
     @app.before_request
@@ -1635,8 +1669,11 @@ def create_app(
     # --- Quit ---
 
     @app.post("/quit")
-    def quit_server() -> str:
+    def quit_server() -> Response | str:
         """Shut down the Werkzeug dev server gracefully."""
+        if oidc is not None:
+            # A server deployment is stopped by its supervisor, not a user.
+            return Response("Not found.", status=404)
 
         def _stop() -> None:
             import time  # noqa: PLC0415

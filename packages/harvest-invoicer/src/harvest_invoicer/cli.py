@@ -6,9 +6,12 @@ import webbrowser
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
+from pydantic import SecretStr, ValidationError
 
+from harvest_invoicer.config import DEFAULT_OIDC_SCOPES, OidcSettings, friendly_error
 from harvest_invoicer.db import (
     default_db_path,
     get_clients,
@@ -35,7 +38,18 @@ from harvest_invoicer.model import (
     merge_duplicate_lines,
 )
 
+if TYPE_CHECKING:
+    from types import FrameType
+
 _DEFAULT_PORT = 8321
+
+# Worker threads for waitress.  One process only: the editor state lives in
+# process memory, so it must never be split across workers.
+_DEFAULT_THREADS = 8
+
+# The app only takes form posts (no file uploads); 1 MiB is far beyond the
+# largest settings or line-item submission.
+_MAX_REQUEST_BODY = 1024 * 1024
 
 _EXAMPLES_DIR = Path(__file__).parent / "examples"
 _ISSUER_EXAMPLE = _EXAMPLES_DIR / "issuer.example.json"
@@ -155,6 +169,255 @@ def _multi_user_warning(
     )
 
 
+def _read_secret(value: str | None, path: Path | None, option: str) -> str:
+    """A secret given inline or as a file (e.g. a mounted Kubernetes secret)."""
+    if value and path:
+        msg = f"Pass {option} or {option}-file, not both."
+        raise click.ClickException(msg)
+    if path:
+        # Mounted secrets usually end with a newline; it is never part of it.
+        return path.read_text(encoding="utf-8").strip()
+    return value or ""
+
+
+def _split_values(values: tuple[str, ...]) -> list[str]:
+    """Repeatable option values, each of which may be a comma-separated list
+    (the form an environment variable takes)."""
+    return [v.strip() for raw in values for v in raw.split(",") if v.strip()]
+
+
+def _oidc_settings(
+    issuer: str | None,
+    client_id: str | None,
+    client_secret: str | None,
+    client_secret_file: Path | None,
+    allowed_emails: tuple[str, ...],
+    allowed_subjects: tuple[str, ...],
+    allow_any_user: bool,
+    scopes: str,
+    public_url: str | None,
+    session_secret: str | None,
+    session_secret_file: Path | None,
+    secure_cookies: bool,
+    session_lifetime: int,
+) -> OidcSettings | None:
+    """Validated OIDC settings, or ``None`` when login is not configured.
+
+    OIDC is on exactly when an issuer is set.  Any other OIDC option without
+    an issuer is an error rather than silently serving without login.
+    """
+    if not issuer:
+        stray = [
+            client_id,
+            client_secret,
+            client_secret_file,
+            allowed_emails,
+            allowed_subjects,
+            allow_any_user,
+            public_url,
+            session_secret,
+            session_secret_file,
+        ]
+        if any(stray):
+            msg = (
+                "OIDC options were given but no issuer: set --oidc-issuer "
+                "(HARVEST_INVOICER_OIDC_ISSUER) to enable login."
+            )
+            raise click.ClickException(msg)
+        return None
+    try:
+        return OidcSettings(
+            issuer=issuer,
+            client_id=client_id or "",
+            client_secret=SecretStr(
+                _read_secret(client_secret, client_secret_file, "--oidc-client-secret")
+            ),
+            allowed_emails=frozenset(_split_values(allowed_emails)),
+            allowed_subjects=frozenset(_split_values(allowed_subjects)),
+            allow_any_user=allow_any_user,
+            scopes=scopes,
+            public_url=public_url or "",
+            session_secret=SecretStr(
+                _read_secret(session_secret, session_secret_file, "--session-secret")
+            ),
+            secure_cookies=secure_cookies,
+            session_lifetime_hours=session_lifetime,
+        )
+    except ValidationError as exc:
+        raise click.ClickException(friendly_error(exc)) from exc
+
+
+def _oidc_options[F: Callable[..., None]](cmd: F) -> F:
+    """serve's OIDC login options (server deployment); all env-configurable."""
+    secret_file = click.Path(exists=True, dir_okay=False, path_type=Path)
+    options = [
+        click.option(
+            "--oidc-issuer",
+            envvar="HARVEST_INVOICER_OIDC_ISSUER",
+            metavar="URL",
+            help=(
+                "OpenID provider issuer URL. Setting it enables OIDC login "
+                "for every request (server deployment)."
+            ),
+        ),
+        click.option(
+            "--oidc-client-id",
+            envvar="HARVEST_INVOICER_OIDC_CLIENT_ID",
+            help="OIDC client ID.",
+        ),
+        click.option(
+            "--oidc-client-secret",
+            envvar="HARVEST_INVOICER_OIDC_CLIENT_SECRET",
+            help=(
+                "OIDC client secret (omit for a PKCE-only public client). "
+                "Prefer the env var or --oidc-client-secret-file: command-line "
+                "values show in the process list."
+            ),
+        ),
+        click.option(
+            "--oidc-client-secret-file",
+            envvar="HARVEST_INVOICER_OIDC_CLIENT_SECRET_FILE",
+            type=secret_file,
+            help="Read the OIDC client secret from this file.",
+        ),
+        click.option(
+            "--oidc-allowed-email",
+            "oidc_allowed_emails",
+            envvar="HARVEST_INVOICER_OIDC_ALLOWED_EMAILS",
+            multiple=True,
+            metavar="EMAIL",
+            help=(
+                "Verified email allowed to sign in (repeatable or "
+                "comma-separated; case-insensitive)."
+            ),
+        ),
+        click.option(
+            "--oidc-allowed-subject",
+            "oidc_allowed_subjects",
+            envvar="HARVEST_INVOICER_OIDC_ALLOWED_SUBJECTS",
+            multiple=True,
+            metavar="SUB",
+            help="OIDC subject (sub claim) allowed to sign in (repeatable).",
+        ),
+        click.option(
+            "--oidc-allow-any-user",
+            envvar="HARVEST_INVOICER_OIDC_ALLOW_ANY_USER",
+            is_flag=True,
+            help=(
+                "Admit every account the provider authenticates (no "
+                "allow-list). Without it an empty allow-list is an error."
+            ),
+        ),
+        click.option(
+            "--oidc-scopes",
+            envvar="HARVEST_INVOICER_OIDC_SCOPES",
+            default=DEFAULT_OIDC_SCOPES,
+            show_default=True,
+            help="Scopes requested at login.",
+        ),
+        click.option(
+            "--public-url",
+            envvar="HARVEST_INVOICER_PUBLIC_URL",
+            metavar="URL",
+            help=(
+                "Public origin of the editor (e.g. https://invoicer.example.com); "
+                "required with OIDC. The redirect URIs are built from it, and "
+                "the CSRF guard accepts its host."
+            ),
+        ),
+        click.option(
+            "--session-secret",
+            envvar="HARVEST_INVOICER_SESSION_SECRET",
+            help=(
+                "Key signing the login session cookie (required with OIDC; "
+                "at least 32 characters, e.g. `openssl rand -hex 32`). Prefer "
+                "the env var or --session-secret-file. Rotating it signs "
+                "everyone out."
+            ),
+        ),
+        click.option(
+            "--session-secret-file",
+            envvar="HARVEST_INVOICER_SESSION_SECRET_FILE",
+            type=secret_file,
+            help="Read the session secret from this file.",
+        ),
+        click.option(
+            "--session-lifetime",
+            envvar="HARVEST_INVOICER_SESSION_LIFETIME",
+            type=click.IntRange(min=1, max=720),
+            default=12,
+            show_default=True,
+            metavar="HOURS",
+            help="Hours a login lasts before signing in again.",
+        ),
+        click.option(
+            "--trusted-proxies",
+            envvar="HARVEST_INVOICER_TRUSTED_PROXIES",
+            type=click.IntRange(min=0),
+            default=None,
+            metavar="N",
+            help=(
+                "Reverse proxies whose X-Forwarded-* headers are trusted "
+                "(default: 1 with OIDC, else 0)."
+            ),
+        ),
+        click.option(
+            "--secure-cookies",
+            envvar="HARVEST_INVOICER_SECURE_COOKIES",
+            is_flag=True,
+            help=(
+                "Always mark the session cookie Secure (default: only when "
+                "the request is https)."
+            ),
+        ),
+    ]
+    for option in reversed(options):
+        cmd = option(cmd)
+    return cmd
+
+
+def _serve_waitress(app: object, host: str, port: int, threads: int) -> None:
+    """Serve *app* with waitress: one process, *threads* worker threads.
+
+    Forwarded headers are left to the app's ProxyFix (``--trusted-proxies``):
+    waitress' own ``trusted_proxy`` handling stays off, and so does its
+    default of stripping X-Forwarded-* headers it does not trust, which
+    would hide them from ProxyFix.
+    """
+    import logging  # noqa: PLC0415
+    import signal  # noqa: PLC0415
+
+    import waitress  # noqa: PLC0415
+
+    # waitress and the app log through `logging`; show INFO and up.
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+
+    # Kubernetes stops a pod with SIGTERM, which by default kills Python
+    # outright.  As SystemExit, waitress stops accepting connections and
+    # lets in-flight requests finish (a few seconds at most) before exiting.
+    def _on_sigterm(_signum: int, _frame: FrameType | None) -> None:
+        raise SystemExit(0)
+
+    previous = signal.signal(signal.SIGTERM, _on_sigterm)
+    try:
+        waitress.serve(
+            app,
+            host=host,
+            port=port,
+            threads=threads,
+            ident="harvest-invoicer",  # Server header without a version
+            clear_untrusted_proxy_headers=False,
+            channel_timeout=60,
+            connection_limit=100,
+            max_request_header_size=64 * 1024,
+            max_request_body_size=_MAX_REQUEST_BODY,
+        )
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
 def _previous_month() -> str:
     today = date.today()
     if today.month == 1:
@@ -272,7 +535,8 @@ def main() -> None:
     envvar="HARVEST_INVOICER_HOST",
     help=(
         "Address to bind the editor to. Use 0.0.0.0 to reach it from other "
-        "devices on your network (the app is unauthenticated — see --allowed-host)."
+        "devices on your network (the app is unauthenticated unless "
+        "--oidc-issuer is set — see --allowed-host)."
     ),
 )
 @click.option(
@@ -286,6 +550,25 @@ def main() -> None:
     ),
 )
 @click.option("--port", default=_DEFAULT_PORT, show_default=True, type=int)
+@click.option(
+    "--server",
+    envvar="HARVEST_INVOICER_SERVER",
+    type=click.Choice(["auto", "werkzeug", "waitress"]),
+    default="auto",
+    show_default=True,
+    help=(
+        "HTTP server: waitress (production, used with --oidc-issuer) or the "
+        "Werkzeug development server (local editor). auto picks by OIDC."
+    ),
+)
+@click.option(
+    "--threads",
+    envvar="HARVEST_INVOICER_THREADS",
+    type=click.IntRange(min=1, max=64),
+    default=_DEFAULT_THREADS,
+    show_default=True,
+    help="waitress worker threads (always a single process).",
+)
 @click.option("--no-browser", is_flag=True, help="Don't open browser automatically.")
 @click.option(
     "--currency",
@@ -309,6 +592,7 @@ def main() -> None:
     is_flag=True,
     help="Use synthetic data (no Harvest credentials required).",
 )
+@_oidc_options
 def serve(
     client_filter: str | None,
     db_path: Path | None,
@@ -317,10 +601,26 @@ def serve(
     host: str,
     allowed_hosts: tuple[str, ...],
     port: int,
+    server: str,
+    threads: int,
     no_browser: bool,
     currency: str,
     no_agency: bool,
     demo: bool,
+    oidc_issuer: str | None,
+    oidc_client_id: str | None,
+    oidc_client_secret: str | None,
+    oidc_client_secret_file: Path | None,
+    oidc_allowed_emails: tuple[str, ...],
+    oidc_allowed_subjects: tuple[str, ...],
+    oidc_allow_any_user: bool,
+    oidc_scopes: str,
+    public_url: str | None,
+    session_secret: str | None,
+    session_secret_file: Path | None,
+    session_lifetime: int,
+    trusted_proxies: int | None,
+    secure_cookies: bool,
 ) -> None:
     """Serve the interactive invoice editor in a local browser.
 
@@ -328,7 +628,30 @@ def serve(
     is edited live on the page, so the command takes no per-invoice flags:
     it seeds from the previous month and configured defaults, then hands
     over to the UI.
+
+    With --oidc-issuer it becomes a server deployment: every request needs
+    an allow-listed OpenID Connect login.
     """
+    # Validate the login config before anything else, so a misconfigured
+    # deployment fails fast instead of serving without auth.
+    oidc = _oidc_settings(
+        oidc_issuer,
+        oidc_client_id,
+        oidc_client_secret,
+        oidc_client_secret_file,
+        oidc_allowed_emails,
+        oidc_allowed_subjects,
+        oidc_allow_any_user,
+        oidc_scopes,
+        public_url,
+        session_secret,
+        session_secret_file,
+        secure_cookies,
+        session_lifetime,
+    )
+    if trusted_proxies is None:
+        trusted_proxies = 1 if oidc else 0
+
     month = _previous_month()
     p_start, p_end = _resolve_period(month, None, None)
 
@@ -424,6 +747,8 @@ def serve(
         import_merge=True,
         allowed_hosts=frozenset(allowed),
         email_config=email_config,
+        oidc=oidc,
+        trusted_proxies=trusted_proxies,
     )
 
     # A concrete bind host is browsable directly; a wildcard bind is reached
@@ -431,12 +756,16 @@ def serve(
     display_host = "127.0.0.1" if host in wildcard_hosts else host
     path = "/settings" if onboarding else "/"
     url = f"http://{display_host}:{port}{path}"
+    if oidc and oidc.public_url:
+        url = f"{oidc.public_url}{path}"
     if onboarding:
         click.echo(
             "No configuration found — opening Settings to create it "
             f"(saved to {db_file})."
         )
-    if not is_loopback:
+    if oidc:
+        click.echo(f"OIDC login required (issuer {oidc.issuer}).")
+    elif not is_loopback:
         click.echo(
             f"WARNING: binding to {host} exposes this unauthenticated editor "
             "to your network. Only do this on a trusted network."
@@ -446,8 +775,11 @@ def serve(
     if not no_browser:
         webbrowser.open(url)
 
-    # threaded: a ~1s WeasyPrint preview render must not block edits.
-    app.run(host=host, port=port, debug=False, threaded=True)
+    if server == "waitress" or (server == "auto" and oidc is not None):
+        _serve_waitress(app, host, port, threads)
+    else:
+        # threaded: a ~1s WeasyPrint preview render must not block edits.
+        app.run(host=host, port=port, debug=False, threaded=True)
 
 
 # ---------------------------------------------------------------------------

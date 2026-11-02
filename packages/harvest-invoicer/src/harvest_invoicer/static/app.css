@@ -161,6 +161,29 @@ button { color: var(--ink); }
 }
 .icon-btn svg { display: block; }
 
+/* Signed-in account (OIDC login only) */
+.auth-user {
+  font-size: 13px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+/* Login-flow pages (sign-in failed, not authorized, signed out) */
+.auth-main { display: flex; justify-content: center; padding: 64px 16px; }
+.auth-card { max-width: 440px; width: 100%; padding: 30px; }
+.auth-card h2 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+}
+.auth-card p { margin: 0 0 18px; color: var(--text-2); }
+.auth-card .btn-orange { text-decoration: none; }
+.auth-logout { display: contents; }
+
 /* Split Generate PDF button */
 .split { display: flex; align-items: stretch; position: relative; }
 .split-main {
@@ -1591,6 +1614,7 @@ input:disabled {
 
 @media (max-width: 560px) {
   .crumb { display: none; }
+  .auth-user { display: none; }
   .card-head, .card-sec { padding-left: 18px; padding-right: 18px; }
   .li-head, .sel-bar { padding-left: 16px; padding-right: 16px; }
   .scard-head, .scard-body { padding-left: 18px; padding-right: 18px; }

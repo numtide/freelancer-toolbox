@@ -1,13 +1,33 @@
-"""Tests for mail.py: SMTP connections must verify the TLS certificate."""
+"""Tests for mail.py: verified TLS, recipient/subject validation, templates
+and delivery through a real local SMTP server."""
 
 from __future__ import annotations
 
 import smtplib
 import ssl
+from typing import TYPE_CHECKING
 
 import pytest
-from harvest_invoicer.config import SMTP_ENV, SmtpSettings
-from harvest_invoicer.mail import _connect
+from harvest_invoicer.config import (
+    DEFAULT_MESSAGE_TEMPLATE,
+    DEFAULT_SUBJECT_TEMPLATE,
+    SMTP_ENV,
+    SmtpSettings,
+)
+from harvest_invoicer.mail import (
+    MailConfigError,
+    MailDeliveryError,
+    SendResult,
+    _connect,
+    archived_tokens,
+    email_templates,
+    fill_tokens,
+    parse_recipients,
+    send_pdf_email,
+)
+
+if TYPE_CHECKING:
+    from tests.conftest import SmtpServer
 
 
 @pytest.fixture(autouse=True)
@@ -59,3 +79,152 @@ def test_starttls_connection_verifies_certificate(
     monkeypatch.setattr(smtplib, "SMTP", lambda *_a, **_k: conn)
     _connect(SmtpSettings(host="mail.example", encryption="starttls"))
     _assert_verifying(conn.starttls_context)
+
+
+class TestRecipients:
+    def test_single_and_multiple(self) -> None:
+        assert parse_recipients(" a@x.test ") == ["a@x.test"]
+        assert parse_recipients("a@x.test, Bob <b@y.test>,, a@x.test") == [
+            "a@x.test",
+            "b@y.test",
+        ]
+
+    @pytest.mark.parametrize(
+        ("to", "error"),
+        [
+            ("", "No recipient"),
+            ("  ,  ", "No recipient"),
+            ("a@x.test\r\nBcc: e@vil.test", "one line"),
+            ("a@x.test\nb@y.test", "one line"),
+            ("nope", "Not a valid email"),
+            ("a@x.test, b@", "Not a valid email"),
+            (",".join(f"u{i}@x.test" for i in range(11)), "Too many"),
+        ],
+    )
+    def test_rejected(self, to: str, error: str) -> None:
+        with pytest.raises(MailConfigError, match=error):
+            parse_recipients(to)
+
+
+class TestTemplates:
+    def test_language_defaults_with_period(self) -> None:
+        subject, message = email_templates({}, "es", has_period=True)
+        assert subject == "Factura {number} ({period})"
+        assert "{period}" in message
+
+    def test_language_defaults_without_period(self) -> None:
+        subject, message = email_templates({}, "en", has_period=False)
+        assert subject == "Invoice {number}"
+        assert "{period}" not in message
+
+    def test_customized_template_wins(self) -> None:
+        cfg = {"subject_template": "X {number}", "message_template": "Body"}
+        assert email_templates(cfg, "es", has_period=True) == ("X {number}", "Body")
+
+    def test_old_english_default_counts_as_unset(self) -> None:
+        cfg = {
+            "subject_template": DEFAULT_SUBJECT_TEMPLATE,
+            "message_template": DEFAULT_MESSAGE_TEMPLATE,
+        }
+        subject, _ = email_templates(cfg, "es", has_period=False)
+        assert subject == "Factura {number}"
+
+    def test_archived_tokens(self) -> None:
+        record = {
+            "number": "2026-06",
+            "client_name": "Acme",
+            "total": 1210.5,
+            "currency": "EUR",
+            "issue_date": "2026-07-01",
+            "due_date": "2026-07-16",
+            "period_start": "2026-06-01",
+            "period_end": "2026-06-30",
+        }
+        tokens = archived_tokens(record, {"name": "Jane"})
+        assert fill_tokens("{number}|{company}|{period}|{due}|{issuer}", tokens) == (
+            "2026-06|Acme|2026-06-01 → 2026-06-30|2026-07-16|Jane"
+        )
+        assert tokens["total"].endswith(" EUR")
+
+
+class TestSendPdfEmail:
+    """send_pdf_email against a real SMTP server on loopback."""
+
+    def test_delivers_attachment(self, smtp_server: SmtpServer) -> None:
+        to = send_pdf_email(
+            b"%PDF-1.7 test",
+            "2026-06_Acme_0a1b2c3d.pdf",
+            {"name": "Jane", "email": "jane@example.com"},
+            smtp_server.config(from_address="", reply_to="ar@example.com"),
+            to="billing@acme.test",
+            subject="Invoice 2026-06",
+            message="Hello",
+        )
+        assert to == SendResult(["billing@acme.test"], [])
+        (delivery,) = smtp_server.received
+        msg = delivery.message
+        assert delivery.mail_from == "jane@example.com"  # issuer email fallback
+        assert msg["From"] == "Jane <jane@example.com>"
+        assert msg["Reply-To"] == "ar@example.com"
+        (att,) = list(msg.iter_attachments())
+        assert att.get_filename() == "2026-06_Acme_0a1b2c3d.pdf"
+        assert att.get_content() == b"%PDF-1.7 test"
+
+    def test_header_injection_never_reaches_the_server(
+        self, smtp_server: SmtpServer
+    ) -> None:
+        with pytest.raises(MailConfigError, match="single line"):
+            send_pdf_email(
+                b"%PDF",
+                "x.pdf",
+                {"name": "Jane"},
+                smtp_server.config(),
+                to="billing@acme.test",
+                subject="Hi\r\nBcc: evil@example.com",
+                message="M",
+            )
+        assert smtp_server.received == []
+
+    def test_unconfigured(self) -> None:
+        with pytest.raises(MailConfigError, match="host is not configured"):
+            send_pdf_email(
+                b"%PDF",
+                "x.pdf",
+                {"name": "Jane", "email": "jane@example.com"},
+                {},
+                to="billing@acme.test",
+                subject="S",
+                message="M",
+            )
+
+
+class TestDeliveryResult:
+    def _send(self, smtp: SmtpServer, to: str, **kw: object) -> SendResult:
+        return send_pdf_email(
+            b"%PDF",
+            "x.pdf",
+            {"name": "Jane"},
+            smtp.config(),
+            to=to,
+            subject="S",
+            message="M",
+            **kw,
+        )
+
+    def test_partial_refusal(self, smtp_server: SmtpServer) -> None:
+        smtp_server.refuse = {"b@x.test"}
+        result = self._send(smtp_server, "a@x.test, b@x.test")
+        assert result == SendResult(["a@x.test"], ["b@x.test"])
+
+    def test_self_copy_does_not_count(self, smtp_server: SmtpServer) -> None:
+        smtp_server.refuse = {"a@x.test"}
+        with pytest.raises(
+            MailDeliveryError, match=r"refused every recipient: a@x\.test"
+        ):
+            self._send(smtp_server, "a@x.test", copy_self=True)
+        assert [d.rcpt_tos for d in smtp_server.received] == [["jane@example.com"]]
+
+    @pytest.mark.parametrize("to", ["a@x.test\x00", "a@x.test\u2028b@x.test"])
+    def test_control_characters_rejected(self, to: str) -> None:
+        with pytest.raises(MailConfigError, match="control characters"):
+            parse_recipients(to)

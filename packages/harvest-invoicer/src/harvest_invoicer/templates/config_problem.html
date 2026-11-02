@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="{{ ui_lang }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ tr('cfg_title') }}</title>
+  <script src="/static/theme.js"></script>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+{# Shown in the preview pane (an iframe) instead of the invoice while the
+   issuer or the bill-to client is missing its name; target=_top leaves
+   the iframe for Settings. #}
+<body class="cfg-page">
+  <section class="card cfg-card">
+    <h2>{{ tr('cfg_title') }}</h2>
+    <p>{{ tr('cfg_' + problem) }}</p>
+    <a class="btn-orange" href="/settings#{{ 'issuer' if problem == 'issuer' else 'clients' }}" target="_top">{{ tr('cfg_link') }}</a>
+  </section>
+</body>
+</html>

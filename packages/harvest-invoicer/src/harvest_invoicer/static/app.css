@@ -253,17 +253,6 @@ button { color: var(--ink); }
 .menu-items button.send-row:hover:not([disabled]) { background: rgba(250, 93, 0, 0.09); }
 .menu-items button[disabled] { color: var(--text-3); cursor: default; }
 
-#render-status {
-  font-size: 13px;
-  max-width: 340px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.render-ok { color: var(--ok); font-weight: 600; font-size: 13px; margin: 0; }
-.render-ok a { color: inherit; }
-.render-err { color: var(--danger); font-weight: 600; font-size: 13px; margin: 0; }
-
 /* Inline text-style button (e.g. the restored-draft Discard action) */
 .link-btn {
   background: none;
@@ -1556,6 +1545,7 @@ input:disabled {
   background: var(--ok);
 }
 .toast-err .toast-badge { background: var(--danger); }
+.toast-warn .toast-badge { background: var(--orange); }
 .toast-title { font-size: 14px; font-weight: 700; }
 .toast-body {
   font-size: 13px;
@@ -1565,6 +1555,99 @@ input:disabled {
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: none; }
 }
+
+/* ===== Invoice archive (generated-PDF panel, Invoices page) ===== */
+a.btn-orange { text-decoration: none; }
+.btn-lg { padding: 11px 18px; font-size: 15px; border-radius: var(--r-input); }
+.btn-sm { padding: 6px 11px; font-size: 13px; border-radius: 9px; }
+.btn-orange-sm[disabled], .btn-orange[disabled] { opacity: 0.45; cursor: not-allowed; }
+.text-right { text-align: right; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.modal-tile.tile-ok { background: rgba(46, 138, 106, 0.12); color: var(--ok); }
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-input);
+  background: var(--cream);
+  color: var(--text-2);
+}
+.file-name {
+  font-weight: 700;
+  color: var(--ink);
+  word-break: break-all;
+}
+.result-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 12px; }
+.modal-foot .foot-left { margin-right: auto; align-self: center; text-decoration: none; }
+.modal-warn {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: var(--r-input);
+  background: rgba(250, 93, 0, 0.08);
+  color: var(--orange);
+  font-size: 13px;
+  font-weight: 600;
+}
+.field-hint { display: block; margin-top: 5px; font-size: 12px; color: var(--text-4); }
+.modal-info a, .inv-note a { color: inherit; }
+.cfg-msg { margin: 0; }
+.cfg-page { display: flex; justify-content: center; padding: 48px 20px; }
+.cfg-card { max-width: 460px; padding: 28px 30px; }
+.cfg-card h2 { margin: 0 0 8px; font-size: 19px; font-weight: 800; }
+.cfg-card p { margin: 0 0 20px; color: var(--text-2); }
+.invoices-main { max-width: 1120px; margin: 0 auto; padding: 24px 32px 88px; }
+.inv-note {
+  margin: 0;
+  padding: 12px 28px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: rgba(var(--ink-tint), 0.04);
+  border-bottom: 1px solid var(--line);
+}
+.inv-scroll { overflow-x: auto; }
+.inv-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.inv-table th {
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-4);
+  border-bottom: 1px solid var(--line);
+}
+.inv-table th.text-right { text-align: right; }
+.inv-table td { padding: 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.inv-table tr:last-child td { border-bottom: none; }
+.inv-table th:first-child, .inv-table td:first-child { padding-left: 28px; }
+.inv-table th:last-child, .inv-table td:last-child { padding-right: 28px; }
+.inv-date { white-space: nowrap; color: var(--text-2); }
+.inv-number { font-weight: 700; }
+.inv-file {
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-4);
+}
+.inv-sent-meta { display: block; margin-top: 4px; font-size: 12px; color: var(--text-3); }
+.inv-actions { white-space: nowrap; text-align: right; }
+.inv-actions > * { margin-left: 4px; }
+.inv-missing { font-size: 12px; color: var(--danger); margin-right: 6px; }
 
 /* ===== Responsive ===== */
 /* The editor and settings both use fixed multi-column grids that crush
@@ -1600,6 +1683,7 @@ input:disabled {
 
 @media (max-width: 720px) {
   .topbar-inner { padding: 12px 16px; gap: 10px; }
+  .invoices-main { padding: 16px 16px 72px; }
   .savebar-inner { padding: 12px 16px; }
   /* Two-up field grids stack. */
   .grid2, .sgrid, .acc-body { grid-template-columns: 1fr; }

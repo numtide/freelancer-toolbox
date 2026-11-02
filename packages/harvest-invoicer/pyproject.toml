@@ -38,7 +38,7 @@ Homepage = "https://github.com/numtide/harvest-invoice-calculator"
 harvest-invoicer = "harvest_invoicer.cli:main"
 
 [project.optional-dependencies]
-test = ["pytest", "joserfc"]
+test = ["pytest", "joserfc", "aiosmtpd"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/harvest_invoicer"]

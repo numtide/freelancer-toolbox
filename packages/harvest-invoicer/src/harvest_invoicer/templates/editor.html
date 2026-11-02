@@ -9,6 +9,7 @@
   <script src="/static/theme.js"></script>
   <script src="/static/htmx.min.js"></script>
   <script src="/static/toast.js" defer></script>
+  <script src="/static/modal.js" defer></script>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -21,7 +22,6 @@
       <h1>Invoicer</h1>
       <span id="inv-no-crumb" class="crumb">/ Invoice {{ invoice.number }}</span>
       <div class="actions">
-        <div id="render-status"></div>
         <button type="button" class="icon-btn active" id="preview-toggle"
           title="Toggle live preview" aria-label="Toggle live preview">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
@@ -31,6 +31,11 @@
           <svg class="icon-moon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
           <svg class="icon-sun" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
         </button>
+        {% if archive_enabled %}
+        <a class="icon-btn" href="/invoices" title="{{ tr('invoices') }}" aria-label="{{ tr('invoices') }}">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8v13H3V8"></path><path d="M1 3h22v5H1z"></path><path d="M10 12h4"></path></svg>
+        </a>
+        {% endif %}
         <a class="icon-btn" href="/settings" title="Settings" aria-label="Settings">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         </a>
@@ -38,7 +43,7 @@
            other action moves to the dropdown. "Send invoice" only appears
            when SMTP is configured (send_available). #}
         {%- macro generate_attrs() -%}
-          title="Output: {{ output_path }}" hx-post="/render" hx-target="#render-status" hx-swap="outerHTML" hx-disabled-elt="this"
+          title="Output: {{ output_label }}" hx-post="/render" hx-target="#modal-root" hx-swap="innerHTML" hx-disabled-elt="this"
         {%- endmacro -%}
         {%- macro send_attrs() -%}
           title="Compose and email the invoice PDF to the client" hx-get="/send/modal" hx-target="#modal-root" hx-swap="innerHTML"
@@ -186,36 +191,10 @@
 
   </main>
 
-  <!-- Send-invoice modal is fetched here on demand. -->
+  <!-- Send-invoice / generated-PDF modals are fetched here on demand. -->
   <div id="modal-root"></div>
 
   <script>
-    // ---- Send-invoice modal: close on backdrop / × / Cancel / Escape ----
-    (function () {
-      function closeModal() {
-        var root = document.getElementById("modal-root");
-        if (root) root.innerHTML = "";
-      }
-      document.addEventListener("click", function (e) {
-        var closer = e.target.closest("[data-modal-close]");
-        if (!closer) return;
-        // The overlay only closes on a direct backdrop click, not on clicks
-        // that bubbled up from inside the card.
-        if (closer.classList.contains("modal-overlay") && e.target !== closer) return;
-        closeModal();
-      });
-      document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape" && document.querySelector(".modal-overlay")) closeModal();
-      });
-      // Focus the first field when the modal loads.
-      document.body.addEventListener("htmx:afterSwap", function (evt) {
-        if (evt.target && evt.target.id === "modal-root") {
-          var f = evt.target.querySelector('input[name="to"]');
-          if (f) f.focus();
-        }
-      });
-    })();
-
     // ---- Preview control: PDF mode default, Open in window, eye toggle ----
     (function () {
       var frame = document.getElementById("preview-frame");

@@ -1,3 +1,54 @@
-<p id="render-status" class="render-ok" title="{{ output_path }}">
-  PDF generated — <a href="/pdf" target="_blank" rel="noopener">open</a>
-</p>
+{# Result of Generate PDF, loaded into #modal-root: the file name and the
+   three things to do next. open_url/download_url point at the archived
+   invoice's own link (or /pdf without the archive); Send is disabled, with
+   the reason, until SMTP is configured. #}
+<div class="modal-overlay" data-modal-close>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-label="{{ tr('generated_title') }}">
+    <div class="modal-head">
+      <span class="modal-tile tile-ok">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"></path></svg>
+      </span>
+      <div class="modal-title-wrap">
+        <div class="modal-title">{{ tr('generated_title') }}</div>
+        <div class="modal-sub hv-num">{{ invoice.number }} · {{ fmt_money(invoice.grand_total) }} {{ invoice.currency }}</div>
+      </div>
+      <button type="button" class="modal-x" data-modal-close aria-label="{{ tr('close') }}">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="file-chip">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+        <span class="file-name" id="render-file">{{ filename }}</span>
+      </div>
+      {% if reused %}<p class="modal-info">{{ tr('generated_reused') }}</p>{% endif %}
+      {% if copy_path %}<p class="modal-info">{{ tr('generated_copy').format(path=copy_path) }}</p>{% endif %}
+      <div class="result-actions">
+        <a class="btn-outline btn-lg" href="{{ open_url }}" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path></svg>
+          {{ tr('open') }}
+        </a>
+        <a class="btn-outline btn-lg" href="{{ download_url }}" download>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M7 10l5 5 5-5"></path><path d="M12 15V3"></path></svg>
+          {{ tr('download') }}
+        </a>
+        {% if send_available %}
+        <button type="button" class="btn-orange" hx-get="{{ send_url }}" hx-target="#modal-root" hx-swap="innerHTML">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4z"></path></svg>
+          {{ tr('send') }}
+        </button>
+        {% else %}
+        <button type="button" class="btn-orange" disabled title="{{ tr('smtp_disabled') }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4z"></path></svg>
+          {{ tr('send') }}
+        </button>
+        {% endif %}
+      </div>
+      {% if not send_available %}
+      <p class="modal-info"><a href="/settings#email">{{ tr('smtp_disabled') }}</a></p>
+      {% endif %}
+    </div>
+    <div class="modal-foot">
+      {% if archive_enabled %}<a class="text-btn foot-left" href="/invoices">{{ tr('all_invoices') }} →</a>{% endif %}
+      <button type="button" class="btn-outline" data-modal-close>{{ tr('close') }}</button>
+    </div>
+  </div>
+</div>

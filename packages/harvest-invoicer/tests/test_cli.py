@@ -586,3 +586,100 @@ class TestServeServer:
         assert raised == [SystemExit]
         assert result.exit_code == 0
         assert signal.getsignal(signal.SIGTERM) == before
+
+
+class TestServeArchive:
+    """serve archives generated PDFs next to the DB (or --invoices-dir)."""
+
+    @pytest.fixture
+    def captured(self, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+        """The create_app arguments serve passes (the server never runs)."""
+        import harvest_invoicer.app as app_module  # noqa: PLC0415
+
+        seen: dict[str, object] = {}
+        real = app_module.create_app
+
+        def _create_app(*args: object, **kwargs: object) -> Flask:
+            seen["output_path"] = args[4]
+            seen.update(kwargs)
+            return real(*args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(app_module, "create_app", _create_app)
+        monkeypatch.setattr(Flask, "run", lambda *_a, **_k: None)
+        monkeypatch.delenv("HARVEST_INVOICER_INVOICES_DIR", raising=False)
+        monkeypatch.delenv("HARVEST_INVOICER_DB", raising=False)
+        return seen
+
+    def _serve(self, *args: str, env: dict[str, str] | None = None) -> None:
+        result = CliRunner().invoke(main, ["serve", "--no-browser", *args], env=env)
+        assert result.exit_code == 0, result.output
+
+    def test_defaults_to_db_dir_without_output_file(
+        self, tmp_path: Path, captured: dict[str, object]
+    ) -> None:
+        self._serve("--db", str(tmp_path / "state.db"))
+        assert captured["invoices_dir"] is None  # create_app: beside the DB
+        assert captured["output_path"] is None
+        assert captured["db_path"] == tmp_path / "state.db"
+
+    def test_invoices_dir_option_and_env(
+        self, tmp_path: Path, captured: dict[str, object]
+    ) -> None:
+        self._serve(
+            "--db", str(tmp_path / "s.db"), "--invoices-dir", str(tmp_path / "a")
+        )
+        assert captured["invoices_dir"] == tmp_path / "a"
+        self._serve(
+            "--db",
+            str(tmp_path / "s.db"),
+            env={"HARVEST_INVOICER_INVOICES_DIR": str(tmp_path / "b")},
+        )
+        assert captured["invoices_dir"] == tmp_path / "b"
+
+    def test_explicit_output_kept(
+        self, tmp_path: Path, captured: dict[str, object]
+    ) -> None:
+        out = tmp_path / "copy.pdf"
+        self._serve("--db", str(tmp_path / "s.db"), "--output", str(out))
+        assert captured["output_path"] == out
+
+    def test_demo_keeps_single_output_file(
+        self, tmp_path: Path, captured: dict[str, object]
+    ) -> None:
+        self._serve("--demo")
+        assert captured["db_path"] is None
+        out = captured["output_path"]
+        assert isinstance(out, Path)
+        assert out.name.startswith("invoice-")
+
+
+def test_generate_unchanged_by_the_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Headless generate still writes invoice-<number>.pdf to --output-dir and
+    never touches the invoice archive."""
+    import harvest_invoicer.render as render_module  # noqa: PLC0415
+
+    def fake_render(*args: object, **_kw: object) -> None:
+        path = args[3]
+        assert isinstance(path, Path)
+        path.write_bytes(b"%PDF-fake")
+
+    monkeypatch.setattr(render_module, "render_pdf", fake_render)
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        main,
+        [
+            "generate",
+            "--demo",
+            "--month",
+            "2026-06",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--db",
+            str(tmp_path / "state.db"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert [p.name for p in (tmp_path / "out").iterdir()] == ["invoice-2026-06.pdf"]
+    assert not (tmp_path / "invoices").exists()

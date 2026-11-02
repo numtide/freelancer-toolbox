@@ -1,0 +1,36 @@
+{# One archived invoice on the Invoices page. oob=True re-renders it in
+   place after a send (the row id is the link id, never guessable). #}
+<tr id="inv-{{ inv.id }}" class="inv-row"{% if oob %} hx-swap-oob="outerHTML"{% endif %}>
+  <td class="hv-num inv-date">{{ inv.created }}</td>
+  <td class="inv-number">
+    <span class="hv-num">{{ inv.number }}</span>
+    <span class="inv-file" title="{{ inv.filename }}">{{ inv.filename }}</span>
+  </td>
+  <td>{{ inv.client_name }}</td>
+  <td class="hv-num text-right">{{ inv.total_fmt }} {{ inv.currency }}</td>
+  <td>
+    {% if inv.sent %}
+    <span class="status-pill status-ok" title="{{ tr('sent_to_on').format(to=inv.sent_to, date=inv.sent) }}"><span class="status-dot"></span>{{ tr('status_sent') }}</span>
+    <span class="inv-sent-meta">{{ tr('sent_to_on').format(to=inv.sent_to, date=inv.sent) }}</span>
+    {% else %}
+    <span class="status-pill status-idle"><span class="status-dot"></span>{{ tr('status_not_sent') }}</span>
+    {% endif %}
+  </td>
+  <td class="inv-actions">
+    {% if inv.has_file %}
+    <a class="btn-outline btn-sm" href="/invoices/{{ inv.id }}.pdf" target="_blank" rel="noopener">{{ tr('open') }}</a>
+    <a class="btn-outline btn-sm" href="/invoices/{{ inv.id }}.pdf?download=1" download>{{ tr('download') }}</a>
+    {% if send_available %}
+    <button type="button" class="btn-orange-sm" hx-get="/invoices/{{ inv.id }}/send" hx-target="#modal-root" hx-swap="innerHTML">{{ tr('send_again') if inv.sent else tr('send') }}</button>
+    {% else %}
+    <button type="button" class="btn-orange-sm" disabled title="{{ tr('smtp_disabled') }}">{{ tr('send') }}</button>
+    {% endif %}
+    {% else %}
+    <span class="inv-missing">{{ tr('file_missing') }}</span>
+    {% endif %}
+    {% set confirm = tr('confirm_delete').format(number=inv.number, file=inv.filename) %}
+    {% if inv.sent %}{% set confirm = confirm ~ ' ' ~ tr('confirm_delete_sent').format(to=inv.sent_to) %}{% endif %}
+    <button type="button" class="btn-danger-sm" hx-post="/invoices/{{ inv.id }}/delete"
+      hx-confirm="{{ confirm }}" hx-target="closest tr" hx-swap="outerHTML">{{ tr('delete') }}</button>
+  </td>
+</tr>

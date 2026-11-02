@@ -1,0 +1,22 @@
+{# Generate / Send while the invoice cannot render yet (see
+   config_problem.html): the reason and a way to Settings. #}
+<div class="modal-overlay" data-modal-close>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-label="{{ tr('cfg_title') }}">
+    <div class="modal-head">
+      <span class="modal-tile">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FA5D00" stroke-width="1.8"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4M12 16h.01"></path></svg>
+      </span>
+      <div class="modal-title-wrap">
+        <div class="modal-title">{{ tr('cfg_title') }}</div>
+      </div>
+      <button type="button" class="modal-x" data-modal-close aria-label="{{ tr('close') }}">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="cfg-msg">{{ tr('cfg_' + problem) }}</p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn-outline" data-modal-close>{{ tr('close') }}</button>
+      <a class="btn-orange" href="/settings#{{ 'issuer' if problem == 'issuer' else 'clients' }}">{{ tr('cfg_link') }}</a>
+    </div>
+  </div>
+</div>

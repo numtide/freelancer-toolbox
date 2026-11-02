@@ -526,7 +526,19 @@ def main() -> None:
     "output_path",
     default=None,
     type=click.Path(),
-    help="PDF output path (default: invoice-<number>.pdf).",
+    help=(
+        "Also write each generated PDF to this path (it is always archived "
+        "in --invoices-dir). With --demo: the only output, default "
+        "invoice-<number>.pdf."
+    ),
+)
+@click.option(
+    "--invoices-dir",
+    "invoices_dir",
+    envvar="HARVEST_INVOICER_INVOICES_DIR",
+    default=None,
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Invoice archive directory (default: invoices/ next to the --db file).",
 )
 @click.option(
     "--host",
@@ -598,6 +610,7 @@ def serve(
     db_path: Path | None,
     templates_dir: Path | None,
     output_path: str | None,
+    invoices_dir: Path | None,
     host: str,
     allowed_hosts: tuple[str, ...],
     port: int,
@@ -711,7 +724,11 @@ def serve(
         number_override=None,
         number_template=str(issuer.get("number_template") or ""),
     )
-    out_path = Path(output_path or f"invoice-{number}.pdf")
+    # Generated PDFs are archived next to the state DB; --output adds a copy.
+    # Demo mode has no DB to archive into, so it keeps the single file.
+    out_path = Path(output_path) if output_path else None
+    if demo and out_path is None:
+        out_path = Path(f"invoice-{number}.pdf")
 
     # CSRF-guard allowlist: any explicit --allowed-host, plus the bind host
     # itself when it is a concrete address; a wildcard bind (0.0.0.0/::)
@@ -749,6 +766,7 @@ def serve(
         email_config=email_config,
         oidc=oidc,
         trusted_proxies=trusted_proxies,
+        invoices_dir=invoices_dir,
     )
 
     # A concrete bind host is browsable directly; a wildcard bind is reached

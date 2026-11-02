@@ -7,8 +7,10 @@ from datetime import date
 from harvest_invoicer.i18n import (
     SUPPORTED_LANGUAGES,
     TRANSLATIONS,
+    UI_TRANSLATIONS,
     resolve_language,
     translator,
+    ui_language,
 )
 from harvest_invoicer.model import Invoice, InvoiceLine, fmt_tax_label
 from harvest_invoicer.render import render_html
@@ -143,3 +145,25 @@ def test_fmt_tax_label_resolution() -> None:
     # Empty / absent override falls back to the translated default.
     assert fmt_tax_label("", "es") == translator("es")("tax_id")
     assert fmt_tax_label({}, "es") == translator("es")("tax_id")
+
+
+def test_ui_languages_have_identical_keys() -> None:
+    english = set(UI_TRANSLATIONS["en"])
+    for lang, table in UI_TRANSLATIONS.items():
+        assert set(table) == english, f"UI key mismatch in '{lang}'"
+    assert set(UI_TRANSLATIONS) == set(SUPPORTED_LANGUAGES)
+
+
+def test_ui_language_follows_issuer() -> None:
+    assert ui_language({}) == "en"
+    assert ui_language({"language": "ES"}) == "es"
+    assert ui_language({"language": "fr"}) == "en"
+    assert translator("es", UI_TRANSLATIONS)("invoices") == "Facturas"
+
+
+def test_email_templates_name_number_and_period() -> None:
+    for lang in SUPPORTED_LANGUAGES:
+        t = translator(lang)
+        for key in ("email_subject", "email_message"):
+            assert "{number}" in t(key)
+            assert "{period}" in t(key + "_period")

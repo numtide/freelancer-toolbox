@@ -7,13 +7,16 @@ plain dicts for the rest of the app (templates, rendering) to consume.
 
 The SMTP password is a :class:`~pydantic.SecretStr` sourced only from the
 environment; it is never serialized to the DB or echoed to the browser.
+The same goes for the OIDC client secret and session key (:class:`OidcSettings`),
+which come from ``serve`` options / environment only.
 """
 
 from __future__ import annotations
 
 import json
 from email.utils import parseaddr
-from typing import Literal
+from typing import Literal, Self
+from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -23,6 +26,7 @@ from pydantic import (
     ValidationError,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 from pydantic_settings import (
     BaseSettings,
@@ -262,6 +266,146 @@ class SmtpSettings(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         # Environment overrides the stored (init) values.
         return (env_settings, init_settings, file_secret_settings)
+
+
+# Shortest accepted session secret: it signs the login cookie, so it must not
+# be guessable (``openssl rand -hex 32`` gives 64 characters).
+MIN_SESSION_SECRET_LENGTH = 32
+
+DEFAULT_OIDC_SCOPES = "openid email profile"
+
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+class OidcSettings(BaseModel):
+    """OpenID Connect login for a server deployment (``serve --oidc-*``).
+
+    Present only when an issuer is configured; without it the editor is the
+    local, unauthenticated app.  Validation fails closed: a session secret
+    is required, and an empty allow-list is an error unless
+    ``allow_any_user`` says otherwise.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, validate_default=True)
+
+    issuer: str
+    client_id: str
+    # Empty for a public (PKCE-only) client.
+    client_secret: SecretStr = SecretStr("")
+    scopes: str = DEFAULT_OIDC_SCOPES
+    # Verified email addresses, matched case-insensitively.
+    allowed_emails: frozenset[str] = frozenset()
+    # Exact ``sub`` claims, for accounts without a usable email.
+    allowed_subjects: frozenset[str] = frozenset()
+    allow_any_user: bool = False
+    session_secret: SecretStr
+    # Externally visible origin (https://invoicer.example.com).  Required:
+    # the redirect and post-logout URIs are built from it alone, never from
+    # request headers; the CSRF guard also accepts its host.
+    public_url: str = ""
+    # Mark the session cookie Secure even when the request looks like http.
+    secure_cookies: bool = False
+    # Absolute login lifetime: a session older than this needs a new login.
+    session_lifetime_hours: int = Field(default=12, ge=1, le=720)
+
+    @field_validator("issuer")
+    @classmethod
+    def _issuer_url(cls, v: str) -> str:
+        v = v.strip().rstrip("/")
+        parts = urlsplit(v)
+        # Plain http only for a provider on this machine (development).
+        local = parts.scheme == "http" and parts.hostname in _LOOPBACK_HOSTS
+        if not parts.hostname or not (parts.scheme == "https" or local):
+            msg = "OIDC issuer must be an https:// URL."
+            raise ValueError(msg)
+        return v
+
+    @field_validator("client_id")
+    @classmethod
+    def _client_id_set(cls, v: str) -> str:
+        if not v.strip():
+            msg = "OIDC client ID is required (--oidc-client-id)."
+            raise ValueError(msg)
+        return v.strip()
+
+    @field_validator("scopes")
+    @classmethod
+    def _openid_scope(cls, v: str) -> str:
+        scopes = v.split()
+        if "openid" not in scopes:
+            msg = "OIDC scopes must include 'openid'."
+            raise ValueError(msg)
+        return " ".join(scopes)
+
+    @field_validator("allowed_emails", mode="before")
+    @classmethod
+    def _normalize_emails(cls, v: object) -> object:
+        if isinstance(v, (list, tuple, set, frozenset)):
+            return frozenset(str(e).strip().lower() for e in v if str(e).strip())
+        return v
+
+    @field_validator("allowed_subjects", mode="before")
+    @classmethod
+    def _normalize_subjects(cls, v: object) -> object:
+        if isinstance(v, (list, tuple, set, frozenset)):
+            return frozenset(str(e).strip() for e in v if str(e).strip())
+        return v
+
+    @field_validator("session_secret")
+    @classmethod
+    def _session_secret_strength(cls, v: SecretStr) -> SecretStr:
+        secret = v.get_secret_value()
+        if not secret:
+            msg = (
+                "OIDC login requires a session secret (--session-secret, "
+                "HARVEST_INVOICER_SESSION_SECRET or HARVEST_INVOICER_SESSION_SECRET_FILE)."
+            )
+            raise ValueError(msg)
+        if len(secret) < MIN_SESSION_SECRET_LENGTH:
+            msg = (
+                f"The session secret must be at least {MIN_SESSION_SECRET_LENGTH} "
+                "characters (e.g. `openssl rand -hex 32`)."
+            )
+            raise ValueError(msg)
+        return v
+
+    @field_validator("public_url")
+    @classmethod
+    def _public_origin(cls, v: str) -> str:
+        v = v.strip().rstrip("/")
+        if not v:
+            msg = (
+                "OIDC login requires the public URL (--public-url or "
+                "HARVEST_INVOICER_PUBLIC_URL), e.g. https://invoicer.example.com."
+            )
+            raise ValueError(msg)
+        parts = urlsplit(v)
+        # Plain http only for the editor on this machine (development).
+        local = parts.scheme == "http" and parts.hostname in _LOOPBACK_HOSTS
+        if (
+            not (parts.scheme == "https" or local)
+            or not parts.hostname
+            or parts.path
+            or parts.query
+            or parts.fragment
+        ):
+            msg = (
+                "Public URL must be an https:// origin like "
+                "https://invoicer.example.com."
+            )
+            raise ValueError(msg)
+        return v
+
+    @model_validator(mode="after")
+    def _allow_list_required(self) -> Self:
+        if not (self.allowed_emails or self.allowed_subjects or self.allow_any_user):
+            msg = (
+                "OIDC login needs an allow-list (--oidc-allowed-email / "
+                "--oidc-allowed-subject); pass --oidc-allow-any-user to admit "
+                "every account the provider authenticates."
+            )
+            raise ValueError(msg)
+        return self
 
 
 def smtp_env_raw(field: str) -> str:

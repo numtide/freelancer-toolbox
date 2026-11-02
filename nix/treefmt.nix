@@ -102,6 +102,8 @@
           jinja2
           pydantic
           pydantic-settings
+          authlib
+          waitress
         ];
         options = [
           "--config-file"

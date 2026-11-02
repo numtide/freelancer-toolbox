@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} — Harvest Invoicer</title>
+  <script src="/static/theme.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <img class="logo" src="/static/harvest-logo.svg" alt="Harvest">
+      <h1>Invoicer</h1>
+    </div>
+  </header>
+
+  {# Login-flow outcomes (failed, denied, signed out). Deliberately generic:
+     the page never says which check failed. #}
+  <main class="auth-main">
+    <section class="card auth-card">
+      <h2>{{ title }}</h2>
+      <p>{{ message }}</p>
+      {% if denied %}
+      <p class="auth-note">Signed in as <strong>{{ denied }}</strong>.</p>
+      <form method="post" action="/logout">
+        <button type="submit" class="btn-orange">Sign out and use another account</button>
+      </form>
+      {% elif sign_out %}
+      <form method="post" action="/logout">
+        <button type="submit" class="btn-orange">Sign out</button>
+      </form>
+      {% elif retry %}
+      <a class="btn-orange" href="/login">Sign in</a>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

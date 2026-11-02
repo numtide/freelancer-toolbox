@@ -15,6 +15,9 @@ pkgs.python3.pkgs.buildPythonApplication {
     click
     pydantic
     pydantic-settings
+    authlib
+    requests
+    waitress
   ];
 
   # Unset any ambient PYTHONPATH so Python 3.12 site-packages from a co-active

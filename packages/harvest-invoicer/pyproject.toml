@@ -18,6 +18,9 @@ dependencies = [
   "click",
   "pydantic>=2",
   "pydantic-settings>=2",
+  "authlib>=1.6",
+  "requests",
+  "waitress>=3",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -35,7 +38,7 @@ Homepage = "https://github.com/numtide/harvest-invoice-calculator"
 harvest-invoicer = "harvest_invoicer.cli:main"
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "joserfc"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/harvest_invoicer"]

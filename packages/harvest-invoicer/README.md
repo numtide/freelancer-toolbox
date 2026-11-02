@@ -45,12 +45,13 @@ harvest-invoicer generate --month 2026-06 --output-dir ./invoices/
 harvest-invoicer serve [--harvest-client NAME]
                        [--db PATH]
                        [--templates-dir DIR] [--output PATH.pdf]
-                       [--port N] [--no-browser]
+                       [--host ADDR] [--allowed-host HOST]... [--port N] [--no-browser]
                        [--currency CODE] [--no-agency] [--demo]
+                       [--oidc-issuer URL ...]  # see "Server deployment (OIDC)"
 ```
 
-Starts a local Flask server on `127.0.0.1` (never exposed to the network)
-and opens the editor in your default browser.  The editor starts **without
+Starts a local Flask server on `127.0.0.1` (not reachable from the network
+unless `--host` says otherwise) and opens the editor in your default browser.  The editor starts **without
 fetching**, seeded with the previous month's number, billing period, and
 import range — all editable on the page.  Import the hours with **Fetch
 from Harvest** (credentials are only needed at that point).  Use `--demo` to try
@@ -158,6 +159,8 @@ because all entries are treated as external when there is no agency rate.
 | `HARVEST_BEARER_TOKEN` | Harvest API bearer token (needed when fetching; `generate` requires it) |
 | `HARVEST_INVOICER_DB` | State database path (default: `~/.local/share/harvest-invoicer/state.db`) |
 | `INVOICE_TEMPLATES_DIR` | Directory for custom templates (same as `--templates-dir`) |
+| `HARVEST_INVOICER_HOST` | Bind address for `serve` (same as `--host`) |
+| `HARVEST_INVOICER_OIDC_*`, … | OIDC login for a server deployment — see below |
 
 ## Configuration
 
@@ -302,10 +305,93 @@ so re-running it is safe.  You can override just one file — for example, only
 `invoice.html` — and the packaged `style.css` is still used as the fallback;
 delete whichever file you don't customise.
 
+## Server deployment (OIDC)
+
+`serve` can run on a server behind a reverse proxy, with every request
+requiring an OpenID Connect login.  It is opt-in: setting an issuer turns
+it on; without one nothing changes.  Every option also reads the
+environment variable shown.  Pass secrets through the environment or the
+`*_FILE` variants rather than command-line flags, which show up in the
+process list.
+
+| Option | Environment variable | Default / notes |
+|--------|----------------------|-----------------|
+| `--oidc-issuer URL` | `HARVEST_INVOICER_OIDC_ISSUER` | Enables OIDC. Must be `https://` (plain http only on loopback) |
+| `--oidc-client-id` | `HARVEST_INVOICER_OIDC_CLIENT_ID` | Required |
+| `--oidc-client-secret` | `HARVEST_INVOICER_OIDC_CLIENT_SECRET` | Omit for a PKCE-only public client |
+| `--oidc-client-secret-file` | `HARVEST_INVOICER_OIDC_CLIENT_SECRET_FILE` | Read the secret from a file (e.g. a mounted Kubernetes secret) |
+| `--oidc-allowed-email` | `HARVEST_INVOICER_OIDC_ALLOWED_EMAILS` | Repeatable / comma-separated. Matched case-insensitively against a *verified* `email` claim |
+| `--oidc-allowed-subject` | `HARVEST_INVOICER_OIDC_ALLOWED_SUBJECTS` | Repeatable / comma-separated `sub` claims |
+| `--oidc-allow-any-user` | `HARVEST_INVOICER_OIDC_ALLOW_ANY_USER` | Admit anyone the provider authenticates. Without it an empty allow-list refuses to start |
+| `--oidc-scopes` | `HARVEST_INVOICER_OIDC_SCOPES` | `openid email profile` |
+| `--public-url URL` | `HARVEST_INVOICER_PUBLIC_URL` | **Required** with OIDC, e.g. `https://invoicer.example.com`. The redirect and post-logout URIs are built from it alone; the CSRF guard accepts its host |
+| `--session-secret` | `HARVEST_INVOICER_SESSION_SECRET` | **Required** with OIDC, ≥ 32 characters (`openssl rand -hex 32`). Signs the session cookie, so logins survive restarts; rotating it signs everyone out |
+| `--session-secret-file` | `HARVEST_INVOICER_SESSION_SECRET_FILE` | Read it from a file |
+| `--session-lifetime HOURS` | `HARVEST_INVOICER_SESSION_LIFETIME` | `12`. Counted from the login, however active the session |
+| `--trusted-proxies N` | `HARVEST_INVOICER_TRUSTED_PROXIES` | Proxies whose `X-Forwarded-*` headers are honored: 1 with OIDC, else 0. They only affect the CSRF host check and the cookie's `Secure` flag |
+| `--secure-cookies` | `HARVEST_INVOICER_SECURE_COOKIES` | Always mark the cookie `Secure` (default: when the request is https) |
+| `--server` | `HARVEST_INVOICER_SERVER` | `auto`: waitress with OIDC, the Werkzeug development server otherwise. `waitress` / `werkzeug` force one |
+| `--threads N` | `HARVEST_INVOICER_THREADS` | `8` waitress worker threads |
+
+With OIDC the app is served by [waitress](https://docs.pylonsproject.org/projects/waitress/):
+one process (the editor's state lives in memory, so never run several),
+several threads, request bodies capped at 1 MiB, and a graceful stop on
+`SIGTERM`.  Forwarded headers are handled by the app (`--trusted-proxies`),
+not by waitress, whose `trusted_proxy` setting stays off.
+
+Register the client with your provider as a web application using the
+authorization-code flow with PKCE:
+
+- **Redirect URI:** `https://<public host>/oidc/callback`
+- **Post-logout redirect URI:** `https://<public host>/` (sign-out also ends
+  the provider session when it advertises an `end_session_endpoint`)
+- **ID token signing:** RS256, PS256, ES256 or EdDSA
+
+With Zitadel (any OIDC provider works the same way):
+
+```console
+export HARVEST_INVOICER_OIDC_ISSUER=https://auth.example.com
+export HARVEST_INVOICER_OIDC_CLIENT_ID=123456789@invoicer
+export HARVEST_INVOICER_OIDC_CLIENT_SECRET_FILE=/run/secrets/oidc-client-secret
+export HARVEST_INVOICER_OIDC_ALLOWED_EMAILS=you@example.com
+export HARVEST_INVOICER_SESSION_SECRET_FILE=/run/secrets/session-secret
+export HARVEST_INVOICER_PUBLIC_URL=https://invoicer.example.com
+
+harvest-invoicer serve --host 0.0.0.0 --no-browser \
+  --db /var/lib/harvest-invoicer/state.db
+```
+
+Zitadel puts the email in the userinfo response rather than the ID token
+by default; the editor fetches it from there when the ID token lacks
+`email` or `email_verified` (the subject must match).
+
+Unauthenticated page loads redirect to the provider and come back to the
+requested page; other requests get `401`.  A signed-in account that is not
+on the allow-list gets a `403` page.  Each request checks the session's
+age and the allow-list in effect: an account removed from the allow-list
+(which takes a restart) loses access on its next request.  The signed-in
+email and a sign-out button appear in the top bar.
+
+All allowed users share one editor: the same invoice session, Harvest
+fetches and SMTP sending.  It is meant for one person (or a few trusted
+ones), not as a multi-tenant service.
+
 ## Security
 
-The editor server binds to `127.0.0.1` only and has no authentication.
-Do not expose it to a network interface.
+Without OIDC the editor has no authentication: it binds to `127.0.0.1`
+by default, and must not be exposed to a network you don't trust.  A CSRF
+guard restricts state-changing requests to the served host(s) (`--host`,
+`--allowed-host`).
+
+With OIDC (see above) every request needs an allow-listed login.  The
+login flow uses PKCE, state and nonce; the ID token's signature (asymmetric
+algorithms only), issuer, audience and expiry are verified.  The session
+cookie is `HttpOnly` and `SameSite=Lax`, and **signed, not encrypted**: during
+a login it holds the PKCE verifier and nonce, readable by (only) the user's
+own browser.  Signing out is a `POST` covered by the CSRF guard.  Behind a
+TLS-terminating proxy the CSRF guard accepts the `--public-url` host —
+binding to `0.0.0.0` already accepts any host, still requiring same-origin
+`Origin`/`Referer`.
 
 ## Examples
 

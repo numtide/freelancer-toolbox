@@ -6,6 +6,7 @@ import pytest
 from harvest_invoicer.config import (
     ClientConfig,
     IssuerConfig,
+    OidcSettings,
     SmtpSettings,
     friendly_error,
     parse_tax_id_label,
@@ -146,3 +147,103 @@ class TestIssuerConfig:
         assert i.name == "Jane"
         assert i.bank.iban == "DE00"
         assert i.language == ""
+
+
+class TestOidcSettings:
+    _SECRET = "s" * 32
+
+    def _make(self, **overrides: object) -> OidcSettings:
+        fields: dict[str, object] = {
+            "issuer": "https://auth.example.com",
+            "client_id": "invoicer",
+            "session_secret": self._SECRET,
+            "allowed_emails": ["Jane@Example.com"],
+            "public_url": "https://invoicer.example.com",
+        }
+        fields.update(overrides)
+        return OidcSettings(**fields)
+
+    def test_valid_config_normalized(self) -> None:
+        s = self._make(
+            issuer="https://auth.example.com/",
+            public_url="https://invoicer.example.com/",
+            allowed_emails=[" Jane@Example.com ", "bob@x.io"],
+        )
+        assert s.issuer == "https://auth.example.com"
+        assert s.public_url == "https://invoicer.example.com"
+        # Emails match case-insensitively: stored lower-cased.
+        assert s.allowed_emails == frozenset({"jane@example.com", "bob@x.io"})
+        assert s.scopes == "openid email profile"
+
+    def test_session_secret_required(self) -> None:
+        with pytest.raises(ValidationError) as ei:
+            self._make(session_secret="")
+        assert "session secret" in friendly_error(ei.value)
+
+    def test_short_session_secret_rejected(self) -> None:
+        with pytest.raises(ValidationError) as ei:
+            self._make(session_secret="too-short")  # noqa: S106
+        assert "at least 32 characters" in friendly_error(ei.value)
+
+    def test_empty_allow_list_fails_closed(self) -> None:
+        with pytest.raises(ValidationError) as ei:
+            self._make(allowed_emails=[])
+        assert "--oidc-allow-any-user" in friendly_error(ei.value)
+
+    def test_allow_any_user_is_explicit_opt_out(self) -> None:
+        s = self._make(allowed_emails=[], allow_any_user=True)
+        assert s.allow_any_user
+
+    def test_subjects_alone_are_an_allow_list(self) -> None:
+        s = self._make(allowed_emails=[], allowed_subjects=["12345"])
+        assert s.allowed_subjects == frozenset({"12345"})
+
+    def test_client_id_required(self) -> None:
+        with pytest.raises(ValidationError) as ei:
+            self._make(client_id=" ")
+        assert "client ID" in friendly_error(ei.value)
+
+    @pytest.mark.parametrize(
+        "bad", ["auth.example.com", "http://auth.example.com", "ftp://x.io"]
+    )
+    def test_issuer_must_be_https(self, bad: str) -> None:
+        with pytest.raises(ValidationError) as ei:
+            self._make(issuer=bad)
+        assert "https" in friendly_error(ei.value)
+
+    def test_plain_http_issuer_allowed_on_loopback(self) -> None:
+        # Local development against a provider on this machine.
+        assert self._make(issuer="http://127.0.0.1:9000").issuer.startswith("http:")
+
+    def test_openid_scope_required(self) -> None:
+        with pytest.raises(ValidationError) as ei:
+            self._make(scopes="email profile")
+        assert "openid" in friendly_error(ei.value)
+
+    @pytest.mark.parametrize(
+        "bad", ["invoicer.example.com", "https://x.io/sub", "https://x.io?a=1"]
+    )
+    def test_public_url_must_be_an_origin(self, bad: str) -> None:
+        with pytest.raises(ValidationError):
+            self._make(public_url=bad)
+
+    def test_public_url_required(self) -> None:
+        with pytest.raises(ValidationError) as ei:
+            self._make(public_url="")
+        assert "--public-url" in friendly_error(ei.value)
+
+    def test_plain_http_public_url_only_on_loopback(self) -> None:
+        assert self._make(public_url="http://localhost:8321").public_url
+        with pytest.raises(ValidationError):
+            self._make(public_url="http://invoicer.example.com")
+
+    def test_session_lifetime(self) -> None:
+        assert self._make().session_lifetime_hours == 12
+        assert self._make(session_lifetime_hours=1).session_lifetime_hours == 1
+        with pytest.raises(ValidationError):
+            self._make(session_lifetime_hours=0)
+
+    def test_secrets_masked_in_repr(self) -> None:
+        s = self._make(client_secret="top-secret")  # noqa: S106
+        assert "top-secret" not in repr(s)
+        assert self._SECRET not in repr(s)

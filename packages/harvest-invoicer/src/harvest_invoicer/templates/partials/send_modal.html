@@ -19,7 +19,12 @@
     <form hx-post="{{ send_action }}" hx-target="#modal-root" hx-swap="innerHTML"
       hx-disabled-elt="find button[type=submit]"{% if confirm %} hx-confirm="{{ confirm }}"{% endif %}>
       <div class="modal-body">
-        {% if sent_note %}<p class="modal-warn">{{ sent_note }}</p>{% endif %}
+        {% if sent_note %}
+        <p class="modal-warn">{{ sent_note }}</p>
+        {# Sending again was confirmed in this dialog (hx-confirm); the server
+           refuses a resend without it. #}
+        <input type="hidden" name="confirm_resend" value="1">
+        {% endif %}
         <div class="field-gap">
           <label class="field-label">{{ tr('send_to') }}</label>
           <input type="text" name="to" value="{{ email_to }}" placeholder="client@example.com">

@@ -8,13 +8,14 @@ import hashlib
 import io
 import json
 import os
+import sqlite3
 import threading
 from collections import deque
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse, urlsplit
+from urllib.parse import urlsplit
 
 from flask import Flask, Response, g, render_template, request, send_file
 from markupsafe import escape
@@ -34,6 +35,7 @@ from harvest_invoicer.config import SmtpSettings
 from harvest_invoicer.db import (
     clear_draft,
     get_draft,
+    invoice_sends,
     latest_invoice,
     list_invoices,
     mark_invoice_sent,
@@ -41,6 +43,7 @@ from harvest_invoicer.db import (
     save_draft,
     save_email,
     save_issuer,
+    send_counts,
 )
 from harvest_invoicer.fetch import apply_client_vat, client_extra_lines
 from harvest_invoicer.i18n import (
@@ -73,6 +76,36 @@ _UNDO_LIMIT = 20
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
+
+
+def host_key(authority: str) -> str:
+    """Normalize a host (``Host`` header, ``--allowed-host``, URL authority).
+
+    Lowercase, without port, IPv6 brackets or a trailing dot, so that
+    ``Box.LAN``, ``box.lan:8321`` and ``box.lan.`` compare equal and
+    ``[fe80::1]:8321`` matches ``[fe80::1]`` (or a bare ``fe80::1``).  A
+    malformed value gives ``""``, which matches nothing; ``"*"`` stays.
+    """
+    value = authority.strip().lower()
+    if value == "*":
+        return value
+    if value.count(":") > 1 and not value.startswith("["):
+        return value  # a bare IPv6 address, no port possible
+    try:
+        parts = urlsplit("//" + value)
+        _ = parts.port  # validates it: "box.lan:x" is malformed
+        host = parts.hostname or ""
+    except ValueError:  # e.g. an unclosed "[::1" or a bad port
+        return ""
+    return host.rstrip(".")
+
+
+def _origin_host(origin: str) -> str:
+    """The normalized host of an Origin/Referer URL (``""`` if malformed)."""
+    try:
+        return host_key(urlsplit(origin).netloc)
+    except ValueError:
+        return ""
 
 
 def _toast_header(kind: str, title: str, body: str = "") -> dict[str, str]:
@@ -255,14 +288,18 @@ def create_app(
         "pdf_cache": None,
         # True when a previous session's autosaved draft was resumed.
         "draft_restored": False,
+        # Archive id of the PDF this editor session generated last (/pdf).
+        "last_archived_id": None,
     }
 
-    # Hostnames the CSRF guard accepts, beyond loopback. A literal "*"
-    # (set when binding to a wildcard address) accepts any Host and falls
-    # back to a same-origin check for Origin/Referer.
-    allowed = frozenset(_LOCAL_HOSTNAMES) | allowed_hosts
+    # Hosts the Host guard (reads and writes) accepts beyond loopback, as
+    # host_key()s.  A literal "*" (a wildcard bind without --allowed-host
+    # or OIDC) accepts any Host and falls back to a same-origin check for
+    # Origin/Referer.
+    allowed = frozenset(host_key(h) for h in (*_LOCAL_HOSTNAMES, *allowed_hosts))
     if oidc is not None and oidc.public_url:
-        allowed |= {urlparse(oidc.public_url).hostname or ""}
+        allowed |= {host_key(urlsplit(oidc.public_url).netloc)}
+    allowed -= {""}  # a malformed --allowed-host matches nothing
     allow_any_host = "*" in allowed
 
     if trusted_proxies:
@@ -278,8 +315,7 @@ def create_app(
         )
 
     def _request_host() -> str:
-        # urlsplit handles a bracketed IPv6 host ("[::1]:8321") and no port.
-        return urlsplit("//" + request.host).hostname or ""
+        return host_key(request.host)
 
     @app.get("/healthz")
     def healthz() -> Response:
@@ -331,7 +367,7 @@ def create_app(
         host = _request_host()
         origin = request.headers.get("Origin") or request.headers.get("Referer")
         if origin:
-            origin_host = urlparse(origin).hostname
+            origin_host = _origin_host(origin)
             same_origin = allow_any_host and origin_host == host
             if origin_host not in allowed and not same_origin:
                 return Response("Forbidden: cross-origin request rejected.", status=403)
@@ -353,6 +389,7 @@ def create_app(
         "preview_pdf",
         "render_pdf_route",
         "send_invoice",
+        "send_modal",  # renders the PDF (resend check) — locks itself
         "send_test",  # SMTP handshake — must not hold the state lock
         # Archive: file IO and SMTP, guarded by archive_lock instead.
         "invoice_pdf",
@@ -930,16 +967,16 @@ def create_app(
 
     @app.get("/pdf")
     def serve_pdf() -> Response:
-        """Serve the last generated PDF (kept for existing links).
+        """Serve the last generated PDF (legacy link, kept for bookmarks).
 
-        With the archive that is the newest archived invoice; without it,
+        With the archive that is the PDF this editor session generated
+        last (not whatever is newest in the shared archive); without it,
         the Generate button's output file.
         """
         download = request.args.get("download") == "1"
         if db_path is not None and archive_dir is not None:
-            with archive_lock:
-                record = latest_invoice(db_path)
-                data = read_invoice(archive_dir, record) if record else None
+            last_id = app.state["last_archived_id"]  # type: ignore[attr-defined]
+            record, data = _archived(last_id) if last_id else (None, None)
             if record is not None and data is not None:
                 return _send_pdf(data, str(record["filename"]), download=download)
         else:
@@ -1733,9 +1770,26 @@ def create_app(
         if db_path is None or archive_dir is None:
             return None
         with archive_lock:
-            return archive_pdf(
+            archived = archive_pdf(
                 db_path, archive_dir, pdf, inv, cur_client, client_key, issuer
             )
+        app.state["last_archived_id"] = archived[0]["id"]  # type: ignore[attr-defined]
+        return archived
+
+    def _sent_entry(pdf: bytes, number: str) -> dict[str, object] | None:
+        """The archived entry *pdf* would reuse, if it was already sent.
+
+        That is the newest entry for *number* with the same content (what
+        Generate/Send would reuse), when it has been emailed before.
+        """
+        if db_path is None:
+            return None
+        digest = hashlib.sha256(pdf).hexdigest()
+        with archive_lock:
+            newest = latest_invoice(db_path, number)
+        if newest is None or newest["sha256"] != digest or not newest["sent_at"]:
+            return None
+        return newest
 
     @app.post("/render")
     def render_pdf_route() -> Response:
@@ -1842,11 +1896,21 @@ def create_app(
         """Render the send-invoice modal for the live invoice."""
         from harvest_invoicer.mail import invoice_tokens  # noqa: PLC0415
 
-        problem = _config_problem()
+        problem = _locked_config_problem()
         if problem:
             return _config_problem_modal(problem)
-        inv: Invoice = app.state["invoice"]  # type: ignore[attr-defined]
-        cur_client: dict[str, str] = app.state["client"]  # type: ignore[attr-defined]
+        with state_lock:
+            inv: Invoice = copy.deepcopy(app.state["invoice"])  # type: ignore[attr-defined]
+            cur_client: dict[str, str] = dict(app.state["client"])  # type: ignore[attr-defined]
+        record = None
+        if archive_dir is not None:
+            # Render what Send would send: if that exact PDF was already
+            # emailed, the modal warns and asks before sending it again.
+            try:
+                pdf, inv, cur_client, _key = _render_snapshot()
+            except Exception:  # noqa: BLE001 — the send itself reports render errors
+                pdf = b""
+            record = _sent_entry(pdf, inv.number) if pdf else None
         return _send_modal(
             action="/send",
             subtitle=f"{inv.number} · {fmt_money(inv.grand_total)} {inv.currency}",
@@ -1854,6 +1918,7 @@ def create_app(
             tokens=invoice_tokens(inv, cur_client, issuer),
             lang=resolve_language(cur_client, issuer),
             has_period=bool(inv.period_start and inv.period_end),
+            record=record,
         )
 
     def _deliver(
@@ -1870,6 +1935,15 @@ def create_app(
         )
 
         tr = _tr()
+        if record.get("sent_at") and request.form.get("confirm_resend") != "1":
+            # Sent since the modal was opened (or never confirmed): ask first.
+            return _send_response(
+                "err",
+                tr("cant_send"),
+                tr("send_already").format(
+                    to=record.get("sent_to") or "", date=_fmt_ts(record["sent_at"])
+                ),
+            )
         try:
             result = send_pdf_email(
                 pdf,
@@ -1889,9 +1963,19 @@ def create_app(
         sent_to = ", ".join(result.accepted)
         extra = ""
         if db_path is not None:
-            with archive_lock:
-                mark_invoice_sent(db_path, str(record["id"]), now_iso(), sent_to)
-                fresh = lookup(db_path, str(record["id"]))
+            try:
+                with archive_lock:
+                    mark_invoice_sent(db_path, str(record["id"]), now_iso(), sent_to)
+                    fresh = lookup(db_path, str(record["id"]))
+            except (sqlite3.Error, OSError):
+                # The email is out: still report success.  No recipients or
+                # link ids in the log — the file name identifies the invoice.
+                app.logger.warning(
+                    "Invoice %s was sent, but recording the delivery failed",
+                    record["filename"],
+                    exc_info=True,
+                )
+                fresh = None
             # On the Invoices page, refresh the row's sent status in place.
             on_list = urlsplit(request.headers.get("HX-Current-URL", "")).path
             if fresh is not None and on_list == "/invoices":
@@ -1915,15 +1999,17 @@ def create_app(
             "ok", tr("sent"), tr("sent_body").format(to=sent_to), extra=extra
         )
 
-    def _unsendable(to: str) -> str | None:
-        """Why a send to *to* would fail before reaching SMTP, or ``None``."""
+    def _unsendable(to: str, subject: str) -> str | None:
+        """Why a send would fail before reaching SMTP, or ``None``."""
         from harvest_invoicer.mail import (  # noqa: PLC0415
             MailConfigError,
+            check_subject,
             parse_recipients,
         )
 
         try:
             parse_recipients(to)
+            check_subject(subject)
         except MailConfigError as exc:
             return str(exc)
         return None if _smtp_enabled() else _tr()("smtp_disabled")
@@ -1950,7 +2036,8 @@ def create_app(
         with state_lock:
             cfg = dict(app.state["email"])  # type: ignore[attr-defined]
         to = request.form.get("to", "")
-        unsendable = _unsendable(to) if archive_dir is not None else None
+        subject = request.form.get("subject", "")
+        unsendable = _unsendable(to, subject) if archive_dir is not None else None
         if unsendable:
             # Refused before anything is archived.
             return _send_response("err", tr("cant_send"), unsendable)
@@ -1991,9 +2078,17 @@ def create_app(
             return str(value or "")
         return stamp.astimezone().strftime("%Y-%m-%d %H:%M")
 
-    def _row_ctx(record: dict[str, object]) -> dict[str, object]:
-        """An archived invoice, plus its display values, for the row template."""
+    def _row_ctx(
+        record: dict[str, object], sends: int | None = None
+    ) -> dict[str, object]:
+        """An archived invoice, plus its display values, for the row template.
+
+        *sends* is how often it was emailed (looked up when not given).
+        """
         row = dict(record)
+        if sends is None and db_path is not None:
+            sends = len(invoice_sends(db_path, str(record["id"])))
+        row["send_count"] = sends or 0
         row["created"] = _fmt_ts(record["created_at"])
         row["sent"] = _fmt_ts(record["sent_at"]) if record.get("sent_at") else ""
         row["total_fmt"] = fmt_money(float(str(record["total"])))
@@ -2020,9 +2115,12 @@ def create_app(
         """The archive: every generated invoice, newest first."""
         if db_path is None:
             return Response("Not found.", status=404)
+        counts = send_counts(db_path)
         return render_template(
             "invoices.html",
-            invoices=[_row_ctx(r) for r in list_invoices(db_path)],
+            invoices=[
+                _row_ctx(r, counts.get(str(r["id"]), 0)) for r in list_invoices(db_path)
+            ],
             send_available=_smtp_enabled(),
             oob=False,
         )
@@ -2091,7 +2189,12 @@ def create_app(
             record = lookup(db_path, invoice_id)
             if record is None:
                 return _not_found()
-            remove(db_path, archive_dir, record)
+            try:
+                remove(db_path, archive_dir, record)
+            except OSError as exc:
+                # The file stays, and so does its row (nothing dangles).
+                tr = _tr()
+                return _send_response("err", tr("delete_failed"), exc.strerror or "")
         tr = _tr()
         return Response(
             "",

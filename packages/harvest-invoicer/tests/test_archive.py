@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import stat
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 import pytest
 from harvest_invoicer import db as state_db
@@ -13,10 +13,12 @@ from harvest_invoicer.archive import (
     archive_pdf,
     build_filename,
     default_invoices_dir,
+    ensure_private_dir,
     invoice_file,
     invoice_path,
     is_invoice_id,
     lookup,
+    read_invoice,
     remove,
     slugify,
 )
@@ -191,3 +193,120 @@ class TestArchive:
         assert invoice_file(tmp_path / "invoices", record) is None
         remove(tmp_path / "state.db", tmp_path / "invoices", record)
         assert victim.read_bytes() == b"keep me"
+
+
+class TestArchiveFailures:
+    """Mutation-run gaps: collisions, partial writes, DB failures."""
+
+    def test_name_collision_retries_and_keeps_existing_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import harvest_invoicer.archive as archive_module  # noqa: PLC0415
+
+        (tmp_path / "invoices").mkdir(mode=0o700)
+        taken = tmp_path / "invoices" / "2026-06_Numtide-Sarl_aaaaaaaa.pdf"
+        taken.write_bytes(b"someone else's")
+        suffixes = iter(["aaaaaaaa", "bbbbbbbb"])
+        monkeypatch.setattr(
+            archive_module.secrets, "token_hex", lambda _n: next(suffixes)
+        )
+        record, _ = _archive(tmp_path, b"%PDF-new")
+        assert record["filename"] == "2026-06_Numtide-Sarl_bbbbbbbb.pdf"
+        assert taken.read_bytes() == b"someone else's"
+        assert (tmp_path / "invoices" / str(record["filename"])).read_bytes() == (
+            b"%PDF-new"
+        )
+
+    def test_partial_write_leaves_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import harvest_invoicer.archive as archive_module  # noqa: PLC0415
+
+        real_fdopen = archive_module.os.fdopen
+
+        class _Broken:
+            def __init__(self, fd: int, mode: str) -> None:
+                self.fh = real_fdopen(fd, mode)
+
+            def __enter__(self) -> Self:
+                return self
+
+            def __exit__(self, *_exc: object) -> None:
+                self.fh.close()
+
+            def write(self, _data: bytes) -> int:
+                msg = "disk full"
+                raise OSError(28, msg)
+
+        monkeypatch.setattr(archive_module.os, "fdopen", _Broken)
+        with pytest.raises(OSError, match="disk full"):
+            _archive(tmp_path, b"%PDF")
+        monkeypatch.undo()
+        assert list((tmp_path / "invoices").iterdir()) == []
+        assert state_db.list_invoices(tmp_path / "state.db") == []
+
+    def test_db_failure_leaves_no_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import sqlite3  # noqa: PLC0415
+
+        import harvest_invoicer.archive as archive_module  # noqa: PLC0415
+
+        def broken(*_a: object, **_k: object) -> None:
+            msg = "database is locked"
+            raise sqlite3.OperationalError(msg)
+
+        monkeypatch.setattr(archive_module, "add_invoice", broken)
+        with pytest.raises(sqlite3.OperationalError):
+            _archive(tmp_path, b"%PDF")
+        assert list((tmp_path / "invoices").iterdir()) == []
+
+    def test_lookup_rejects_malformed_id_without_db(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import harvest_invoicer.archive as archive_module  # noqa: PLC0415
+
+        def untouchable(*_a: object, **_k: object) -> None:
+            msg = "the database must not be queried"
+            raise AssertionError(msg)
+
+        monkeypatch.setattr(archive_module, "get_invoice", untouchable)
+        for bad in ("", "x", "../" + "a" * 22, "a" * 22 + "/x", "a" * 65):
+            assert lookup(tmp_path / "state.db", bad) is None
+
+    def test_tampered_content_not_read_or_reused(self, tmp_path: Path) -> None:
+        record, _ = _archive(tmp_path, b"%PDF-one")
+        path = tmp_path / "invoices" / str(record["filename"])
+        assert read_invoice(tmp_path / "invoices", record) == b"%PDF-one"
+        path.write_bytes(b"%PDF-evil")
+        assert read_invoice(tmp_path / "invoices", record) is None
+        again, reused = _archive(tmp_path, b"%PDF-one")
+        assert not reused
+        assert again["id"] != record["id"]
+
+    def test_remove_failure_keeps_row(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from pathlib import Path as RealPath  # noqa: PLC0415
+
+        record, _ = _archive(tmp_path, b"%PDF")
+
+        def deny(_self: object, *_a: object, **_k: object) -> None:
+            msg = "denied"
+            raise PermissionError(13, msg)
+
+        monkeypatch.setattr(RealPath, "unlink", deny)
+        with pytest.raises(PermissionError):
+            remove(tmp_path / "state.db", tmp_path / "invoices", record)
+        monkeypatch.undo()
+        assert state_db.get_invoice(tmp_path / "state.db", str(record["id"]))
+
+    def test_new_dir_private_existing_untouched(self, tmp_path: Path) -> None:
+        fresh = tmp_path / "a" / "invoices"
+        ensure_private_dir(fresh)
+        assert stat.S_IMODE(fresh.stat().st_mode) == 0o700
+        shared = tmp_path / "shared"
+        shared.mkdir()
+        shared.chmod(0o750)
+        ensure_private_dir(shared)
+        assert stat.S_IMODE(shared.stat().st_mode) == 0o750

@@ -20,6 +20,7 @@ from harvest_invoicer.mail import (
     SendResult,
     _connect,
     archived_tokens,
+    check_subject,
     email_templates,
     fill_tokens,
     parse_recipients,
@@ -228,3 +229,56 @@ class TestDeliveryResult:
     def test_control_characters_rejected(self, to: str) -> None:
         with pytest.raises(MailConfigError, match="control characters"):
             parse_recipients(to)
+
+
+class TestSender:
+    @pytest.mark.parametrize("name", ["Doe, Jane", "Acme, Inc.", 'Jane "JD" Doe'])
+    def test_display_name_with_specials(
+        self, smtp_server: SmtpServer, name: str
+    ) -> None:
+        send_pdf_email(
+            b"%PDF",
+            "x.pdf",
+            {"name": name},
+            smtp_server.config(from_address="billing@jane.test"),
+            to="a@x.test",
+            subject="S",
+            message="M",
+        )
+        (delivery,) = smtp_server.received
+        assert delivery.mail_from == "billing@jane.test"  # envelope: bare address
+        (mailbox,) = delivery.message["From"].addresses  # one mailbox, not two
+        assert mailbox.addr_spec == "billing@jane.test"
+        assert mailbox.display_name == name
+
+    def test_attachment_name_from_free_text_number(self) -> None:
+        from datetime import date  # noqa: PLC0415
+
+        from harvest_invoicer.mail import send_invoice_email  # noqa: PLC0415
+        from harvest_invoicer.model import Invoice  # noqa: PLC0415
+
+        inv = Invoice(
+            number="2026\n06/../x",
+            issue_date=date(2026, 7, 1),
+            due_date=date(2026, 7, 16),
+            lines=[],
+        )
+        with pytest.raises(MailConfigError, match="host is not configured"):
+            # Reaching the SMTP step means the message (and its attachment
+            # name) was built without error.
+            send_invoice_email(
+                b"%PDF",
+                inv,
+                {"name": "J", "email": "j@x.test"},
+                {},
+                {},
+                to="a@x.test",
+                subject="S",
+                message="M",
+            )
+
+    def test_check_subject(self) -> None:
+        assert check_subject("  Invoice 1  ") == "Invoice 1"
+        for bad in ("a\nb", "a\u2028b", "a\x85b", "a\x0bb"):
+            with pytest.raises(MailConfigError, match="single line"):
+                check_subject(bad)

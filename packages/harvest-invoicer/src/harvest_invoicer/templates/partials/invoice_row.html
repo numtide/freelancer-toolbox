@@ -11,7 +11,7 @@
   <td>
     {% if inv.sent %}
     <span class="status-pill status-ok" title="{{ tr('sent_to_on').format(to=inv.sent_to, date=inv.sent) }}"><span class="status-dot"></span>{{ tr('status_sent') }}</span>
-    <span class="inv-sent-meta">{{ tr('sent_to_on').format(to=inv.sent_to, date=inv.sent) }}</span>
+    <span class="inv-sent-meta">{{ tr('sent_to_on').format(to=inv.sent_to, date=inv.sent) }}{% if inv.send_count > 1 %} · {{ tr('send_count').format(n=inv.send_count) }}{% endif %}</span>
     {% else %}
     <span class="status-pill status-idle"><span class="status-dot"></span>{{ tr('status_not_sent') }}</span>
     {% endif %}

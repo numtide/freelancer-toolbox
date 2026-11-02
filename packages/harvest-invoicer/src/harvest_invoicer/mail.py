@@ -12,12 +12,15 @@ import contextlib
 import smtplib
 import ssl
 from dataclasses import dataclass, field
+from email.errors import HeaderParseError
+from email.headerregistry import Address
 from email.message import EmailMessage
 from email.utils import parseaddr
 from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
+from harvest_invoicer.archive import slugify
 from harvest_invoicer.config import (
     DEFAULT_MESSAGE_TEMPLATE,
     DEFAULT_SUBJECT_TEMPLATE,
@@ -41,6 +44,7 @@ __all__ = [
     "MailDeliveryError",
     "SendResult",
     "archived_tokens",
+    "check_subject",
     "email_templates",
     "env_value",
     "fill_tokens",
@@ -169,6 +173,19 @@ def _plausible_address(addr: str) -> bool:
     return bool(addr)
 
 
+def check_subject(subject: str) -> str:
+    """The stripped *subject*; :class:`MailConfigError` unless one line.
+
+    ``splitlines()`` knows every line break (``\v``, ``\f``,
+    ``\x1c``-``\x1e``, ``\x85``, U+2028/2029 too), not just CR and LF.
+    """
+    subject = subject.strip()
+    if len(subject.splitlines()) > 1:
+        msg = "The subject must be a single line."
+        raise MailConfigError(msg)
+    return subject
+
+
 def parse_recipients(to: str) -> list[str]:
     """The comma-separated recipient addresses in *to*, validated.
 
@@ -258,12 +275,7 @@ def send_pdf_email(
     no longer counts: the message was sent.
     """
     recipients = parse_recipients(to)
-    subject = subject.strip()
-    # splitlines() knows every line break (\v, \f, \x1c-\x1e, \x85,
-    # U+2028/2029 too), not just \r and \n.
-    if len(subject.splitlines()) > 1:
-        msg = "The subject must be a single line."
-        raise MailConfigError(msg)
+    subject = check_subject(subject)
 
     settings = _settings(config)
     from_address = settings.from_address or str(issuer.get("email") or "").strip()
@@ -275,7 +287,9 @@ def send_pdf_email(
     email = EmailMessage()
     to_addrs = list(recipients)
     try:
-        email["From"] = f"{from_name} <{from_address}>" if from_name else from_address
+        # A structured mailbox: a display name like "Doe, Jane" is quoted,
+        # never read as two addresses.
+        email["From"] = Address(display_name=from_name, addr_spec=from_address)
         email["To"] = ", ".join(recipients)
         if settings.reply_to:
             email["Reply-To"] = settings.reply_to
@@ -286,15 +300,20 @@ def send_pdf_email(
             email["Bcc"] = from_address
             to_addrs.append(from_address)
         email["Subject"] = subject or filename
-    except ValueError as exc:  # the email package refusing a header value
-        msg = f"Invalid email header: {exc}"
+        email.set_content(message.rstrip() + "\n")
+        email.add_attachment(
+            pdf, maintype="application", subtype="pdf", filename=filename
+        )
+    except (ValueError, HeaderParseError) as exc:  # the email package refusing a value
+        msg = f"Invalid email content: {exc}"
         raise MailConfigError(msg) from exc
-    email.set_content(message.rstrip() + "\n")
-    email.add_attachment(pdf, maintype="application", subtype="pdf", filename=filename)
 
     conn = _connect(settings)
     try:
-        refused_map = conn.send_message(email, to_addrs=to_addrs) or {}
+        # The envelope sender is the bare address, whatever the From name.
+        refused_map = (
+            conn.send_message(email, from_addr=from_address, to_addrs=to_addrs) or {}
+        )
     except smtplib.SMTPRecipientsRefused as exc:
         conn.close()
         msg = f"The mail server refused every recipient: {', '.join(exc.recipients)}"
@@ -333,7 +352,8 @@ def send_invoice_email(
     """
     return send_pdf_email(
         pdf,
-        f"invoice-{invoice.number}.pdf",
+        # The number is free text: slug it like the archive's file names.
+        f"invoice-{slugify(invoice.number, 'invoice')}.pdf",
         issuer,
         config,
         to=to,

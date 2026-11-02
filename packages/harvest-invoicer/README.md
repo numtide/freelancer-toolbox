@@ -78,7 +78,8 @@ current directory), as before the archive existed.
 
 > **Upgrading:** `serve` no longer writes `invoice-<number>.pdf` to the
 > current directory unless `--output` is given — generated PDFs go to the
-> archive.
+> archive.  Scripts that picked up that file should pass
+> `--output invoice.pdf` (or read the archive directory) instead.
 
 Every PDF that `serve` generates is kept, with its metadata, so earlier
 invoices can be reopened, downloaded, sent or deleted later.
@@ -86,13 +87,16 @@ invoices can be reopened, downloaded, sent or deleted later.
 - **Where:** `--invoices-dir DIR` or `HARVEST_INVOICER_INVOICES_DIR`;
   default `invoices/` next to the state database (e.g.
   `~/.local/share/harvest-invoicer/invoices/`).  The metadata (number,
-  bill-to client, period, total, content hash, created/sent dates and
-  recipients) lives in the database's `invoices` table; existing
-  databases gain it automatically.
+  bill-to client, period, total, content hash, creation date, and every
+  send with its recipients) lives in the database (`invoices` and
+  `invoice_sends` tables); existing databases gain them automatically.
 - **Permissions:** the directory should belong to the user the service
-  runs as.  It is created `0700`, and an existing one owned by that user
-  is tightened to `0700`; one owned by another user is left as is, with a
-  warning in the log if others can access it.  PDFs are written `0600`.
+  runs as (that uid writes, reads and deletes the PDFs).  When the tool
+  creates it, it is `0700`; an existing directory is never changed — if
+  other users can access it, a warning is logged and tightening it is up
+  to you.  PDFs are written `0600` and flushed to disk before they are
+  listed.  A PDF that no longer matches its recorded SHA-256 is treated
+  as missing (not served, sent or reused).
 - **File names** are readable and unique:
   `<number>_<client>_<random>.pdf`, e.g. `2026-06_Numtide-Sarl_3f9a1c2e.pdf`
   (accents folded, anything but letters, digits and dashes replaced).
@@ -102,11 +106,12 @@ invoices can be reopened, downloaded, sent or deleted later.
 - **Links:** each entry has its own unguessable link,
   `/invoices/<id>.pdf` (`?download=1` downloads it under its file name).
   With OIDC the links, like every page, require a signed-in, allow-listed
-  user.  `/pdf` still serves the newest archived PDF.
+  user.  `/pdf` is a legacy link, kept for old bookmarks: it serves the
+  PDF this editor session generated last (404 until you Generate).
 
 The **Invoices** page (the archive-box icon in the editor's top bar)
 lists every archived invoice — creation date, number, client, total and
-whether (and to whom) it was sent — with **Open**, **Download**, **Send**
+whether it was sent (the last send, and how many) — with **Open**, **Download**, **Send**
 and **Delete** actions.  Deleting asks for confirmation (with an extra
 warning if the invoice was already emailed) and removes both the entry
 and its PDF.
@@ -129,7 +134,9 @@ editor's **Send invoice** action open a send dialog:
   recorded on the archive entry (date and the recipients the mail server
   accepted).  If the server refuses some recipients, a warning names
   them; if it refuses all of them, the send fails (even when your own
-  copy went through).  Sending an invoice again asks for confirmation.
+  copy went through).  Sending again — from the Invoices page, or from
+  the editor when the PDF to send is identical to one already emailed —
+  shows the previous send and asks for confirmation; every send is kept.
 
 Without an SMTP host the Send buttons are disabled with a pointer to
 Settings > Email.  The SMTP settings are edited there; each non-secret
@@ -490,9 +497,14 @@ ones), not as a multi-tenant service.
 ## Security
 
 Without OIDC the editor has no authentication: it binds to `127.0.0.1`
-by default, and must not be exposed to a network you don't trust.  A CSRF
-guard restricts state-changing requests to the served host(s) (`--host`,
-`--allowed-host`).
+by default, and must not be exposed to a network you don't trust.  A Host
+guard answers only the served host(s) — loopback, `--host`,
+`--allowed-host` and, with OIDC, the `--public-url` host (compared without
+case, port or trailing dot) — for every request, and state-changing
+requests must also come from the same origin.  Binding to `0.0.0.0`
+without `--allowed-host` (and without OIDC) accepts any host, still
+requiring a same-origin `Origin`/`Referer` for changes; naming hosts with
+`--allowed-host` restricts it to those.
 
 With OIDC (see above) every request needs an allow-listed login.  The
 login flow uses PKCE, state and nonce; the ID token's signature (asymmetric
@@ -500,9 +512,8 @@ algorithms only), issuer, audience and expiry are verified.  The session
 cookie is `HttpOnly` and `SameSite=Lax`, and **signed, not encrypted**: during
 a login it holds the PKCE verifier and nonce, readable by (only) the user's
 own browser.  Signing out is a `POST` covered by the CSRF guard.  Behind a
-TLS-terminating proxy the CSRF guard accepts the `--public-url` host —
-binding to `0.0.0.0` already accepts any host, still requiring same-origin
-`Origin`/`Referer`.
+TLS-terminating proxy the guard accepts the `--public-url` host; with OIDC
+a wildcard bind never accepts other hosts.
 
 Every request — reads included — must name a host the server serves (the
 same allow-list), so a DNS-rebinding page can't read the editor or the
@@ -512,7 +523,8 @@ Archived invoices: links carry a random 128-bit id, but are not a
 capability — they need the same login as everything else.  Archive files
 are created owner-only (`0600`, in a `0700` directory), their names are
 reduced to `[A-Za-z0-9_-]` and re-checked to stay inside the invoices
-directory, and they are opened without following symlinks.  Deleting and sending are `POST`s
+directory, and they are opened without following symlinks.  Deleting and
+sending are `POST`s
 covered by the CSRF guard.  Recipients and the subject are validated and
 may not contain line breaks or control characters (no header injection).
 

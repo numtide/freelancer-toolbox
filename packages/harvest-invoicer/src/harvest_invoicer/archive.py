@@ -14,6 +14,7 @@ record can point outside the invoices directory.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import os
@@ -44,6 +45,10 @@ _SLUG_MAX = 48
 _NAME_ATTEMPTS = 5
 
 _log = logging.getLogger(__name__)
+
+# Not every platform has O_NOFOLLOW; without it the resolve() check in
+# invoice_path still keeps reads inside the directory.
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 
 def now_iso() -> str:
@@ -105,40 +110,55 @@ def invoice_path(invoices_dir: Path, filename: str) -> Path:
 
 
 def ensure_private_dir(invoices_dir: Path) -> None:
-    """Create the invoices directory owner-only, or tighten it.
+    """Create the invoices directory owner-only (``0700``) if it is missing.
 
-    An existing directory owned by this process's user loses any group or
-    other permissions; one owned by someone else is left alone, with a
-    warning when others can reach it (the deployment then decides).
+    An existing directory is never changed — its owner and mode are the
+    deployment's choice — but one that other users can reach gets a
+    warning in the log.
     """
-    invoices_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    st = invoices_dir.stat()
-    if not st.st_mode & 0o077:
+    if not invoices_dir.exists():
+        invoices_dir.parent.mkdir(parents=True, exist_ok=True)
+        invoices_dir.mkdir(mode=0o700, exist_ok=True)
         return
-    if st.st_uid == os.getuid():
-        invoices_dir.chmod(0o700)
-    else:
+    if invoices_dir.stat().st_mode & 0o077:
         _log.warning(
-            "Invoices directory %s is accessible to other users and not owned "
-            "by this process; restrict it to the service user.",
+            "Invoices directory %s is accessible to other users; restrict it "
+            "to the service user (chmod 700).",
             invoices_dir,
         )
 
 
 def _write_new(path: Path, data: bytes) -> None:
-    """Write *data* to a new, owner-only file at *path*.
+    """Write *data* durably to a new, owner-only file at *path*.
 
     ``O_EXCL`` never overwrites another invoice.  A partial file is
     removed on failure; nothing links to the file before its row exists,
-    so no reader ever sees one half-written.
+    so no reader ever sees one half-written.  The file (and, best effort,
+    its directory entry) is flushed to disk before the row is added.
     """
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
     except BaseException:
         path.unlink(missing_ok=True)
         raise
+    _fsync_dir(path.parent)
+
+
+def _fsync_dir(directory: Path) -> None:
+    """Flush a directory entry to disk, where the platform allows it."""
+    try:
+        dir_fd = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        with contextlib.suppress(OSError):
+            os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
 
 
 def archive_pdf(
@@ -161,7 +181,8 @@ def archive_pdf(
     if (
         newest is not None
         and newest["sha256"] == digest
-        and invoice_file(invoices_dir, newest) is not None
+        # The file on disk must still be that PDF (not lost or altered).
+        and read_invoice(invoices_dir, newest) is not None
     ):
         return newest, True
 
@@ -216,14 +237,21 @@ def invoice_file(invoices_dir: Path, record: dict[str, object]) -> Path | None:
 
 
 def read_invoice(invoices_dir: Path, record: dict[str, object]) -> bytes | None:
-    """The record's PDF bytes, or ``None`` when missing, invalid or a symlink."""
+    """The record's PDF bytes, or ``None`` when they can't be trusted.
+
+    ``None`` when the file is missing, invalid, a symlink, or no longer
+    matches the sha256 recorded when it was archived.
+    """
     try:
         path = invoice_path(invoices_dir, str(record["filename"]))
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW)
     except (ValueError, OSError):
         return None
     with os.fdopen(fd, "rb") as fh:
-        return fh.read()
+        data = fh.read()
+    if hashlib.sha256(data).hexdigest() != record.get("sha256"):
+        return None
+    return data
 
 
 def lookup(db_path: Path, invoice_id: str) -> dict[str, object] | None:
@@ -234,10 +262,17 @@ def lookup(db_path: Path, invoice_id: str) -> dict[str, object] | None:
 
 
 def remove(db_path: Path, invoices_dir: Path, record: dict[str, object]) -> None:
-    """Delete an archived invoice: its row, then its file (if still there)."""
-    delete_invoice(db_path, str(record["id"]))
+    """Delete an archived invoice: its file first, then its row.
+
+    A file that is already gone is fine.  Any other failure to remove it
+    (e.g. permissions) propagates as :class:`OSError` and keeps the row,
+    so no PDF is ever left behind without an entry pointing at it.
+    """
     try:
         path = invoice_path(invoices_dir, str(record["filename"]))
     except ValueError:
-        return
-    path.unlink(missing_ok=True)
+        path = None  # a tampered name: never touch the filesystem
+    if path is not None:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+    delete_invoice(db_path, str(record["id"]))

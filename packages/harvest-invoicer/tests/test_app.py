@@ -2193,7 +2193,12 @@ class _FakeSMTP:
     def noop(self) -> tuple[int, bytes]:
         return (250, b"ok")
 
-    def send_message(self, msg: Any, to_addrs: list[str] | None = None) -> dict:
+    def send_message(
+        self,
+        msg: Any,
+        from_addr: str | None = None,
+        to_addrs: list[str] | None = None,
+    ) -> dict:
         type(self).sent.append((msg, to_addrs))
         return {}  # no recipient refused
 
@@ -3290,11 +3295,23 @@ class TestArchiveHardening:
         assert not path.is_symlink()  # the link itself is removed …
         assert other.read_bytes() == b"%PDF-other"  # … never its target
 
-    def test_existing_dir_tightened(self, tmp_path: Path) -> None:
+    def test_existing_dir_left_alone_with_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An existing directory is the deployment's: warn, never chmod."""
         import stat  # noqa: PLC0415
 
         (tmp_path / "invoices").mkdir(mode=0o755)
         (tmp_path / "invoices").chmod(0o755)
+        with caplog.at_level("WARNING", logger="harvest_invoicer.archive"):
+            _generate(_archive_client(tmp_path))
+        mode = stat.S_IMODE((tmp_path / "invoices").stat().st_mode)
+        assert mode == 0o755
+        assert "accessible to other users" in caplog.text
+
+    def test_new_dir_is_private(self, tmp_path: Path) -> None:
+        import stat  # noqa: PLC0415
+
         _generate(_archive_client(tmp_path))
         mode = stat.S_IMODE((tmp_path / "invoices").stat().st_mode)
         assert mode == 0o700
@@ -3358,3 +3375,218 @@ class TestHealthz:
             assert c.get(path, headers=headers).status_code == 403, path
         # Only GET/HEAD match the endpoint, so a POST is not exempt.
         assert c.post("/healthz", headers=headers).status_code == 403
+
+
+@pytest.mark.usefixtures("_fake_pdf")
+class TestResendFromEditor:
+    """The editor warns before resending a PDF that was already emailed,
+    and every delivery is kept."""
+
+    def _client(self, tmp_path: Path, smtp: SmtpServer) -> FlaskClient:
+        return _archive_client(tmp_path, email_config=smtp.config())
+
+    def _send(self, c: FlaskClient, **form: str):  # noqa: ANN202
+        return c.post("/send", data={"to": "billing@acme.test", "subject": "S", **form})
+
+    def test_modal_warns_when_same_pdf_was_sent(
+        self, tmp_path: Path, smtp_server: SmtpServer
+    ) -> None:
+        c = self._client(tmp_path, smtp_server)
+        assert "hx-confirm" not in c.get("/send/modal").get_data(as_text=True)
+        assert _toast_kind(self._send(c)) == "ok"
+        body = c.get("/send/modal").get_data(as_text=True)
+        assert "Already sent to billing@acme.test" in body
+        assert "hx-confirm=" in body
+        assert 'name="confirm_resend" value="1"' in body
+
+    def test_modal_quiet_after_an_edit(
+        self, tmp_path: Path, smtp_server: SmtpServer
+    ) -> None:
+        c = self._client(tmp_path, smtp_server)
+        self._send(c)
+        c.post(
+            "/lines/update/0",
+            data={"concept": "Changed", "quantity": "40", "unit_price": "120"},
+        )
+        assert "Already sent" not in c.get("/send/modal").get_data(as_text=True)
+
+    def test_unconfirmed_resend_refused(
+        self, tmp_path: Path, smtp_server: SmtpServer
+    ) -> None:
+        c = self._client(tmp_path, smtp_server)
+        self._send(c)
+        resp = self._send(c)
+        assert _toast_kind(resp) == "err"
+        assert "Already sent" in _toast_msg(resp)
+        assert len(smtp_server.received) == 1
+
+    def test_confirmed_resend_keeps_history(
+        self, tmp_path: Path, smtp_server: SmtpServer
+    ) -> None:
+        c = self._client(tmp_path, smtp_server)
+        self._send(c)
+        resp = self._send(c, to="ap@acme.test", confirm_resend="1")
+        assert _toast_kind(resp) == "ok"
+        (record,) = state_db.list_invoices(tmp_path / "state.db")
+        sends = state_db.invoice_sends(tmp_path / "state.db", str(record["id"]))
+        assert [s["sent_to"] for s in sends] == ["billing@acme.test", "ap@acme.test"]
+        assert record["sent_to"] == "ap@acme.test"  # the list shows the last
+        body = c.get("/invoices").get_data(as_text=True)
+        assert "Sent to ap@acme.test" in body
+        assert "sent 2 times" in body
+
+    def test_archived_resend_needs_confirmation_too(
+        self, tmp_path: Path, smtp_server: SmtpServer
+    ) -> None:
+        c = self._client(tmp_path, smtp_server)
+        record = _generate(c)
+        url = f"/invoices/{record['id']}/send"
+        assert _toast_kind(c.post(url, data={"to": "billing@acme.test"})) == "ok"
+        assert _toast_kind(c.post(url, data={"to": "billing@acme.test"})) == "err"
+        resp = c.post(url, data={"to": "billing@acme.test", "confirm_resend": "1"})
+        assert _toast_kind(resp) == "ok"
+        assert len(smtp_server.received) == 2
+
+    def test_multiline_subject_refused_before_archiving(
+        self, tmp_path: Path, smtp_server: SmtpServer
+    ) -> None:
+        c = self._client(tmp_path, smtp_server)
+        resp = self._send(c, subject="Invoice\u2028Bcc: x@evil.test")
+        assert _toast_kind(resp) == "err"
+        assert "single line" in _toast_msg(resp)
+        assert state_db.list_invoices(tmp_path / "state.db") == []
+
+
+class TestSendWithoutArchive:
+    def test_newline_in_number_is_slugged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import smtplib  # noqa: PLC0415
+
+        monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+        monkeypatch.setattr(
+            "harvest_invoicer.app.pdf_from_html", lambda _h, _u=None: b"%PDF-fake"
+        )
+        monkeypatch.delenv("HARVEST_INVOICER_SMTP_HOST", raising=False)
+        _FakeSMTP.sent = []
+        c = _make_app(
+            tmp_path,
+            invoice_number="2026\n06",
+            email_config={"host": "smtp.test", "from_address": "me@jane.test"},
+        ).test_client()
+        resp = c.post("/send", data={"to": "billing@acme.test", "subject": "S"})
+        assert _toast_kind(resp) == "ok", _toast_msg(resp)
+        msg, _ = _FakeSMTP.sent[-1]
+        (att,) = list(msg.iter_attachments())
+        assert att.get_filename() == "invoice-2026-06.pdf"
+
+
+@pytest.mark.usefixtures("_fake_pdf")
+class TestArchiveIntegrity:
+    def test_delete_keeps_row_when_file_cannot_be_removed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        c = _archive_client(tmp_path)
+        record = _generate(c)
+
+        def deny(_self: Path, *_a: object, **_k: object) -> None:
+            msg = "denied"
+            raise PermissionError(13, msg)
+
+        monkeypatch.setattr(Path, "unlink", deny)
+        resp = c.post(f"/invoices/{record['id']}/delete")
+        monkeypatch.undo()
+        assert _toast_kind(resp) == "err"
+        assert resp.headers.get("HX-Reswap") == "none"  # the row stays
+        assert len(state_db.list_invoices(tmp_path / "state.db")) == 1
+
+    def test_tampered_file_not_reused_or_sent(
+        self, tmp_path: Path, smtp_server: SmtpServer
+    ) -> None:
+        c = _archive_client(tmp_path, email_config=smtp_server.config())
+        record = _generate(c)
+        path = tmp_path / "invoices" / str(record["filename"])
+        path.write_bytes(b"%PDF-tampered")
+        resp = c.post(f"/invoices/{record['id']}/send", data={"to": "a@b.test"})
+        assert _toast_kind(resp) == "err"
+        assert "missing" in _toast_msg(resp)
+        assert c.get(f"/invoices/{record['id']}.pdf").status_code == 404
+        again = _generate(c)  # same content: must not reuse the bad file
+        assert again["id"] != record["id"]
+        assert smtp_server.received == []
+
+    def test_delivery_reported_even_if_recording_fails(
+        self,
+        tmp_path: Path,
+        smtp_server: SmtpServer,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        import sqlite3  # noqa: PLC0415
+
+        c = _archive_client(tmp_path, email_config=smtp_server.config())
+        record = _generate(c)
+
+        def broken(*_a: object, **_k: object) -> None:
+            msg = "database is locked"
+            raise sqlite3.OperationalError(msg)
+
+        monkeypatch.setattr("harvest_invoicer.app.mark_invoice_sent", broken)
+        with caplog.at_level("WARNING"):
+            resp = c.post(
+                f"/invoices/{record['id']}/send", data={"to": "billing@acme.test"}
+            )
+        assert _toast_kind(resp) == "ok"
+        assert len(smtp_server.received) == 1
+        assert "recording the delivery failed" in caplog.text
+        assert "billing@acme.test" not in caplog.text
+        assert str(record["id"]) not in caplog.text
+
+    def test_pdf_serves_this_sessions_latest(self, tmp_path: Path) -> None:
+        first = _archive_client(tmp_path)
+        _generate(first)
+        # Another session over the same archive has generated nothing yet.
+        other = _archive_client(tmp_path)
+        assert other.get("/pdf").status_code == 404
+        mine = _generate(other)
+        resp = other.get("/pdf")
+        assert resp.status_code == 200
+        assert str(mine["filename"]) in resp.headers["Content-Disposition"]
+
+
+class TestHostNormalization:
+    @pytest.mark.parametrize(
+        ("configured", "host"),
+        [
+            ("Box.LAN", "box.lan"),
+            ("box.lan", "BOX.lan:8321"),
+            ("box.lan:8321", "box.lan"),
+            ("box.lan.", "box.lan"),
+            ("box.lan", "box.lan.:8321"),
+            ("[fe80::1]", "[fe80::1]:8321"),
+            ("fe80::1", "[FE80::1]"),
+        ],
+    )
+    def test_configured_hosts_match(
+        self, tmp_path: Path, configured: str, host: str
+    ) -> None:
+        c = _make_app(tmp_path, allowed_hosts=frozenset({configured})).test_client()
+        assert c.get("/settings", headers={"Host": host}).status_code == 200
+
+    @pytest.mark.parametrize("host", ["[::1", "[zz]", "box.lan:notaport", "[::1]:x"])
+    def test_malformed_host_is_403_not_500(self, tmp_path: Path, host: str) -> None:
+        # Straight WSGI: werkzeug's test client itself chokes on such Hosts.
+        from werkzeug.test import EnvironBuilder  # noqa: PLC0415
+
+        app = _make_app(tmp_path)
+        environ = EnvironBuilder(path="/settings").get_environ()
+        environ["HTTP_HOST"] = host
+        statuses: list[str] = []
+        body = app.wsgi_app(environ, lambda status, _h: statuses.append(status))
+        b"".join(body)
+        assert statuses == ["403 FORBIDDEN"]
+
+    def test_malformed_origin_rejected(self, tmp_path: Path) -> None:
+        c = _make_app(tmp_path).test_client()
+        resp = c.post("/lines/add", headers={"Origin": "http://[::1"})
+        assert resp.status_code == 403

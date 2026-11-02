@@ -557,8 +557,11 @@ def main() -> None:
     multiple=True,
     metavar="HOST",
     help=(
-        "Extra Host value(s) the CSRF guard accepts (repeatable). Needed when "
-        "binding to 0.0.0.0 and reaching the app via a specific hostname/IP."
+        "Host name(s)/IP(s) the editor answers to, besides loopback and "
+        "--host (repeatable). Every request with another Host header — "
+        "reads included — is refused (DNS-rebinding/CSRF guard). With "
+        "--host 0.0.0.0 and no --allowed-host (and no OIDC) any Host is "
+        "accepted; naming hosts restricts it to them."
     ),
 )
 @click.option("--port", default=_DEFAULT_PORT, show_default=True, type=int)
@@ -730,15 +733,17 @@ def serve(
     if demo and out_path is None:
         out_path = Path(f"invoice-{number}.pdf")
 
-    # CSRF-guard allowlist: any explicit --allowed-host, plus the bind host
-    # itself when it is a concrete address; a wildcard bind (0.0.0.0/::)
-    # accepts any Host via "*" and relies on the same-origin check.
+    # Host-guard allow-list (every request): any explicit --allowed-host,
+    # plus the bind host itself when it is a concrete address; with OIDC
+    # the app adds the --public-url host.  Only a wildcard bind (0.0.0.0/::)
+    # with neither --allowed-host nor OIDC accepts any Host ("*"), relying
+    # on the same-origin check — naming hosts must never widen the guard.
     wildcard_hosts = {"0.0.0.0", "::", ""}  # noqa: S104 — matched, not bound
     allowed = set(allowed_hosts)
-    if host in wildcard_hosts:
-        allowed.add("*")
-    else:
+    if host not in wildcard_hosts:
         allowed.add(host)
+    elif not allowed_hosts and oidc is None:
+        allowed.add("*")
     is_loopback = host in ("127.0.0.1", "localhost", "::1")
 
     from harvest_invoicer.app import create_app  # noqa: PLC0415

@@ -16,12 +16,14 @@ from harvest_invoicer.db import (
     get_email,
     get_invoice,
     get_issuer,
+    invoice_sends,
     latest_invoice,
     mark_invoice_sent,
     save_clients,
     save_draft,
     save_email,
     save_issuer,
+    send_counts,
 )
 from harvest_invoicer.db import list_invoices as state_db_list
 
@@ -210,7 +212,7 @@ def test_v3_database_migrates_to_v4(tmp_path: Path) -> None:
     assert get_issuer(db) == {"name": "Jane"}  # existing data untouched
     assert get_email(db) == {"host": "smtp.test"}
     conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 4
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 5
     conn.close()
     # Re-opening a migrated database is a no-op.
     assert len(state_db_list(db)) == 1
@@ -225,3 +227,41 @@ def test_filenames_are_unique(tmp_path: Path) -> None:
         add_invoice(
             db, _invoice_record("b" * 22, "2026-07-01T10:00:00", filename="x.pdf")
         )
+
+
+def test_v4_database_migrates_to_v5(tmp_path: Path) -> None:
+    """A v4 archive gains the send history, seeded from each invoice's
+    recorded send; later sends append instead of overwriting."""
+    import sqlite3  # noqa: PLC0415
+
+    db = tmp_path / "state.db"
+    add_invoice(db, _invoice_record("a" * 22, "2026-07-01T10:00:00+02:00"))
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        DROP TABLE invoice_sends;
+        UPDATE invoices SET sent_at = '2026-07-02T09:00:00+02:00',
+                            sent_to = 'billing@acme.test';
+        PRAGMA user_version = 4;
+        """
+    )
+    conn.commit()
+    conn.close()
+    assert invoice_sends(db, "a" * 22) == [
+        {"sent_at": "2026-07-02T09:00:00+02:00", "sent_to": "billing@acme.test"}
+    ]
+    mark_invoice_sent(db, "a" * 22, "2026-07-03T09:00:00+02:00", "ap@acme.test")
+    assert [s["sent_to"] for s in invoice_sends(db, "a" * 22)] == [
+        "billing@acme.test",
+        "ap@acme.test",
+    ]
+    assert send_counts(db) == {"a" * 22: 2}
+    assert get_invoice(db, "a" * 22)["sent_to"] == "ap@acme.test"
+    delete_invoice(db, "a" * 22)
+    assert invoice_sends(db, "a" * 22) == []
+
+
+def test_mark_sent_for_unknown_invoice_records_nothing(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    mark_invoice_sent(db, "missing", "2026-07-03T09:00:00+02:00", "x@y.test")
+    assert send_counts(db) == {}

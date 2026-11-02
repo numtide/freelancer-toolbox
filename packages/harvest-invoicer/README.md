@@ -80,6 +80,9 @@ current directory), as before the archive existed.
 > current directory unless `--output` is given — generated PDFs go to the
 > archive.  Scripts that picked up that file should pass
 > `--output invoice.pdf` (or read the archive directory) instead.
+> Kubernetes liveness/readiness probes must use `/healthz`: every other
+> path — `/favicon.ico` included — now answers `403` to a probe, which sends
+> the pod IP as `Host`.
 
 Every PDF that `serve` generates is kept, with its metadata, so earlier
 invoices can be reopened, downloaded, sent or deleted later.
@@ -96,7 +99,8 @@ invoices can be reopened, downloaded, sent or deleted later.
   other users can access it, a warning is logged and tightening it is up
   to you.  PDFs are written `0600` and flushed to disk before they are
   listed.  A PDF that no longer matches its recorded SHA-256 is treated
-  as missing (not served, sent or reused).
+  as missing (not served, sent or reused; the list marks it "altered" and
+  the log names the file).
 - **File names** are readable and unique:
   `<number>_<client>_<random>.pdf`, e.g. `2026-06_Numtide-Sarl_3f9a1c2e.pdf`
   (accents folded, anything but letters, digits and dashes replaced).
@@ -107,7 +111,8 @@ invoices can be reopened, downloaded, sent or deleted later.
   `/invoices/<id>.pdf` (`?download=1` downloads it under its file name).
   With OIDC the links, like every page, require a signed-in, allow-listed
   user.  `/pdf` is a legacy link, kept for old bookmarks: it serves the
-  PDF this editor session generated last (404 until you Generate).
+  PDF this server process generated last — one value shared by every
+  signed-in user, reset on restart (404 until someone Generates).
 
 The **Invoices** page (the archive-box icon in the editor's top bar)
 lists every archived invoice — creation date, number, client, total and
@@ -135,8 +140,9 @@ editor's **Send invoice** action open a send dialog:
   accepted).  If the server refuses some recipients, a warning names
   them; if it refuses all of them, the send fails (even when your own
   copy went through).  Sending again — from the Invoices page, or from
-  the editor when the PDF to send is identical to one already emailed —
-  shows the previous send and asks for confirmation; every send is kept.
+  the editor when the PDF to send is identical to one already emailed
+  (even under an older entry whose file was since lost) — shows the
+  previous send and asks for confirmation; every send is kept.
 
 Without an SMTP host the Send buttons are disabled with a pointer to
 Settings > Email.  The SMTP settings are edited there; each non-secret
@@ -150,7 +156,7 @@ is read **only** from the environment:
 | `HARVEST_INVOICER_SMTP_ENCRYPTION` | `starttls` (default), `ssl` or `none` |
 | `HARVEST_INVOICER_SMTP_USERNAME` | Login user |
 | `HARVEST_INVOICER_SMTP_PASSWORD` | Login password (environment only, never stored) |
-| `HARVEST_INVOICER_SMTP_FROM_ADDRESS` | Sender address (default: the issuer's email) |
+| `HARVEST_INVOICER_SMTP_FROM_ADDRESS` | Sender address (default: the issuer's email); may include a name, `Billing <billing@example.com>` |
 | `HARVEST_INVOICER_SMTP_REPLY_TO` | Reply-To address |
 
 TLS certificates are always verified.  For example, with Proton Mail
@@ -504,7 +510,10 @@ case, port or trailing dot) — for every request, and state-changing
 requests must also come from the same origin.  Binding to `0.0.0.0`
 without `--allowed-host` (and without OIDC) accepts any host, still
 requiring a same-origin `Origin`/`Referer` for changes; naming hosts with
-`--allowed-host` restricts it to those.
+`--allowed-host` restricts it to those (`*` is refused there; IDN names
+may be given in Unicode or punycode).  For `localhost`/`127.0.0.1`/`::1`
+the `Origin` port must match too, so another local dev server cannot
+post to the editor.
 
 With OIDC (see above) every request needs an allow-listed login.  The
 login flow uses PKCE, state and nonce; the ID token's signature (asymmetric

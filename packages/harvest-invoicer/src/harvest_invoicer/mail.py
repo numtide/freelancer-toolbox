@@ -278,11 +278,18 @@ def send_pdf_email(
     subject = check_subject(subject)
 
     settings = _settings(config)
-    from_address = settings.from_address or str(issuer.get("email") or "").strip()
+    # The configured sender may carry a display name ("Jane <jane@x.test>"):
+    # the bare address goes on the envelope, Bcc and self-copy; the name
+    # (unless From name overrides it) on the From header.
+    parsed_name, from_address = parseaddr(
+        settings.from_address or str(issuer.get("email") or "").strip()
+    )
     if not from_address:
         msg = "No sender address — set a From address in Settings > Email."
         raise MailConfigError(msg)
-    from_name = settings.from_name or str(issuer.get("name") or "").strip()
+    from_name = (
+        settings.from_name or parsed_name or str(issuer.get("name") or "").strip()
+    )
 
     email = EmailMessage()
     to_addrs = list(recipients)

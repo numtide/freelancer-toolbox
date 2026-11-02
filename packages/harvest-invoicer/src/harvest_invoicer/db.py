@@ -138,9 +138,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )
     if version < 5:
         # Every delivery of an archived invoice (the invoices row keeps the
-        # latest one in sent_at/sent_to, for the list).
+        # latest one in sent_at/sent_to, for the list).  One transaction,
+        # version bump included: a crash leaves v4 intact, and a rerun never
+        # copies a send twice.
         conn.executescript(
             """
+            BEGIN;
             CREATE TABLE IF NOT EXISTS invoice_sends (
                 id INTEGER PRIMARY KEY,
                 invoice_id TEXT NOT NULL,
@@ -150,9 +153,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS invoice_sends_invoice
                 ON invoice_sends (invoice_id);
             INSERT INTO invoice_sends (invoice_id, sent_at, sent_to)
-                SELECT id, sent_at, sent_to FROM invoices
-                WHERE sent_at IS NOT NULL;
+                SELECT id, sent_at, COALESCE(sent_to, '') FROM invoices
+                WHERE sent_at IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM invoice_sends s WHERE s.invoice_id = invoices.id
+                  );
             PRAGMA user_version = 5;
+            COMMIT;
             """
         )
 
@@ -280,6 +287,23 @@ def latest_invoice(
         row = conn.execute(
             f"{_INVOICE_SELECT} {where} ORDER BY rowid DESC LIMIT 1",
             args,
+        ).fetchone()
+    return _invoice_row(row)
+
+
+def latest_sent_with_content(
+    path: Path | str, number: str, sha256: str
+) -> dict[str, object] | None:
+    """The newest already-sent invoice for *number* with this exact PDF.
+
+    Any such entry counts, not only the newest one for the number: its file
+    may have been lost or altered (and a fresh copy archived since).
+    """
+    with _connect(path) as conn:
+        row = conn.execute(
+            f"{_INVOICE_SELECT} WHERE number = ? AND sha256 = ? "
+            "AND sent_at IS NOT NULL ORDER BY rowid DESC LIMIT 1",
+            (number, sha256),
         ).fetchone()
     return _invoice_row(row)
 

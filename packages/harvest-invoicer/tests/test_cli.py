@@ -753,3 +753,31 @@ class TestWildcardHostGuard:
     def test_help_describes_read_and_write_guard(self) -> None:
         out = CliRunner().invoke(main, ["serve", "--help"]).output
         assert "reads included" in " ".join(out.split())
+
+
+class TestAllowedHostOption:
+    @pytest.fixture(autouse=True)
+    def _never_serve(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Should validation ever regress, serve must still not bind a port
+        or open a browser from the test suite."""
+        import waitress  # noqa: PLC0415
+
+        monkeypatch.setattr(Flask, "run", lambda *_a, **_k: None)
+        monkeypatch.setattr(waitress, "serve", lambda *_a, **_k: None)
+
+    def _invoke(self, value: str):  # noqa: ANN202
+        return CliRunner().invoke(
+            main, ["serve", "--demo", "--no-browser", "--allowed-host", value]
+        )
+
+    @pytest.mark.parametrize("value", ["*", "*:8321", "*.example.com"])
+    def test_wildcard_rejected(self, value: str) -> None:
+        result = self._invoke(value)
+        assert result.exit_code == 2
+        assert "wildcards are not allowed" in result.output
+
+    @pytest.mark.parametrize("value", ["[::1", "box.lan:x", "a@b"])
+    def test_malformed_rejected(self, value: str) -> None:
+        result = self._invoke(value)
+        assert result.exit_code == 2
+        assert "not a valid host" in result.output

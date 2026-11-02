@@ -282,3 +282,37 @@ class TestSender:
         for bad in ("a\nb", "a\u2028b", "a\x85b", "a\x0bb"):
             with pytest.raises(MailConfigError, match="single line"):
                 check_subject(bad)
+
+
+class TestSenderWithDisplayName:
+    """A From address configured with a display name still sends."""
+
+    def _send(self, smtp: SmtpServer, **cfg: object) -> None:
+        send_pdf_email(
+            b"%PDF",
+            "x.pdf",
+            {"name": "Issuer Name"},
+            smtp.config(**cfg),
+            to="a@x.test",
+            subject="S",
+            message="M",
+            copy_self=True,
+        )
+
+    def test_bare_address_on_envelope_and_bcc(self, smtp_server: SmtpServer) -> None:
+        self._send(smtp_server, from_address="Jane Doe <jane@x.test>")
+        (delivery,) = smtp_server.received
+        assert delivery.mail_from == "jane@x.test"
+        assert delivery.rcpt_tos == ["a@x.test", "jane@x.test"]
+        (mailbox,) = delivery.message["From"].addresses
+        assert mailbox.addr_spec == "jane@x.test"
+        assert mailbox.display_name == "Jane Doe"  # the address's own name
+
+    def test_from_name_setting_wins(self, smtp_server: SmtpServer) -> None:
+        self._send(
+            smtp_server, from_address="Jane Doe <jane@x.test>", from_name="Billing"
+        )
+        (delivery,) = smtp_server.received
+        assert delivery.mail_from == "jane@x.test"
+        (mailbox,) = delivery.message["From"].addresses
+        assert mailbox.display_name == "Billing"

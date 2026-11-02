@@ -236,21 +236,45 @@ def invoice_file(invoices_dir: Path, record: dict[str, object]) -> Path | None:
     return path if path.is_file() and not path.is_symlink() else None
 
 
-def read_invoice(invoices_dir: Path, record: dict[str, object]) -> bytes | None:
-    """The record's PDF bytes, or ``None`` when they can't be trusted.
+def _verified_bytes(
+    invoices_dir: Path, record: dict[str, object]
+) -> tuple[bytes | None, str]:
+    """``(bytes, "ok")``, or ``(None, "missing" | "damaged")``.
 
-    ``None`` when the file is missing, invalid, a symlink, or no longer
-    matches the sha256 recorded when it was archived.
+    "damaged": the file exists but no longer matches the sha256 recorded
+    when it was archived.  Invalid names and symlinks count as missing.
     """
     try:
         path = invoice_path(invoices_dir, str(record["filename"]))
         fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW)
     except (ValueError, OSError):
-        return None
+        return None, "missing"
     with os.fdopen(fd, "rb") as fh:
         data = fh.read()
     if hashlib.sha256(data).hexdigest() != record.get("sha256"):
-        return None
+        return None, "damaged"
+    return data, "ok"
+
+
+def file_state(invoices_dir: Path, record: dict[str, object]) -> str:
+    """Whether the record's PDF is usable: "ok", "missing" or "damaged"."""
+    return _verified_bytes(invoices_dir, record)[1]
+
+
+def read_invoice(invoices_dir: Path, record: dict[str, object]) -> bytes | None:
+    """The record's PDF bytes, or ``None`` when they can't be trusted.
+
+    ``None`` when the file is missing, invalid, a symlink, or no longer
+    matches the sha256 recorded when it was archived (logged: only the
+    file name, nothing else about the invoice).
+    """
+    data, state = _verified_bytes(invoices_dir, record)
+    if state == "damaged":
+        _log.warning(
+            "Archived invoice file %s does not match its recorded checksum; "
+            "treating it as missing.",
+            record.get("filename"),
+        )
     return data
 
 

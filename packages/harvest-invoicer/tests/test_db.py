@@ -18,6 +18,7 @@ from harvest_invoicer.db import (
     get_issuer,
     invoice_sends,
     latest_invoice,
+    latest_sent_with_content,
     mark_invoice_sent,
     save_clients,
     save_draft,
@@ -265,3 +266,81 @@ def test_mark_sent_for_unknown_invoice_records_nothing(tmp_path: Path) -> None:
     db = tmp_path / "state.db"
     mark_invoice_sent(db, "missing", "2026-07-03T09:00:00+02:00", "x@y.test")
     assert send_counts(db) == {}
+
+
+def _as_v4(db: Path, statements: str) -> None:
+    """Downgrade *db* to schema v4 (no send history) and apply *statements*."""
+    import sqlite3  # noqa: PLC0415
+
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        "DROP TABLE invoice_sends;\n" + statements + "\nPRAGMA user_version = 4;"
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_v5_migration_tolerates_null_recipients(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    add_invoice(db, _invoice_record("a" * 22, "2026-07-01T10:00:00+02:00"))
+    _as_v4(
+        db,
+        "UPDATE invoices SET sent_at = '2026-07-02T09:00:00+02:00', sent_to = NULL;",
+    )
+    assert invoice_sends(db, "a" * 22) == [
+        {"sent_at": "2026-07-02T09:00:00+02:00", "sent_to": ""}
+    ]
+
+
+def test_v5_migration_never_duplicates_history(tmp_path: Path) -> None:
+    """A rerun over history that already exists copies nothing twice."""
+    import sqlite3  # noqa: PLC0415
+
+    db = tmp_path / "state.db"
+    add_invoice(db, _invoice_record("a" * 22, "2026-07-01T10:00:00+02:00"))
+    mark_invoice_sent(db, "a" * 22, "2026-07-02T09:00:00+02:00", "x@acme.test")
+    conn = sqlite3.connect(db)
+    conn.execute("PRAGMA user_version = 4")
+    conn.commit()
+    conn.close()
+    assert len(invoice_sends(db, "a" * 22)) == 1
+    conn = sqlite3.connect(db)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+    conn.close()
+
+
+def test_v5_migration_is_atomic(tmp_path: Path) -> None:
+    """A failing step rolls back the whole migration, version included."""
+    import sqlite3  # noqa: PLC0415
+
+    db = tmp_path / "state.db"
+    add_invoice(db, _invoice_record("a" * 22, "2026-07-01T10:00:00+02:00"))
+    # A v4 database whose invoices row would break the copy (NOT NULL
+    # sent_at in history vs. a trigger that aborts the insert).
+    _as_v4(
+        db,
+        "UPDATE invoices SET sent_at = '2026-07-02T09:00:00+02:00';\n"
+        "CREATE TABLE invoice_sends (id INTEGER PRIMARY KEY, invoice_id TEXT "
+        "NOT NULL, sent_at TEXT NOT NULL, sent_to TEXT NOT NULL);\n"
+        "CREATE TRIGGER boom BEFORE INSERT ON invoice_sends "
+        "BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="boom"):
+        get_invoice(db, "a" * 22)
+    conn = sqlite3.connect(db)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert conn.execute("SELECT COUNT(*) FROM invoice_sends").fetchone()[0] == 0
+    conn.close()
+
+
+def test_latest_sent_with_content(tmp_path: Path) -> None:
+    db = tmp_path / "state.db"
+    add_invoice(db, _invoice_record("a" * 22, "t1", sha256="1" * 64))
+    add_invoice(db, _invoice_record("b" * 22, "t2", sha256="1" * 64))
+    assert latest_sent_with_content(db, "2026-06", "1" * 64) is None
+    mark_invoice_sent(db, "a" * 22, "2026-07-02T09:00:00+02:00", "x@acme.test")
+    found = latest_sent_with_content(db, "2026-06", "1" * 64)
+    assert found is not None
+    assert found["id"] == "a" * 22  # an older entry counts too
+    assert latest_sent_with_content(db, "2026-06", "2" * 64) is None
+    assert latest_sent_with_content(db, "2026-07", "1" * 64) is None

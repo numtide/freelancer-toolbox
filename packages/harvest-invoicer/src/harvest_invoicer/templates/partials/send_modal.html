@@ -39,7 +39,7 @@
           <textarea name="message" rows="7">{{ email_message }}</textarea>
         </div>
         <label class="chk-label light" style="margin-bottom:12px;">
-          <input type="checkbox" name="copy_self" checked>
+          <input type="checkbox" name="copy_self"{% if copy_self %} checked{% endif %}>
           {{ tr('send_copy_self') }}{% if email_from %} <span class="modal-muted">({{ email_from }})</span>{% endif %}
         </label>
         <p class="modal-info">

@@ -1520,19 +1520,16 @@ class TestReviewPolish:
         assert b"Net -" not in resp.data
         assert b"in -" not in resp.data
 
-    def test_number_shown_once_and_crumb_follows_edits(
-        self, client: FlaskClient
-    ) -> None:
-        """The details card must not repeat the Number input's value; the
-        header crumb is the single display and follows meta edits."""
+    def test_number_not_in_header(self, client: FlaskClient) -> None:
+        """The number shows only in the Number input, not in the header."""
         page = client.get("/").data
         assert b"inv-no-head" not in page  # old duplicate label is gone
-        # Number renders as the crumb and as the input value, nothing else.
-        assert page.count(b"Invoice 2026-06") == 1
-        assert b'id="inv-no-crumb"' in page
+        assert b"inv-no-crumb" not in page
+        assert b"Invoice 2026-06" not in page
+        assert b'value="2026-06"' in page
         resp = client.post("/meta/update", data={"number": "INV-99"})
-        assert b'id="inv-no-crumb"' in resp.data
-        assert b"/ Invoice INV-99" in resp.data
+        assert b"inv-no-crumb" not in resp.data
+        assert b'value="INV-99"' in resp.data
 
 
 class TestMergeDuplicates:
@@ -3415,9 +3412,19 @@ class TestResendFromEditor:
     ) -> None:
         c = self._client(tmp_path, smtp_server)
         self._send(c)
-        resp = self._send(c)
-        assert _toast_kind(resp) == "err"
-        assert "Already sent" in _toast_msg(resp)
+        resp = self._send(c, to="ap@acme.test", subject="Kept", message="Mine")
+        # A refreshed modal (not a dead end): the warning, the confirm field,
+        # and what the user had typed.
+        assert _toast_kind(resp) == "warn"
+        assert resp.headers.get("HX-Reswap") is None
+        body = resp.get_data(as_text=True)
+        assert "Already sent to billing@acme.test" in body
+        assert 'name="confirm_resend" value="1"' in body
+        assert "hx-confirm=" in body
+        assert 'value="ap@acme.test"' in body
+        assert 'value="Kept"' in body
+        assert ">Mine</textarea>" in body
+        assert 'hx-post="/send"' in body
         assert len(smtp_server.received) == 1
 
     def test_confirmed_resend_keeps_history(
@@ -3442,7 +3449,9 @@ class TestResendFromEditor:
         record = _generate(c)
         url = f"/invoices/{record['id']}/send"
         assert _toast_kind(c.post(url, data={"to": "billing@acme.test"})) == "ok"
-        assert _toast_kind(c.post(url, data={"to": "billing@acme.test"})) == "err"
+        refused = c.post(url, data={"to": "billing@acme.test"})
+        assert _toast_kind(refused) == "warn"
+        assert f'hx-post="{url}"' in refused.get_data(as_text=True)
         resp = c.post(url, data={"to": "billing@acme.test", "confirm_resend": "1"})
         assert _toast_kind(resp) == "ok"
         assert len(smtp_server.received) == 2
@@ -3590,3 +3599,201 @@ class TestHostNormalization:
         c = _make_app(tmp_path).test_client()
         resp = c.post("/lines/add", headers={"Origin": "http://[::1"})
         assert resp.status_code == 403
+
+
+def _wsgi_status(app: Any, host: str, method: str = "GET", **headers: str) -> str:
+    """Call the WSGI app directly (werkzeug's test client rejects bad Hosts)."""
+    from werkzeug.test import EnvironBuilder  # noqa: PLC0415
+
+    environ = EnvironBuilder(path="/settings", method=method).get_environ()
+    environ["HTTP_HOST"] = host
+    for name, value in headers.items():
+        environ["HTTP_" + name.upper()] = value
+    statuses: list[str] = []
+    b"".join(app.wsgi_app(environ, lambda status, _h: statuses.append(status)))
+    return statuses[0]
+
+
+class TestHostGuardEdges:
+    def test_malformed_host_refused_in_wildcard_mode(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, allowed_hosts=frozenset({"*"}))
+        assert _wsgi_status(app, "[::1") == "403 FORBIDDEN"
+        assert _wsgi_status(app, "[::1", "POST", origin="null") == "403 FORBIDDEN"
+        assert _wsgi_status(app, "anything.test") == "200 OK"
+
+    @pytest.mark.parametrize("host", ["user@localhost", "evil.test@127.0.0.1:8321"])
+    def test_userinfo_in_host_refused(self, tmp_path: Path, host: str) -> None:
+        assert _wsgi_status(_make_app(tmp_path), host) == "403 FORBIDDEN"
+
+    def test_malformed_allowed_host_matches_nothing(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, allowed_hosts=frozenset({"[::1", "box.lan:x"}))
+        for host in ("[::1", "[zz]", "box.lan:x", "box.lan"):
+            assert _wsgi_status(app, host) == "403 FORBIDDEN", host
+
+    def test_uppercase_bare_ipv6_allowed_host(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, allowed_hosts=frozenset({"FE80::ABCD"}))
+        assert _wsgi_status(app, "[fe80::abcd]:8321") == "200 OK"
+
+    def test_idn_allowed_host_matches_punycode(self, tmp_path: Path) -> None:
+        app = _make_app(tmp_path, allowed_hosts=frozenset({"bücher.example"}))
+        assert _wsgi_status(app, "xn--bcher-kva.example") == "200 OK"
+
+    def test_loopback_origin_must_match_port(self, tmp_path: Path) -> None:
+        c = _make_app(tmp_path).test_client()
+        base = "http://127.0.0.1:8321"
+        other_app = c.post(
+            "/lines/add", base_url=base, headers={"Origin": "http://localhost:5173"}
+        )
+        assert other_app.status_code == 403
+        same = c.post(
+            "/lines/add", base_url=base, headers={"Origin": "http://localhost:8321"}
+        )
+        assert same.status_code == 200
+        exact = c.post("/lines/add", base_url=base, headers={"Origin": base})
+        assert exact.status_code == 200
+        referer = c.post(
+            "/lines/add",
+            base_url=base,
+            headers={"Referer": "http://127.0.0.1:9999/x"},
+        )
+        assert referer.status_code == 403
+
+
+@pytest.mark.usefixtures("_fake_pdf")
+class TestDamagedArchive:
+    """A sent invoice whose file was lost or altered is never silently
+    replaced: resends still need confirmation, and the list shows it."""
+
+    def _client(self, tmp_path: Path, smtp: SmtpServer) -> FlaskClient:
+        return _archive_client(tmp_path, email_config=smtp.config())
+
+    def test_resend_after_tamper_needs_confirmation(
+        self,
+        tmp_path: Path,
+        smtp_server: SmtpServer,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        c = self._client(tmp_path, smtp_server)
+        c.post("/send", data={"to": "billing@acme.test", "subject": "S"})
+        (sent,) = state_db.list_invoices(tmp_path / "state.db")
+        (tmp_path / "invoices" / str(sent["filename"])).write_bytes(b"%PDF-evil")
+        body = c.get("/send/modal").get_data(as_text=True)
+        assert "Already sent to billing@acme.test" in body
+        with caplog.at_level("WARNING", logger="harvest_invoicer.archive"):
+            resp = c.post("/send", data={"to": "billing@acme.test", "subject": "S"})
+        assert _toast_kind(resp) == "warn"  # the confirm dialog again
+        # Reading the altered file for reuse logs its name, nothing else.
+        assert str(sent["filename"]) in caplog.text
+        assert "billing@acme.test" not in caplog.text
+        assert len(smtp_server.received) == 1
+        resp = c.post(
+            "/send",
+            data={"to": "billing@acme.test", "subject": "S", "confirm_resend": "1"},
+        )
+        assert _toast_kind(resp) == "ok"
+        assert len(smtp_server.received) == 2
+
+    def test_list_marks_missing_and_damaged(
+        self, tmp_path: Path, smtp_server: SmtpServer
+    ) -> None:
+        c = self._client(tmp_path, smtp_server)
+        first = _generate(c)
+        c.post(
+            "/lines/update/0",
+            data={"concept": "Changed", "quantity": "40", "unit_price": "120"},
+        )
+        second = _generate(c)
+        (tmp_path / "invoices" / str(first["filename"])).unlink()
+        (tmp_path / "invoices" / str(second["filename"])).write_bytes(b"%PDF-x")
+        body = c.get("/invoices").get_data(as_text=True)
+        assert "The archived PDF file is missing." in body
+        assert "was altered" in body
+        for record in (first, second):
+            assert f'href="/invoices/{record["id"]}.pdf"' not in body
+            assert f'hx-get="/invoices/{record["id"]}/send"' not in body
+        resp = c.get(f"/invoices/{second['id']}/send")
+        assert _toast_kind(resp) == "err"
+        assert "altered" in _toast_msg(resp)
+
+    def test_older_sent_copy_triggers_confirmation(
+        self, tmp_path: Path, smtp_server: SmtpServer
+    ) -> None:
+        """Sending an archived duplicate of a PDF sent under another entry."""
+        c = self._client(tmp_path, smtp_server)
+        sent = _generate(c)
+        url = f"/invoices/{sent['id']}/send"
+        assert _toast_kind(c.post(url, data={"to": "billing@acme.test"})) == "ok"
+        (tmp_path / "invoices" / str(sent["filename"])).unlink()
+        fresh = _generate(c)  # the lost file: a new entry, never sent itself
+        assert fresh["id"] != sent["id"]
+        body = c.get(f"/invoices/{fresh['id']}/send").get_data(as_text=True)
+        assert "Already sent to billing@acme.test" in body
+        resp = c.post(f"/invoices/{fresh['id']}/send", data={"to": "a@b.test"})
+        assert _toast_kind(resp) == "warn"
+        assert len(smtp_server.received) == 1
+
+
+@pytest.mark.usefixtures("_fake_pdf")
+class TestSecondReviewFixes:
+    def test_delete_db_failure_is_a_toast(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import sqlite3  # noqa: PLC0415
+
+        c = _archive_client(tmp_path)
+        record = _generate(c)
+
+        def broken(*_a: object, **_k: object) -> None:
+            msg = "database is locked"
+            raise sqlite3.OperationalError(msg)
+
+        monkeypatch.setattr("harvest_invoicer.archive.delete_invoice", broken)
+        resp = c.post(f"/invoices/{record['id']}/delete")
+        assert resp.status_code == 200
+        assert _toast_kind(resp) == "err"
+        assert resp.headers.get("HX-Reswap") == "none"
+
+    def test_send_modal_uses_one_snapshot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Settings saved while the modal renders its PDF don't mix in."""
+        import threading  # noqa: PLC0415
+
+        app = _archive_app(tmp_path, email_config={"host": "smtp.test"})
+        other = app.test_client()
+
+        def fake_pdf(html: str, _utd: Path | None = None) -> bytes:
+            # Another tab saves a new From address mid-render; it must not
+            # block on the state lock (render runs outside it) either.
+            t = threading.Thread(
+                target=other.post,
+                args=("/settings/email",),
+                kwargs={"data": {"host": "smtp.test", "from_address": "new@x.test"}},
+            )
+            t.start()
+            t.join(timeout=10)
+            assert not t.is_alive()
+            return b"%PDF-" + html.encode()[:8]
+
+        monkeypatch.setattr("harvest_invoicer.app.pdf_from_html", fake_pdf)
+        body = app.test_client().get("/send/modal").get_data(as_text=True)
+        assert "(jane@example.com)" in body  # the snapshot's sender
+        assert "new@x.test" not in body
+
+    def test_send_modal_render_failure_is_logged_at_debug(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        def boom(*_a: object, **_k: object) -> bytes:
+            msg = "weasyprint exploded"
+            raise RuntimeError(msg)
+
+        monkeypatch.setattr("harvest_invoicer.app.pdf_from_html", boom)
+        c = _archive_client(tmp_path, email_config={"host": "smtp.test"})
+        with caplog.at_level("DEBUG"):
+            resp = c.get("/send/modal")
+        assert resp.status_code == 200
+        assert "Resend check skipped" in caplog.text
+        assert "weasyprint exploded" in caplog.text

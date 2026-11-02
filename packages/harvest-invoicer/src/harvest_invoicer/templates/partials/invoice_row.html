@@ -26,7 +26,8 @@
     <button type="button" class="btn-orange-sm" disabled title="{{ tr('smtp_disabled') }}">{{ tr('send') }}</button>
     {% endif %}
     {% else %}
-    <span class="inv-missing">{{ tr('file_missing') }}</span>
+    {# Missing, or altered since it was archived: no links that would 404. #}
+    <span class="inv-missing">{{ tr('file_' + inv.file_state) }}</span>
     {% endif %}
     {% set confirm = tr('confirm_delete').format(number=inv.number, file=inv.filename) %}
     {% if inv.sent %}{% set confirm = confirm ~ ' ' ~ tr('confirm_delete_sent').format(to=inv.sent_to) %}{% endif %}

@@ -498,6 +498,30 @@ def _period_options[F: Callable[..., None]](cmd: F) -> F:
     return start_option(end_option(cmd))
 
 
+def _check_allowed_hosts(
+    _ctx: click.Context, _param: click.Parameter, values: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Reject --allowed-host values the Host guard would never match.
+
+    A wildcard comes only from binding to 0.0.0.0/:: (without
+    --allowed-host); "*" here would silently disable the guard.
+    """
+    from harvest_invoicer.app import host_key  # noqa: PLC0415
+
+    for value in values:
+        key = host_key(value)
+        if key == "*" or value.strip().startswith("*"):
+            msg = (
+                f"{value!r}: wildcards are not allowed; bind to 0.0.0.0 without "
+                "--allowed-host to accept any host."
+            )
+            raise click.BadParameter(msg)
+        if not key:
+            msg = f"{value!r} is not a valid host name or address."
+            raise click.BadParameter(msg)
+    return values
+
+
 @click.group()
 def main() -> None:
     """harvest-invoicer: fetch Harvest time data and generate invoice PDFs."""
@@ -526,7 +550,19 @@ def main() -> None:
     "output_path",
     default=None,
     type=click.Path(),
-    help="PDF output path (default: invoice-<number>.pdf).",
+    help=(
+        "Also write each generated PDF to this path (it is always archived "
+        "in --invoices-dir). With --demo: the only output, default "
+        "invoice-<number>.pdf."
+    ),
+)
+@click.option(
+    "--invoices-dir",
+    "invoices_dir",
+    envvar="HARVEST_INVOICER_INVOICES_DIR",
+    default=None,
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Invoice archive directory (default: invoices/ next to the --db file).",
 )
 @click.option(
     "--host",
@@ -544,9 +580,14 @@ def main() -> None:
     "allowed_hosts",
     multiple=True,
     metavar="HOST",
+    callback=_check_allowed_hosts,
     help=(
-        "Extra Host value(s) the CSRF guard accepts (repeatable). Needed when "
-        "binding to 0.0.0.0 and reaching the app via a specific hostname/IP."
+        "Host name(s)/IP(s) the editor answers to, besides loopback and "
+        "--host (repeatable). Every request with another Host header — "
+        "reads included — is refused (DNS-rebinding/CSRF guard). With "
+        "--host 0.0.0.0 and no --allowed-host (and no OIDC) any Host is "
+        "accepted; naming hosts restricts it to them. IDN names may be given "
+        "as Unicode or punycode."
     ),
 )
 @click.option("--port", default=_DEFAULT_PORT, show_default=True, type=int)
@@ -598,6 +639,7 @@ def serve(
     db_path: Path | None,
     templates_dir: Path | None,
     output_path: str | None,
+    invoices_dir: Path | None,
     host: str,
     allowed_hosts: tuple[str, ...],
     port: int,
@@ -711,17 +753,23 @@ def serve(
         number_override=None,
         number_template=str(issuer.get("number_template") or ""),
     )
-    out_path = Path(output_path or f"invoice-{number}.pdf")
+    # Generated PDFs are archived next to the state DB; --output adds a copy.
+    # Demo mode has no DB to archive into, so it keeps the single file.
+    out_path = Path(output_path) if output_path else None
+    if demo and out_path is None:
+        out_path = Path(f"invoice-{number}.pdf")
 
-    # CSRF-guard allowlist: any explicit --allowed-host, plus the bind host
-    # itself when it is a concrete address; a wildcard bind (0.0.0.0/::)
-    # accepts any Host via "*" and relies on the same-origin check.
+    # Host-guard allow-list (every request): any explicit --allowed-host,
+    # plus the bind host itself when it is a concrete address; with OIDC
+    # the app adds the --public-url host.  Only a wildcard bind (0.0.0.0/::)
+    # with neither --allowed-host nor OIDC accepts any Host ("*"), relying
+    # on the same-origin check — naming hosts must never widen the guard.
     wildcard_hosts = {"0.0.0.0", "::", ""}  # noqa: S104 — matched, not bound
     allowed = set(allowed_hosts)
-    if host in wildcard_hosts:
-        allowed.add("*")
-    else:
+    if host not in wildcard_hosts:
         allowed.add(host)
+    elif not allowed_hosts and oidc is None:
+        allowed.add("*")
     is_loopback = host in ("127.0.0.1", "localhost", "::1")
 
     from harvest_invoicer.app import create_app  # noqa: PLC0415
@@ -749,6 +797,7 @@ def serve(
         email_config=email_config,
         oidc=oidc,
         trusted_proxies=trusted_proxies,
+        invoices_dir=invoices_dir,
     )
 
     # A concrete bind host is browsable directly; a wildcard bind is reached

@@ -16,16 +16,19 @@
 </head>
 
 <body>
+  {# Missing optional fields render empty instead of failing the render
+     (the editor also refuses to render without issuer/client names). #}
+  {% set bank = issuer.bank | default({}) %}
 
   <header class="invoice-header">
     <div class="sender">
-      <h1>{{ issuer.name }}</h1>
-      <p>{{ issuer.address_line1 }}</p>
-      <p>{{ issuer.address_line2 }}</p>
-      <p>{{ issuer.country }}</p>
-      <p><span class="muted">{{ issuer.tax_id_label | tax_label(lang) }}</span> {{ issuer.tax_id }}</p>
-      <p><span class="muted">{{ t('tel') }}</span> {{ issuer.phone }}</p>
-      <p><span class="muted">{{ t('email') }}</span> {{ issuer.email }}</p>
+      <h1>{{ issuer.name | default('') }}</h1>
+      <p>{{ issuer.address_line1 | default('') }}</p>
+      <p>{{ issuer.address_line2 | default('') }}</p>
+      <p>{{ issuer.country | default('') }}</p>
+      <p><span class="muted">{{ issuer.tax_id_label | default('') | tax_label(lang) }}</span> {{ issuer.tax_id | default('') }}</p>
+      <p><span class="muted">{{ t('tel') }}</span> {{ issuer.phone | default('') }}</p>
+      <p><span class="muted">{{ t('email') }}</span> {{ issuer.email | default('') }}</p>
     </div>
     <div class="meta">
       <h2>{{ t('invoice') }}</h2>
@@ -56,11 +59,11 @@
 
   <section class="client-block">
     <p class="section-heading">{{ t('bill_to') }}</p>
-    <p class="client-name">{{ client.name }}</p>
-    <p>{{ client.address_line1 }}</p>
-    <p>{{ client.address_line2 }}</p>
-    <p>{{ client.country }}</p>
-    <p><span class="muted">{{ client.tax_id_label | tax_label(lang) }}</span> {{ client.tax_id }}</p>
+    <p class="client-name">{{ client.name | default('') }}</p>
+    <p>{{ client.address_line1 | default('') }}</p>
+    <p>{{ client.address_line2 | default('') }}</p>
+    <p>{{ client.country | default('') }}</p>
+    <p><span class="muted">{{ client.tax_id_label | default('') | tax_label(lang) }}</span> {{ client.tax_id | default('') }}</p>
   </section>
 
   <table class="items">
@@ -123,15 +126,15 @@
       </tr>
       <tr>
         <td class="label">{{ t('iban') }}</td>
-        <td>{{ issuer.bank.iban }}</td>
+        <td>{{ bank.iban | default('') }}</td>
       </tr>
       <tr>
         <td class="label">{{ t('bic') }}</td>
-        <td>{{ issuer.bank.bic }}</td>
+        <td>{{ bank.bic | default('') }}</td>
       </tr>
       <tr>
         <td class="label">{{ t('account_holder') }}</td>
-        <td>{{ issuer.name }}</td>
+        <td>{{ issuer.name | default('') }}</td>
       </tr>
       <tr>
         <td class="label">{{ t('reference') }}</td>

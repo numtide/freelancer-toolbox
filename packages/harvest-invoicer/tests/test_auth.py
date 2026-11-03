@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from flask import Flask, jsonify, request
+from harvest_invoicer import db as state_db
 from harvest_invoicer.app import create_app
 from harvest_invoicer.auth import safe_next
 from harvest_invoicer.config import OidcSettings
@@ -312,11 +313,77 @@ class TestGuard:
         assert client.get("/static/app.css").status_code == 200
         assert client.get("/favicon.ico").status_code == 200
 
+    def test_healthz_needs_no_session(self, client: FlaskClient) -> None:
+        resp = client.get("/healthz", headers={"Host": "10.42.0.17:8321"})
+        assert resp.status_code == 200
+        assert resp.data == b"ok"
+        assert "Set-Cookie" not in resp.headers  # no session started
+        # The exemption is that one endpoint, not a path prefix.
+        for path in ("/healthz/", "/healthz/x", "/healthzx"):
+            assert client.get(path).status_code in (302, 404), path
+        assert client.get("/").status_code == 302
+
     def test_quit_disabled_on_server(
         self, client: FlaskClient, provider: Provider
     ) -> None:
         _login(client, provider)
         assert client.post("/quit").status_code == 404
+
+
+class TestArchiveGuarded:
+    """Archived invoices (links, list, send, delete) need a login too."""
+
+    def _app_with_invoice(
+        self, tmp_path: Path, provider: Provider, monkeypatch: pytest.MonkeyPatch
+    ) -> tuple[Flask, str]:
+        monkeypatch.setattr(
+            "harvest_invoicer.app.pdf_from_html", lambda _h, _u=None: b"%PDF-fake"
+        )
+        app = create_app(
+            lines=[InvoiceLine(concept="Backend", unit_price=100.0, quantity=1.0)],
+            issuer={"name": "Jane Doe Consulting", "bank": {"iban": "", "bic": ""}},
+            client={"name": "Acme"},
+            invoice_number="2026-06",
+            output_path=None,
+            db_path=tmp_path / "state.db",
+            oidc=_settings(provider),
+        )
+        app.config["TESTING"] = True
+        with app.test_client() as c:
+            _login(c, provider)
+            assert c.post("/render").status_code == 200
+        record = state_db.latest_invoice(tmp_path / "state.db")
+        assert record is not None
+        return app, str(record["id"])
+
+    def test_links_require_login(
+        self, tmp_path: Path, provider: Provider, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        app, invoice_id = self._app_with_invoice(tmp_path, provider, monkeypatch)
+        anon = app.test_client()
+        for path in (
+            f"/invoices/{invoice_id}.pdf",
+            f"/invoices/{invoice_id}.pdf?download=1",
+            "/invoices",
+            f"/invoices/{invoice_id}/send",
+            "/pdf",
+        ):
+            resp = anon.get(path)
+            assert resp.status_code == 302, path
+            assert urlsplit(resp.headers["Location"]).path == "/login"
+        for path in (f"/invoices/{invoice_id}/send", f"/invoices/{invoice_id}/delete"):
+            assert anon.post(path).status_code == 401, path
+        assert state_db.latest_invoice(tmp_path / "state.db") is not None
+
+    def test_signed_in_user_gets_the_pdf(
+        self, tmp_path: Path, provider: Provider, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        app, invoice_id = self._app_with_invoice(tmp_path, provider, monkeypatch)
+        with app.test_client() as c:
+            _login(c, provider)
+            resp = c.get(f"/invoices/{invoice_id}.pdf")
+        assert resp.status_code == 200
+        assert resp.data == b"%PDF-fake"
 
 
 class TestLogin:
@@ -688,13 +755,25 @@ class TestProxy:
     def test_forwarded_proto_honored(self, tmp_path: Path, provider: Provider) -> None:
         app = _make_app(tmp_path, _settings(provider), trusted_proxies=1)
         with app.test_client() as c:
-            resp = c.get("/login", headers=_FORWARDED)
+            # The proxy forwards the public host (localhost in these tests).
+            headers = {**_FORWARDED, "X-Forwarded-Host": "localhost"}
+            resp = c.get("/login", headers=headers)
             # The request arrived over https at the proxy: cookie is Secure.
             assert "Secure" in resp.headers["Set-Cookie"]
             # The redirect URI comes from --public-url only, never from
             # (forwarded) request headers.
             params = _authorize_params(resp)
             assert params["redirect_uri"] == "http://localhost/oidc/callback"
+
+    def test_forwarded_foreign_host_rejected(
+        self, tmp_path: Path, provider: Provider
+    ) -> None:
+        """A forwarded Host other than the public URL's is refused, reads
+        included (DNS rebinding through the proxy)."""
+        app = _make_app(tmp_path, _settings(provider), trusted_proxies=1)
+        with app.test_client() as c:
+            assert c.get("/login", headers=_FORWARDED).status_code == 403
+            assert c.get("/", headers=_FORWARDED).status_code == 403
 
     def test_forwarded_headers_ignored_without_trusted_proxy(
         self, tmp_path: Path, provider: Provider

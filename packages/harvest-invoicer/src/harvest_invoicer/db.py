@@ -21,7 +21,27 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
+
+# Columns of an archived invoice, in table order (see :func:`_migrate`).
+INVOICE_COLUMNS = (
+    "id",
+    "number",
+    "client_key",
+    "client_name",
+    "period_start",
+    "period_end",
+    "issue_date",
+    "due_date",
+    "total",
+    "currency",
+    "language",
+    "filename",
+    "sha256",
+    "created_at",
+    "sent_at",
+    "sent_to",
+)
 
 
 def default_db_path() -> Path:
@@ -85,6 +105,61 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 data TEXT NOT NULL
             );
             PRAGMA user_version = 3;
+            """
+        )
+    if version < 4:
+        # The invoice archive: one row per generated PDF (the file itself
+        # lives in the invoices directory, see archive.py).  ``id`` is the
+        # unguessable token in the invoice's link; dates are ISO strings.
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS invoices (
+                id TEXT PRIMARY KEY,
+                number TEXT NOT NULL,
+                client_key TEXT,
+                client_name TEXT NOT NULL DEFAULT '',
+                period_start TEXT,
+                period_end TEXT,
+                issue_date TEXT,
+                due_date TEXT,
+                total REAL NOT NULL,
+                currency TEXT NOT NULL,
+                language TEXT NOT NULL DEFAULT 'en',
+                filename TEXT NOT NULL UNIQUE,
+                sha256 TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                sent_at TEXT,
+                sent_to TEXT
+            );
+            CREATE INDEX IF NOT EXISTS invoices_number
+                ON invoices (number, created_at);
+            PRAGMA user_version = 4;
+            """
+        )
+    if version < 5:
+        # Every delivery of an archived invoice (the invoices row keeps the
+        # latest one in sent_at/sent_to, for the list).  One transaction,
+        # version bump included: a crash leaves v4 intact, and a rerun never
+        # copies a send twice.
+        conn.executescript(
+            """
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS invoice_sends (
+                id INTEGER PRIMARY KEY,
+                invoice_id TEXT NOT NULL,
+                sent_at TEXT NOT NULL,
+                sent_to TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS invoice_sends_invoice
+                ON invoice_sends (invoice_id);
+            INSERT INTO invoice_sends (invoice_id, sent_at, sent_to)
+                SELECT id, sent_at, COALESCE(sent_to, '') FROM invoices
+                WHERE sent_at IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM invoice_sends s WHERE s.invoice_id = invoices.id
+                  );
+            PRAGMA user_version = 5;
+            COMMIT;
             """
         )
 
@@ -166,3 +241,112 @@ def save_draft(path: Path | str, data: dict[str, object]) -> None:
 def clear_draft(path: Path | str) -> None:
     with _connect(path) as conn:
         conn.execute("DELETE FROM draft")
+
+
+def _invoice_row(row: tuple[object, ...] | None) -> dict[str, object] | None:
+    return dict(zip(INVOICE_COLUMNS, row, strict=True)) if row else None
+
+
+_INVOICE_SELECT = f"SELECT {', '.join(INVOICE_COLUMNS)} FROM invoices"  # noqa: S608 — constant columns
+
+
+def add_invoice(path: Path | str, record: dict[str, object]) -> None:
+    """Insert an archived invoice (*record* carries every column but sent_*)."""
+    cols = [c for c in INVOICE_COLUMNS if c in record]
+    with _connect(path) as conn:
+        conn.execute(
+            f"INSERT INTO invoices ({', '.join(cols)}) "  # noqa: S608 — constant columns
+            f"VALUES ({', '.join('?' for _ in cols)})",
+            [record[c] for c in cols],
+        )
+
+
+def get_invoice(path: Path | str, invoice_id: str) -> dict[str, object] | None:
+    with _connect(path) as conn:
+        row = conn.execute(f"{_INVOICE_SELECT} WHERE id = ?", (invoice_id,)).fetchone()
+    return _invoice_row(row)
+
+
+def list_invoices(path: Path | str) -> list[dict[str, object]]:
+    """All archived invoices, newest first.
+
+    Insertion order is creation order; the ``created_at`` strings may carry
+    different UTC offsets (DST), so they are not sorted as text.
+    """
+    with _connect(path) as conn:
+        rows = conn.execute(f"{_INVOICE_SELECT} ORDER BY rowid DESC").fetchall()
+    return [r for r in (_invoice_row(row) for row in rows) if r]
+
+
+def latest_invoice(
+    path: Path | str, number: str | None = None
+) -> dict[str, object] | None:
+    """The newest archived invoice (for *number*, when given)."""
+    where, args = ("WHERE number = ?", (number,)) if number is not None else ("", ())
+    with _connect(path) as conn:
+        row = conn.execute(
+            f"{_INVOICE_SELECT} {where} ORDER BY rowid DESC LIMIT 1",
+            args,
+        ).fetchone()
+    return _invoice_row(row)
+
+
+def latest_sent_with_content(
+    path: Path | str, number: str, sha256: str
+) -> dict[str, object] | None:
+    """The newest already-sent invoice for *number* with this exact PDF.
+
+    Any such entry counts, not only the newest one for the number: its file
+    may have been lost or altered (and a fresh copy archived since).
+    """
+    with _connect(path) as conn:
+        row = conn.execute(
+            f"{_INVOICE_SELECT} WHERE number = ? AND sha256 = ? "
+            "AND sent_at IS NOT NULL ORDER BY rowid DESC LIMIT 1",
+            (number, sha256),
+        ).fetchone()
+    return _invoice_row(row)
+
+
+def delete_invoice(path: Path | str, invoice_id: str) -> None:
+    """Delete an archived invoice and its send history."""
+    with _connect(path) as conn:
+        conn.execute("DELETE FROM invoice_sends WHERE invoice_id = ?", (invoice_id,))
+        conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+
+
+def mark_invoice_sent(
+    path: Path | str, invoice_id: str, sent_at: str, sent_to: str
+) -> None:
+    """Record a delivery: appended to the history, and kept as the latest."""
+    with _connect(path) as conn:
+        cur = conn.execute(
+            "UPDATE invoices SET sent_at = ?, sent_to = ? WHERE id = ?",
+            (sent_at, sent_to, invoice_id),
+        )
+        if cur.rowcount:
+            conn.execute(
+                "INSERT INTO invoice_sends (invoice_id, sent_at, sent_to) "
+                "VALUES (?, ?, ?)",
+                (invoice_id, sent_at, sent_to),
+            )
+
+
+def invoice_sends(path: Path | str, invoice_id: str) -> list[dict[str, str]]:
+    """Every delivery of an archived invoice, oldest first."""
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT sent_at, sent_to FROM invoice_sends WHERE invoice_id = ? "
+            "ORDER BY id",
+            (invoice_id,),
+        ).fetchall()
+    return [{"sent_at": at, "sent_to": to} for at, to in rows]
+
+
+def send_counts(path: Path | str) -> dict[str, int]:
+    """How many times each archived invoice was sent (absent: never)."""
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT invoice_id, COUNT(*) FROM invoice_sends GROUP BY invoice_id"
+        ).fetchall()
+    return {invoice_id: int(n) for invoice_id, n in rows}

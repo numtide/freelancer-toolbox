@@ -43,7 +43,7 @@ harvest-invoicer generate --month 2026-06 --output-dir ./invoices/
 
 ```
 harvest-invoicer serve [--harvest-client NAME]
-                       [--db PATH]
+                       [--db PATH] [--invoices-dir DIR]
                        [--templates-dir DIR] [--output PATH.pdf]
                        [--host ADDR] [--allowed-host HOST]... [--port N] [--no-browser]
                        [--currency CODE] [--no-agency] [--demo]
@@ -62,6 +62,121 @@ render, byte-identical to the generated file, with real pagination and page
 footers; refreshes are debounced since each render takes about a second) and
 **HTML** (instant, same template and stylesheet the PDF uses).  The preview
 pane can be hidden, and opened in a separate window.
+
+Until the issuer has a name and a bill-to client with a name is selected,
+the preview (and Generate / Send) shows a short explanation with a link to
+Settings instead of the invoice.
+
+**Generate PDF** archives the invoice (see "Invoice archive" below) and
+opens a panel with the file name and **Open**, **Download** and **Send by
+email** buttons.  `--output PATH.pdf` additionally writes each generated
+PDF to that path.  In `--demo` mode there is no database to archive into,
+so Generate only writes `--output` (default `invoice-<number>.pdf` in the
+current directory), as before the archive existed.
+
+### Invoice archive
+
+> **Upgrading:** `serve` no longer writes `invoice-<number>.pdf` to the
+> current directory unless `--output` is given — generated PDFs go to the
+> archive.  Scripts that picked up that file should pass
+> `--output invoice.pdf` (or read the archive directory) instead.
+> Kubernetes liveness/readiness probes must use `/healthz`: every other
+> path — `/favicon.ico` included — now answers `403` to a probe, which sends
+> the pod IP as `Host`.
+
+Every PDF that `serve` generates is kept, with its metadata, so earlier
+invoices can be reopened, downloaded, sent or deleted later.
+
+- **Where:** `--invoices-dir DIR` or `HARVEST_INVOICER_INVOICES_DIR`;
+  default `invoices/` next to the state database (e.g.
+  `~/.local/share/harvest-invoicer/invoices/`).  The metadata (number,
+  bill-to client, period, total, content hash, creation date, and every
+  send with its recipients) lives in the database (`invoices` and
+  `invoice_sends` tables); existing databases gain them automatically.
+- **Permissions:** the directory should belong to the user the service
+  runs as (that uid writes, reads and deletes the PDFs).  When the tool
+  creates it, it is `0700`; an existing directory is never changed — if
+  other users can access it, a warning is logged and tightening it is up
+  to you.  PDFs are written `0600` and flushed to disk before they are
+  listed.  A PDF that no longer matches its recorded SHA-256 is treated
+  as missing (not served, sent or reused; the list marks it "altered" and
+  the log names the file).
+- **File names** are readable and unique:
+  `<number>_<client>_<random>.pdf`, e.g. `2026-06_Numtide-Sarl_3f9a1c2e.pdf`
+  (accents folded, anything but letters, digits and dashes replaced).
+- **Duplicates:** generating again without changes reuses the newest
+  archived PDF for that invoice number when its content is identical,
+  instead of adding a copy.  Any edit gives a new entry.
+- **Links:** each entry has its own unguessable link,
+  `/invoices/<id>.pdf` (`?download=1` downloads it under its file name).
+  With OIDC the links, like every page, require a signed-in, allow-listed
+  user.  `/pdf` is a legacy link, kept for old bookmarks: it serves the
+  PDF this server process generated last — one value shared by every
+  signed-in user, reset on restart (404 until someone Generates).
+
+The **Invoices** page (the archive-box icon in the editor's top bar)
+lists every archived invoice — creation date, number, client, total and
+whether it was sent (the last send, and how many) — with **Open**, **Download**, **Send**
+and **Delete** actions.  Deleting asks for confirmation (with an extra
+warning if the invoice was already emailed) and removes both the entry
+and its PDF.
+
+Headless `generate` does not use the archive.
+
+### Sending by email
+
+With SMTP configured, the generated-PDF panel, the Invoices page and the
+editor's **Send invoice** action open a send dialog:
+
+- **To** is prefilled with the bill-to client's `email`; several
+  addresses can be given, separated by commas.
+- **Subject** and **message** are prefilled in the invoice's language
+  (English or Spanish, like the PDF) and mention the invoice number and,
+  when set, the service period.  Custom templates saved in Settings >
+  Email (with `{number}`, `{period}`, `{total}`, `{due}`, `{company}`, …)
+  take precedence.
+- The archived PDF is attached under its file name, and the send is
+  recorded on the archive entry (date and the recipients the mail server
+  accepted).  If the server refuses some recipients, a warning names
+  them; if it refuses all of them, the send fails (even when your own
+  copy went through).  Sending again — from the Invoices page, or from
+  the editor when the PDF to send is identical to one already emailed
+  (even under an older entry whose file was since lost) — shows the
+  previous send and asks for confirmation; every send is kept.
+
+Without an SMTP host the Send buttons are disabled with a pointer to
+Settings > Email.  The SMTP settings are edited there; each non-secret
+field can be fixed by an environment variable instead, and the password
+is read **only** from the environment:
+
+| Environment variable | Setting |
+|----------------------|---------|
+| `HARVEST_INVOICER_SMTP_HOST` | SMTP server |
+| `HARVEST_INVOICER_SMTP_PORT` | Port (default per encryption: 587 / 465 / 25) |
+| `HARVEST_INVOICER_SMTP_ENCRYPTION` | `starttls` (default), `ssl` or `none` |
+| `HARVEST_INVOICER_SMTP_USERNAME` | Login user |
+| `HARVEST_INVOICER_SMTP_PASSWORD` | Login password (environment only, never stored) |
+| `HARVEST_INVOICER_SMTP_FROM_ADDRESS` | Sender address (default: the issuer's email); may include a name, `Billing <billing@example.com>` |
+| `HARVEST_INVOICER_SMTP_REPLY_TO` | Reply-To address |
+
+TLS certificates are always verified.  For example, with Proton Mail
+(SMTP submission uses an SMTP token generated in Proton Mail's settings,
+not your account password; see Proton's documentation for which plans
+and addresses support it):
+
+```console
+export HARVEST_INVOICER_SMTP_HOST=smtp.protonmail.ch
+export HARVEST_INVOICER_SMTP_PORT=587
+export HARVEST_INVOICER_SMTP_ENCRYPTION=starttls
+export HARVEST_INVOICER_SMTP_USERNAME=billing@your-domain.example
+export HARVEST_INVOICER_SMTP_FROM_ADDRESS=billing@your-domain.example
+export HARVEST_INVOICER_SMTP_PASSWORD="$(cat /run/secrets/proton-smtp-token)"
+harvest-invoicer serve
+```
+
+**Settings > Email > Send test email** checks the connection and login
+without sending anything.  Message bodies, recipients and credentials are
+never logged.
 
 ### `generate` — headless batch mode
 
@@ -158,6 +273,8 @@ because all entries are treated as external when there is no agency rate.
 | `HARVEST_ACCOUNT_ID` | Harvest account ID (needed when fetching; `generate` requires it) |
 | `HARVEST_BEARER_TOKEN` | Harvest API bearer token (needed when fetching; `generate` requires it) |
 | `HARVEST_INVOICER_DB` | State database path (default: `~/.local/share/harvest-invoicer/state.db`) |
+| `HARVEST_INVOICER_INVOICES_DIR` | Invoice archive directory (same as `--invoices-dir`; default: `invoices/` next to the database) |
+| `HARVEST_INVOICER_SMTP_*` | Email sending — see "Sending by email" |
 | `INVOICE_TEMPLATES_DIR` | Directory for custom templates (same as `--templates-dir`) |
 | `HARVEST_INVOICER_HOST` | Bind address for `serve` (same as `--host`) |
 | `HARVEST_INVOICER_OIDC_*`, … | OIDC login for a server deployment — see below |
@@ -173,7 +290,8 @@ In `--demo` mode changes apply to the session only.
 ### Where state lives
 
 1. `--db PATH` or `HARVEST_INVOICER_DB` — explicit location (use this for
-   a server deployment, e.g. `/var/lib/harvest-invoicer/state.db`).
+   a server deployment, e.g. `/var/lib/harvest-invoicer/state.db`; the
+   invoice archive then defaults to `/var/lib/harvest-invoicer/invoices/`).
 2. Default: `~/.local/share/harvest-invoicer/state.db` (respects
    `XDG_DATA_HOME`).
 
@@ -248,7 +366,7 @@ must be charged VAT.  Omit it for reverse-charge / VAT-exempt invoicing
 invoice model if needed.
 
 **Optional `email`**: the recipient's billing address — not printed on the
-invoice; reserved for sending the invoice by email.
+invoice; prefilled as the recipient when sending the invoice by email.
 
 **Optional `language`** (`en` or `es`): the language of invoices rendered
 for this client — headings, column labels, payment block, and the PDF page
@@ -339,6 +457,12 @@ several threads, request bodies capped at 1 MiB, and a graceful stop on
 `SIGTERM`.  Forwarded headers are handled by the app (`--trusted-proxies`),
 not by waitress, whose `trusted_proxy` setting stays off.
 
+Point liveness/readiness probes (e.g. Kubernetes `httpGet`) at
+**`/healthz`**: it answers `200 ok` with no login and for any `Host`
+(kubelet probes use the pod IP), reveals nothing about the deployment, and
+does no work.  Every other path refuses a `Host` that is not served (`403`),
+so it is the only one usable as a probe.
+
 Register the client with your provider as a web application using the
 authorization-code flow with PKCE:
 
@@ -373,15 +497,23 @@ age and the allow-list in effect: an account removed from the allow-list
 email and a sign-out button appear in the top bar.
 
 All allowed users share one editor: the same invoice session, Harvest
-fetches and SMTP sending.  It is meant for one person (or a few trusted
+fetches, invoice archive and SMTP sending.  It is meant for one person (or a few trusted
 ones), not as a multi-tenant service.
 
 ## Security
 
 Without OIDC the editor has no authentication: it binds to `127.0.0.1`
-by default, and must not be exposed to a network you don't trust.  A CSRF
-guard restricts state-changing requests to the served host(s) (`--host`,
-`--allowed-host`).
+by default, and must not be exposed to a network you don't trust.  A Host
+guard answers only the served host(s) — loopback, `--host`,
+`--allowed-host` and, with OIDC, the `--public-url` host (compared without
+case, port or trailing dot) — for every request, and state-changing
+requests must also come from the same origin.  Binding to `0.0.0.0`
+without `--allowed-host` (and without OIDC) accepts any host, still
+requiring a same-origin `Origin`/`Referer` for changes; naming hosts with
+`--allowed-host` restricts it to those (`*` is refused there; IDN names
+may be given in Unicode or punycode).  For `localhost`/`127.0.0.1`/`::1`
+the `Origin` port must match too, so another local dev server cannot
+post to the editor.
 
 With OIDC (see above) every request needs an allow-listed login.  The
 login flow uses PKCE, state and nonce; the ID token's signature (asymmetric
@@ -389,9 +521,21 @@ algorithms only), issuer, audience and expiry are verified.  The session
 cookie is `HttpOnly` and `SameSite=Lax`, and **signed, not encrypted**: during
 a login it holds the PKCE verifier and nonce, readable by (only) the user's
 own browser.  Signing out is a `POST` covered by the CSRF guard.  Behind a
-TLS-terminating proxy the CSRF guard accepts the `--public-url` host —
-binding to `0.0.0.0` already accepts any host, still requiring same-origin
-`Origin`/`Referer`.
+TLS-terminating proxy the guard accepts the `--public-url` host; with OIDC
+a wildcard bind never accepts other hosts.
+
+Every request — reads included — must name a host the server serves (the
+same allow-list), so a DNS-rebinding page can't read the editor or the
+invoices through its own domain.
+
+Archived invoices: links carry a random 128-bit id, but are not a
+capability — they need the same login as everything else.  Archive files
+are created owner-only (`0600`, in a `0700` directory), their names are
+reduced to `[A-Za-z0-9_-]` and re-checked to stay inside the invoices
+directory, and they are opened without following symlinks.  Deleting and
+sending are `POST`s
+covered by the CSRF guard.  Recipients and the subject are validated and
+may not contain line breaks or control characters (no header injection).
 
 ## Examples
 

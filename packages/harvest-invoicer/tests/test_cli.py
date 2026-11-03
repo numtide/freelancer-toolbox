@@ -586,3 +586,198 @@ class TestServeServer:
         assert raised == [SystemExit]
         assert result.exit_code == 0
         assert signal.getsignal(signal.SIGTERM) == before
+
+
+class TestServeArchive:
+    """serve archives generated PDFs next to the DB (or --invoices-dir)."""
+
+    @pytest.fixture
+    def captured(self, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+        """The create_app arguments serve passes (the server never runs)."""
+        import harvest_invoicer.app as app_module  # noqa: PLC0415
+
+        seen: dict[str, object] = {}
+        real = app_module.create_app
+
+        def _create_app(*args: object, **kwargs: object) -> Flask:
+            seen["output_path"] = args[4]
+            seen.update(kwargs)
+            return real(*args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(app_module, "create_app", _create_app)
+        monkeypatch.setattr(Flask, "run", lambda *_a, **_k: None)
+        monkeypatch.delenv("HARVEST_INVOICER_INVOICES_DIR", raising=False)
+        monkeypatch.delenv("HARVEST_INVOICER_DB", raising=False)
+        return seen
+
+    def _serve(self, *args: str, env: dict[str, str] | None = None) -> None:
+        result = CliRunner().invoke(main, ["serve", "--no-browser", *args], env=env)
+        assert result.exit_code == 0, result.output
+
+    def test_defaults_to_db_dir_without_output_file(
+        self, tmp_path: Path, captured: dict[str, object]
+    ) -> None:
+        self._serve("--db", str(tmp_path / "state.db"))
+        assert captured["invoices_dir"] is None  # create_app: beside the DB
+        assert captured["output_path"] is None
+        assert captured["db_path"] == tmp_path / "state.db"
+
+    def test_invoices_dir_option_and_env(
+        self, tmp_path: Path, captured: dict[str, object]
+    ) -> None:
+        self._serve(
+            "--db", str(tmp_path / "s.db"), "--invoices-dir", str(tmp_path / "a")
+        )
+        assert captured["invoices_dir"] == tmp_path / "a"
+        self._serve(
+            "--db",
+            str(tmp_path / "s.db"),
+            env={"HARVEST_INVOICER_INVOICES_DIR": str(tmp_path / "b")},
+        )
+        assert captured["invoices_dir"] == tmp_path / "b"
+
+    def test_explicit_output_kept(
+        self, tmp_path: Path, captured: dict[str, object]
+    ) -> None:
+        out = tmp_path / "copy.pdf"
+        self._serve("--db", str(tmp_path / "s.db"), "--output", str(out))
+        assert captured["output_path"] == out
+
+    def test_demo_keeps_single_output_file(
+        self, tmp_path: Path, captured: dict[str, object]
+    ) -> None:
+        self._serve("--demo")
+        assert captured["db_path"] is None
+        out = captured["output_path"]
+        assert isinstance(out, Path)
+        assert out.name.startswith("invoice-")
+
+
+def test_generate_unchanged_by_the_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Headless generate still writes invoice-<number>.pdf to --output-dir and
+    never touches the invoice archive."""
+    import harvest_invoicer.render as render_module  # noqa: PLC0415
+
+    def fake_render(*args: object, **_kw: object) -> None:
+        path = args[3]
+        assert isinstance(path, Path)
+        path.write_bytes(b"%PDF-fake")
+
+    monkeypatch.setattr(render_module, "render_pdf", fake_render)
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        main,
+        [
+            "generate",
+            "--demo",
+            "--month",
+            "2026-06",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--db",
+            str(tmp_path / "state.db"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert [p.name for p in (tmp_path / "out").iterdir()] == ["invoice-2026-06.pdf"]
+    assert not (tmp_path / "invoices").exists()
+
+
+class TestWildcardHostGuard:
+    """A wildcard bind only accepts any Host when nothing names the hosts."""
+
+    _SECRET = "s" * 32
+
+    @pytest.fixture
+    def built(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[Flask]:
+        """The app serve builds (no server runs)."""
+        import harvest_invoicer.app as app_module  # noqa: PLC0415
+        import waitress  # noqa: PLC0415
+
+        apps: list[Flask] = []
+        real = app_module.create_app
+
+        def _create_app(*args: object, **kwargs: object) -> Flask:
+            app = real(*args, **kwargs)  # type: ignore[arg-type]
+            apps.append(app)
+            return app
+
+        monkeypatch.setattr(app_module, "create_app", _create_app)
+        monkeypatch.setattr(Flask, "run", lambda *_a, **_k: None)
+        monkeypatch.setattr(waitress, "serve", lambda *_a, **_k: None)
+        for var in ("OIDC_ISSUER", "SESSION_SECRET", "SERVER", "PUBLIC_URL", "DB"):
+            monkeypatch.delenv(f"HARVEST_INVOICER_{var}", raising=False)
+        monkeypatch.setenv("HARVEST_INVOICER_DB", str(tmp_path / "state.db"))
+        return apps
+
+    def _serve(self, *args: str, env: dict[str, str] | None = None) -> None:
+        bind_all = "0.0.0.0"  # noqa: S104 — test input, nothing is bound
+        result = CliRunner().invoke(
+            main, ["serve", "--no-browser", "--host", bind_all, *args], env=env
+        )
+        assert result.exit_code == 0, result.output
+
+    @staticmethod
+    def _status(app: Flask, host: str, path: str = "/settings") -> int:
+        return app.test_client().get(path, headers={"Host": host}).status_code
+
+    def test_wildcard_with_allowed_host_is_restricted(self, built: list[Flask]) -> None:
+        self._serve("--allowed-host", "box.lan")
+        (app,) = built
+        assert self._status(app, "evil.test") == 403
+        assert self._status(app, "box.lan:8321") == 200
+        assert self._status(app, "evil.test", "/healthz") == 200
+
+    def test_wildcard_with_oidc_is_restricted(self, built: list[Flask]) -> None:
+        env = {
+            "HARVEST_INVOICER_OIDC_ISSUER": "https://auth.example.com",
+            "HARVEST_INVOICER_OIDC_CLIENT_ID": "invoicer",
+            "HARVEST_INVOICER_OIDC_ALLOWED_EMAILS": "jane@example.com",
+            "HARVEST_INVOICER_SESSION_SECRET": self._SECRET,
+            "HARVEST_INVOICER_PUBLIC_URL": "https://invoicer.example.com",
+        }
+        self._serve(env=env)
+        (app,) = built
+        assert self._status(app, "evil.test") == 403
+        # The public host gets the login redirect, not the Host refusal.
+        assert self._status(app, "invoicer.example.com") == 302
+        assert self._status(app, "evil.test", "/healthz") == 200
+
+    def test_wildcard_alone_accepts_any_host(self, built: list[Flask]) -> None:
+        self._serve()
+        (app,) = built
+        assert self._status(app, "anything.test") == 200
+
+    def test_help_describes_read_and_write_guard(self) -> None:
+        out = CliRunner().invoke(main, ["serve", "--help"]).output
+        assert "reads included" in " ".join(out.split())
+
+
+class TestAllowedHostOption:
+    @pytest.fixture(autouse=True)
+    def _never_serve(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Should validation ever regress, serve must still not bind a port
+        or open a browser from the test suite."""
+        import waitress  # noqa: PLC0415
+
+        monkeypatch.setattr(Flask, "run", lambda *_a, **_k: None)
+        monkeypatch.setattr(waitress, "serve", lambda *_a, **_k: None)
+
+    def _invoke(self, value: str):  # noqa: ANN202
+        return CliRunner().invoke(
+            main, ["serve", "--demo", "--no-browser", "--allowed-host", value]
+        )
+
+    @pytest.mark.parametrize("value", ["*", "*:8321", "*.example.com"])
+    def test_wildcard_rejected(self, value: str) -> None:
+        result = self._invoke(value)
+        assert result.exit_code == 2
+        assert "wildcards are not allowed" in result.output
+
+    @pytest.mark.parametrize("value", ["[::1", "box.lan:x", "a@b"])
+    def test_malformed_rejected(self, value: str) -> None:
+        result = self._invoke(value)
+        assert result.exit_code == 2
+        assert "not a valid host" in result.output

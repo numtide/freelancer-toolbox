@@ -32,7 +32,11 @@ pkgs.python3.pkgs.buildPythonApplication {
   # WeasyPrint-dependent tests use their own env-guard and simply skip if
   # the native libraries are ever unavailable in the sandbox.
   doCheck = true;
-  nativeCheckInputs = [ pkgs.python3.pkgs.pytestCheckHook ];
+  nativeCheckInputs = with pkgs.python3.pkgs; [
+    pytestCheckHook
+    # A real SMTP server on loopback for the email tests.
+    aiosmtpd
+  ];
 
   meta = {
     mainProgram = "harvest-invoicer";

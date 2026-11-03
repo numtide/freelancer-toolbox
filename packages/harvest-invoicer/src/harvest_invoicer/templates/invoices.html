@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="{{ ui_lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ tr('invoices') }} — Harvest Invoicer</title>
+  <script src="/static/theme.js"></script>
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/toast.js" defer></script>
+  <script src="/static/modal.js" defer></script>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand-link" href="/" title="{{ tr('back_to_editor') }}">
+        <img class="logo" src="/static/harvest-logo.svg" alt="Harvest">
+      </a>
+      <h1>Invoicer</h1>
+      <span class="crumb">/ {{ tr('invoices') }}</span>
+      <div class="actions">
+        <button type="button" class="icon-btn theme-toggle" data-theme-toggle
+          onclick="toggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode">
+          <svg class="icon-moon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg class="icon-sun" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+        </button>
+        {% include "partials/auth_user.html" %}
+      </div>
+    </div>
+  </header>
+
+  <div class="back-row">
+    <a class="back-link" href="/">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+      {{ tr('back_to_editor') }}
+    </a>
+  </div>
+
+  <main class="invoices-main">
+    <section class="scard">
+      <div class="scard-head">
+        <div>
+          <h2>{{ tr('invoices') }}</h2>
+          <p>{{ tr('archive_sub') }}</p>
+        </div>
+      </div>
+      {% if not send_available %}
+      <p class="inv-note"><a href="/settings#email">{{ tr('smtp_disabled') }}</a></p>
+      {% endif %}
+      {% if invoices %}
+      <div class="inv-scroll">
+        <table class="inv-table">
+          <thead>
+            <tr>
+              <th>{{ tr('col_date') }}</th>
+              <th>{{ tr('col_number') }}</th>
+              <th>{{ tr('col_client') }}</th>
+              <th class="text-right">{{ tr('col_total') }}</th>
+              <th>{{ tr('col_status') }}</th>
+              <th><span class="sr-only">{{ tr('col_actions') }}</span></th>
+            </tr>
+          </thead>
+          <tbody id="inv-rows">
+            {% for inv in invoices %}
+            {% include "partials/invoice_row.html" %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-title">{{ tr('empty_title') }}</div>
+        <div class="empty-sub">{{ tr('empty_sub') }}</div>
+      </div>
+      {% endif %}
+    </section>
+  </main>
+
+  <!-- Send modal is fetched here on demand. -->
+  <div id="modal-root"></div>
+</body>
+</html>

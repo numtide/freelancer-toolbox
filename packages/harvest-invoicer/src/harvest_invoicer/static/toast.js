@@ -12,6 +12,9 @@
   var CHECK =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
     'stroke="#fff" stroke-width="3"><path d="M20 6 9 17l-5-5"></path></svg>';
+  var BANG =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="#fff" stroke-width="3"><path d="M12 6v7M12 18h.01"></path></svg>';
   var CROSS =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
     'stroke="#fff" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"></path></svg>';
@@ -29,14 +32,16 @@
 
   function show(title, body, kind) {
     if (!title && !body) return;
+    // kind: "ok", "warn" (done, with a caveat) or "err".
     var isErr = kind === "err";
+    var isWarn = kind === "warn";
     var el = document.createElement("div");
-    el.className = "toast" + (isErr ? " toast-err" : "");
+    el.className = "toast" + (isErr ? " toast-err" : isWarn ? " toast-warn" : "");
     el.setAttribute("role", isErr ? "alert" : "status");
 
     var badge = document.createElement("span");
     badge.className = "toast-badge";
-    badge.innerHTML = isErr ? CROSS : CHECK;
+    badge.innerHTML = isErr ? CROSS : isWarn ? BANG : CHECK;
 
     var text = document.createElement("div");
     text.className = "toast-text";
@@ -68,7 +73,7 @@
       el.classList.add("in");
     });
     // Errors linger longer so they can be read before they vanish.
-    var timer = setTimeout(dismiss, isErr ? 6000 : 3800);
+    var timer = setTimeout(dismiss, isErr || isWarn ? 6000 : 3800);
   }
 
   window.showToast = show;

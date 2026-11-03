@@ -32,12 +32,12 @@ if TYPE_CHECKING:
 
     from harvest_invoicer.config import OidcSettings
 
-# Endpoints reachable without a session: the login flow itself and the
-# static assets its pages use.
+# Endpoints reachable without a session: the login flow itself, the
+# static assets its pages use, and the health probe (a constant "ok").
 OIDC_ENDPOINTS = frozenset(
     {"oidc_login", "oidc_callback", "oidc_logout", "oidc_logout_page"}
 )
-_PUBLIC_ENDPOINTS = OIDC_ENDPOINTS | {"static", "favicon"}
+_PUBLIC_ENDPOINTS = OIDC_ENDPOINTS | {"static", "favicon", "healthz"}
 
 # Paths a post-login redirect must never land on (it would loop).
 _AUTH_PATHS = ("/login", "/oidc/", "/logout")

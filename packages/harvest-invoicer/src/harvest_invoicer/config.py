@@ -43,7 +43,7 @@ Encryption = Literal["starttls", "ssl", "none"]
 DefaultAction = Literal["generate", "send"]
 
 
-def _validate_email_shape(v: str) -> str:
+def validate_email_shape(v: str) -> str:
     """Reject clearly-invalid addresses; an empty string means "unset".
 
     A structural shape check only (one ``@``, a non-empty local part and a
@@ -144,7 +144,7 @@ class IssuerConfig(BaseModel):
     @field_validator("email")
     @classmethod
     def _email_shape(cls, v: str) -> str:
-        return _validate_email_shape(v)
+        return validate_email_shape(v)
 
 
 class ExtraLine(BaseModel):
@@ -172,7 +172,7 @@ class ClientConfig(BaseModel):
     @field_validator("email")
     @classmethod
     def _email_shape(cls, v: str) -> str:
-        return _validate_email_shape(v)
+        return validate_email_shape(v)
 
     @field_validator("vat_rate", mode="before")
     @classmethod
@@ -231,7 +231,7 @@ class SmtpSettings(BaseSettings):
     def _address_shape(cls, v: str) -> str:
         # These feed the From:/Reply-To: headers, so hold them to the same
         # shape check as the issuer/client addresses.
-        return _validate_email_shape(v)
+        return validate_email_shape(v)
 
     @field_validator("port", mode="before")
     @classmethod
